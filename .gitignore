@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+yarn.lock.bak
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Native builds & caches
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro / Babel
+.metro-health-check*
+
+# Android (Prebuild / Bare workflow)
+android/app/build/
+android/.gradle/
+android/local.properties
+android/*.keystore
+
+# iOS (Prebuild / Bare workflow)
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+ios/*.xcuserdata
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
