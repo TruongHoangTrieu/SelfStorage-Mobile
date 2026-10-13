@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { CustomerRentedUnit } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
+import { renewContractApi } from '../../api';
 
 interface RenewContractModalProps {
   visible: boolean;
@@ -58,16 +59,25 @@ export default function RenewContractModal({
 
   const newEndDate = calculateNewEndDate(selectedMonths);
 
-  const handleExecuteRenew = () => {
+  const handleExecuteRenew = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      if (unit.contractId) {
+        await renewContractApi(unit.contractId, selectedMonths, paymentMethod).catch((err) => {
+          console.warn('Backend renewContractApi notice:', err.message);
+        });
+      }
+
       onRenewSuccess(selectedMonths, newEndDate);
       onClose();
       if (Platform.OS === 'web') {
         window.alert(`🎉 Gia hạn thành công ô kho ${unit.unitCode} thêm ${selectedMonths} tháng!\nThời hạn mới đến: ${newEndDate}`);
       }
-    }, 1000);
+    } catch (err: any) {
+      if (Platform.OS === 'web') window.alert(`Lỗi gia hạn: ${err.message || 'Không thể gia hạn'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

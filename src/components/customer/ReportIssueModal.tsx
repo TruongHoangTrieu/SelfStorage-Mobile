@@ -58,6 +58,7 @@ export default function ReportIssueModal({
       // Gọi API Backend nếu có kết nối
       const res = await createSupportRequestApi({
         facilityId: unit.facilityId,
+        contractItemId: unit.contractItemId,
         category,
         subject: subject.trim(),
         description: description.trim(),

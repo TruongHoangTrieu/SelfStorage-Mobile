@@ -245,7 +245,7 @@ export async function changeSmartLockPinApi(contractId: number, unitId: number, 
 }
 
 /**
- * Gửi yêu cầu hỗ trợ sự cố ô kho (POST /support)
+ * Gửi yêu cầu hỗ trợ sự cố ô kho (POST /support/requests)
  */
 export async function createSupportRequestApi(payload: {
   facilityId: number;
@@ -256,8 +256,49 @@ export async function createSupportRequestApi(payload: {
   priority?: string;
   photos?: any[];
 }) {
-  return apiRequest<any>('/support', {
+  return apiRequest<any>('/support/requests', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Lấy danh sách phiếu yêu cầu hỗ trợ của khách hàng (GET /support/requests)
+ */
+export async function fetchMySupportRequestsApi() {
+  return apiRequest<{ data: any[]; meta: any }>('/support/requests');
+}
+
+/**
+ * Tạo mã khách tạm thời (POST /contracts/:contractId/units/:unitId/guest-codes)
+ */
+export async function createGuestCodeApi(
+  contractId: number,
+  unitId: number,
+  payload: {
+    guestName: string;
+    pinCode: string;
+    durationOption: '2h' | '24h' | '3d';
+    usageType?: string;
+    purpose?: string;
+  },
+) {
+  return apiRequest<any>(`/contracts/${contractId}/units/${unitId}/guest-codes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Gia hạn hợp đồng thuê kho (POST /contracts/:id/renew)
+ */
+export async function renewContractApi(
+  contractId: number,
+  extendedMonths: number,
+  paymentMethod = 'SEPAY_QR',
+) {
+  return apiRequest<any>(`/contracts/${contractId}/renew`, {
+    method: 'POST',
+    body: JSON.stringify({ extendedMonths, paymentMethod }),
   });
 }

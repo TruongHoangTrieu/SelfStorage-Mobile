@@ -74,6 +74,7 @@ export interface StoredInventoryItem {
 export interface CustomerRentedUnit {
   id: string;                  // Unit ID hoặc mã định danh
   contractId: number;          // ID hợp đồng trong DB
+  contractItemId?: number;     // ID chi tiết hợp đồng
   contractCode: string;        // Mã hợp đồng: CON-20261013-XXXXXX
   unitId: number;              // ID ngăn kho vật lý
   unitCode: string;            // Ví dụ: A-101, B-205, C-302, CL-401

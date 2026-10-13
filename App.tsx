@@ -28,6 +28,7 @@ import {
   fetchMyContractsApi,
   changeSmartLockPinApi,
   createSupportRequestApi,
+  fetchMySupportRequestsApi,
   Facility,
   UnitType,
   Reservation,
@@ -263,7 +264,11 @@ export default function App() {
       setIsCustomerLoading(true);
       // Tự động xác thực tài khoản Customer (nguyen.hai) nếu cần
       await loginCustomerApi('hai.nguyen@example.com', '123456').catch(() => null);
-      const contracts = await fetchMyContractsApi().catch(() => null);
+      const [contracts, supportRes] = await Promise.all([
+        fetchMyContractsApi().catch(() => null),
+        fetchMySupportRequestsApi().catch(() => null),
+      ]);
+      const rawTickets = Array.isArray(supportRes?.data) ? supportRes.data : [];
       if (Array.isArray(contracts) && contracts.length > 0) {
         const mappedUnits: CustomerRentedUnit[] = [];
         contracts.forEach((c) => {
@@ -288,6 +293,7 @@ export default function App() {
             const unitItem: CustomerRentedUnit = {
               id: `rented-${ci.id}`,
               contractId: c.id,
+              contractItemId: ci.id,
               contractCode: c.contractCode,
               unitId: ci.unitId,
               unitCode: ci.unit?.unitNumber || 'A-101',
@@ -316,40 +322,83 @@ export default function App() {
               monthlyRentFormatted: formatVND(Number(ci.rentalPrice) || 890000) + '/tháng',
               depositAmount: Number(ci.depositAmount) || 890000,
               depositFormatted: formatVND(Number(ci.depositAmount) || 890000),
-              totalPaid: Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000),
-              totalPaidFormatted: formatVND(Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000)),
+              totalPaid: Array.isArray(c.payments) && c.payments.length > 0
+                ? c.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0)
+                : Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000),
+              totalPaidFormatted: formatVND(
+                Array.isArray(c.payments) && c.payments.length > 0
+                  ? c.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0)
+                  : Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000)
+              ),
               currentBalance: 0,
               currentBalanceFormatted: '0 đ (Đã thanh toán đủ)',
               masterPin: ci.accessCode || '597599',
               isPinVisible: false,
               smartLockStatus: 'LOCKED',
               lastUnlockedAt: 'Hôm nay lúc 09:30',
-              guestAccessCodes: [],
-              payments: [
-                {
-                  id: `p-${c.id}-1`,
-                  paymentCode: `PAY-${c.contractCode.slice(-6)}-DEP`,
-                  amount: Number(ci.depositAmount || 890000),
-                  type: 'DEPOSIT',
-                  typeLabel: 'Tiền cọc bảo đảm',
-                  status: 'PAID',
-                  paidAt: startD,
-                  method: 'SEPAY_QR',
-                  periodDescription: 'Cọc hoàn trả khi thanh lý hợp đồng',
-                },
-                {
-                  id: `p-${c.id}-2`,
-                  paymentCode: `PAY-${c.contractCode.slice(-6)}-RENT`,
-                  amount: Number(ci.rentalPrice || 890000),
-                  type: 'RENTAL',
-                  typeLabel: 'Tiền thuê kỳ đầu',
-                  status: 'PAID',
-                  paidAt: startD,
-                  method: 'SEPAY_QR',
-                  periodDescription: `Kỳ thuê: ${startD} - ${endD}`,
-                },
-              ],
-              supportTickets: [],
+              guestAccessCodes: Array.isArray(ci.guestAccessCodes) && ci.guestAccessCodes.length > 0
+                ? ci.guestAccessCodes.map((g: any) => ({
+                    id: String(g.id),
+                    guestName: g.guestName,
+                    pinCode: g.pinCode,
+                    validFrom: formatVietnameseDate(g.validFrom),
+                    validTo: formatVietnameseDate(g.validTo),
+                    usageType: g.usageType,
+                    status: g.status,
+                    purpose: g.purpose,
+                    createdAt: formatVietnameseDate(g.createdAt),
+                  }))
+                : [],
+              payments: Array.isArray(c.payments) && c.payments.length > 0
+                ? c.payments.map((p: any) => ({
+                    id: String(p.id),
+                    paymentCode: p.paymentCode,
+                    amount: Number(p.amount),
+                    type: p.paymentType,
+                    typeLabel: p.paymentType === 'DEPOSIT' ? 'Tiền cọc bảo đảm' : p.paymentType === 'RENTAL' ? 'Tiền thuê kho' : 'Gia hạn thuê kho',
+                    status: p.status,
+                    paidAt: p.paidAt ? formatVietnameseDate(p.paidAt) : startD,
+                    method: p.paymentMethod || 'SEPAY_QR',
+                    periodDescription: p.transactionReference || `Thanh toán hợp đồng ${c.contractCode}`,
+                  }))
+                : [
+                    {
+                      id: `p-${c.id}-1`,
+                      paymentCode: `PAY-${c.contractCode.slice(-6)}-DEP`,
+                      amount: Number(ci.depositAmount || 890000),
+                      type: 'DEPOSIT',
+                      typeLabel: 'Tiền cọc bảo đảm',
+                      status: 'PAID',
+                      paidAt: startD,
+                      method: 'SEPAY_QR',
+                      periodDescription: 'Cọc hoàn trả khi thanh lý hợp đồng',
+                    },
+                    {
+                      id: `p-${c.id}-2`,
+                      paymentCode: `PAY-${c.contractCode.slice(-6)}-RENT`,
+                      amount: Number(ci.rentalPrice || 890000),
+                      type: 'RENTAL',
+                      typeLabel: 'Tiền thuê kỳ đầu',
+                      status: 'PAID',
+                      paidAt: startD,
+                      method: 'SEPAY_QR',
+                      periodDescription: `Kỳ thuê: ${startD} - ${endD}`,
+                    },
+                  ],
+              supportTickets: rawTickets
+                .filter((t: any) => !t.contractItemId || t.contractItemId === ci.id)
+                .map((t: any) => ({
+                  id: String(t.id),
+                  requestCode: t.requestCode,
+                  category: t.category,
+                  categoryLabel: t.category === 'LOCK' ? '🔐 Khóa Smart PIN' : '🛠️ ' + t.category,
+                  subject: t.subject,
+                  description: t.description,
+                  status: t.status,
+                  priority: t.priority,
+                  createdAt: formatVietnameseDate(t.createdAt),
+                  resolvedAt: t.resolvedAt ? formatVietnameseDate(t.resolvedAt) : undefined,
+                })),
               storedItems: Array.isArray(ci.storedItems)
                 ? ci.storedItems.map((si: any) => ({
                     id: String(si.id),

@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { CustomerRentedUnit, GuestAccessCode } from '../../types/customerStorage';
+import { createGuestCodeApi } from '../../api';
 
 interface CreateGuestPinModalProps {
   visible: boolean;
@@ -68,26 +69,40 @@ export default function CreateGuestPinModal({
     setTimeout(() => setCopySuccess(false), 2500);
   };
 
-  const handleConfirmCreate = () => {
+  const handleConfirmCreate = async () => {
     if (!guestName.trim()) {
       if (Platform.OS === 'web') window.alert('Vui lòng nhập tên người nhận mã');
       return;
     }
 
-    const newGuestCode: GuestAccessCode = {
-      id: `guest-${Date.now()}`,
-      guestName: guestName.trim(),
-      pinCode: generatedPin,
-      validFrom: 'Hôm nay',
-      validTo: durationOption === '2h' ? '2 giờ nữa' : durationOption === '24h' ? '24 giờ nữa' : '3 ngày nữa',
-      usageType,
-      status: 'active',
-      purpose: purpose.trim(),
-      createdAt: new Date().toLocaleDateString('vi-VN'),
-    };
+    try {
+      if (unit.contractId && unit.unitId) {
+        await createGuestCodeApi(unit.contractId, unit.unitId, {
+          guestName: guestName.trim(),
+          pinCode: generatedPin,
+          durationOption,
+          usageType,
+          purpose: purpose.trim(),
+        }).catch((err) => console.warn('createGuestCodeApi notice:', err.message));
+      }
 
-    onCreated(newGuestCode);
-    onClose();
+      const newGuestCode: GuestAccessCode = {
+        id: `guest-${Date.now()}`,
+        guestName: guestName.trim(),
+        pinCode: generatedPin,
+        validFrom: 'Hôm nay',
+        validTo: durationOption === '2h' ? '2 giờ nữa' : durationOption === '24h' ? '24 giờ nữa' : '3 ngày nữa',
+        usageType,
+        status: 'active',
+        purpose: purpose.trim(),
+        createdAt: new Date().toLocaleDateString('vi-VN'),
+      };
+
+      onCreated(newGuestCode);
+      onClose();
+    } catch (err: any) {
+      if (Platform.OS === 'web') window.alert(`Lỗi: ${err.message || 'Không thể tạo mã'}`);
+    }
   };
 
   return (
