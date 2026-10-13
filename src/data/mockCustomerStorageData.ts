@@ -1,0 +1,210 @@
+import { CustomerRentedUnit, CustomerUser } from '../types/customerStorage';
+
+export const CURRENT_CUSTOMER_USER: CustomerUser = {
+  id: 4,
+  fullName: 'Nguyễn Văn Hải',
+  email: 'hai.nguyen@example.com',
+  phone: '0908 123 456',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+  membershipTier: 'KHÁCH HÀNG THÂN THIẾT (GOLD)',
+  joinedDate: '15/01/2026',
+};
+
+export const INITIAL_RENTED_UNITS: CustomerRentedUnit[] = [
+  {
+    id: 'unit-rented-101',
+    contractId: 2,
+    contractCode: 'CON-20261013-JZ0F18',
+    unitId: 1,
+    unitCode: 'A-101',
+    unitName: 'Kho Cá Nhân Mini (Box 4.9m²)',
+    size: '4.9m² (2.1m x 2.3m)',
+    dimensions: '2.1m x 2.3m x 2.8m (Cao)',
+    features: ['Khóa Smart PIN 24/7', 'Camera AI giám sát lối vào', 'Hệ thống chống ẩm tự động'],
+    
+    facilityId: 1,
+    facilityName: 'SelfStorage Thủ Đức (Trụ sở Võ Nguyên Giáp)',
+    facilityAddress: '456 Võ Văn Ngân, Phường Linh Chiểu, TP. Thủ Đức, TP.HCM',
+    floor: 'Tầng 1',
+    zone: 'Khu A (Gần cửa nhập hàng)',
+    mapPositionSnippet: {
+      floorLabel: 'Tầng 1',
+      zoneLabel: 'Khu A',
+      corridor: 'Hành lang A-01 (Cách cửa chính 15m)',
+    },
+
+    status: 'active',
+    statusLabel: 'Đang hoạt động',
+    startDate: '13/10/2026',
+    endDate: '13/04/2027',
+    nextPaymentDate: '13/11/2026',
+    daysRemaining: 182,
+    totalDays: 182,
+
+    monthlyRent: 890000,
+    monthlyRentFormatted: '890.000 đ/tháng',
+    depositAmount: 890000,
+    depositFormatted: '890.000 đ',
+    totalPaid: 1780000,
+    totalPaidFormatted: '1.780.000 đ',
+    currentBalance: 0,
+    currentBalanceFormatted: '0 đ (Đã thanh toán đủ)',
+
+    masterPin: '597599',
+    isPinVisible: false,
+    smartLockStatus: 'LOCKED',
+    lastUnlockedAt: 'Hôm nay lúc 09:30',
+
+    guestAccessCodes: [
+      {
+        id: 'guest-pin-01',
+        guestName: 'Anh Tuấn (Thợ vận chuyển)',
+        pinCode: '728190',
+        validFrom: '13/10/2026 08:00',
+        validTo: '13/10/2026 18:00',
+        usageType: 'multi_time',
+        status: 'active',
+        purpose: 'Chuyển thêm tài liệu văn phòng vào kho',
+        createdAt: '13/10/2026',
+      },
+    ],
+
+    payments: [
+      {
+        id: 'pay-01',
+        paymentCode: 'PAY-20261013-8812',
+        amount: 890000,
+        type: 'DEPOSIT',
+        typeLabel: 'Tiền cọc giữ chỗ ô kho',
+        status: 'PAID',
+        paidAt: '13/10/2026 08:45',
+        method: 'SEPAY_QR',
+        periodDescription: 'Cọc bảo đảm 01 tháng (Hoàn trả khi thanh lý)',
+      },
+      {
+        id: 'pay-02',
+        paymentCode: 'PAY-20261013-8813',
+        amount: 890000,
+        type: 'RENTAL',
+        typeLabel: 'Tiền thuê tháng đầu tiên',
+        status: 'PAID',
+        paidAt: '13/10/2026 09:15',
+        method: 'SEPAY_QR',
+        periodDescription: 'Thời hạn: 13/10/2026 - 13/11/2026',
+      },
+    ],
+
+    supportTickets: [
+      {
+        id: 'ticket-01',
+        requestCode: 'REQ-20261013-001',
+        category: 'ACCESS_CODE',
+        categoryLabel: 'Khóa thông minh & Mã PIN',
+        subject: 'Cần cấp thêm thẻ từ RFID vật lý',
+        description: 'Tôi muốn quầy lễ tân cấp thêm 1 thẻ từ phụ cho vợ sử dụng.',
+        status: 'RESOLVED',
+        priority: 'MEDIUM',
+        createdAt: '13/10/2026 09:40',
+        resolvedAt: '13/10/2026 10:10',
+      },
+    ],
+
+    storedItems: [
+      {
+        id: 'item-1',
+        name: 'Thùng hồ sơ kế toán 2024-2025 (5 thùng)',
+        category: 'Tài liệu doanh nghiệp',
+        quantity: 5,
+        unit: 'Thùng carton',
+        estimatedValue: 'Không định giá',
+        notes: 'Chứa sổ sách chứng từ gốc, có niêm phong',
+        addedAt: '13/10/2026',
+      },
+      {
+        id: 'item-2',
+        name: 'Màn hình máy tính Dell UltraSharp 27"',
+        category: 'Thiết bị điện tử',
+        quantity: 2,
+        unit: 'Chiếc',
+        estimatedValue: '12.000.000 đ',
+        notes: 'Bọc xốp chống sốc cẩn thận',
+        addedAt: '13/10/2026',
+      },
+    ],
+  },
+  {
+    id: 'unit-rented-302',
+    contractId: 5,
+    contractCode: 'CON-20261013-C302LK',
+    unitId: 12,
+    unitCode: 'C-302',
+    unitName: 'Kho Doanh Nghiệp Lớn (Box 14.5m²)',
+    size: '14.5m² (3.6m x 4.0m)',
+    dimensions: '3.6m x 4.0m x 3.2m (Trần cao)',
+    features: ['Cửa cuốn tự động', 'Xe nâng pallet ra vào tự do', 'Điện 3 pha & cảm biến nhiệt'],
+    
+    facilityId: 1,
+    facilityName: 'SelfStorage Thủ Đức (Trụ sở Võ Nguyên Giáp)',
+    facilityAddress: '456 Võ Văn Ngân, Phường Linh Chiểu, TP. Thủ Đức, TP.HCM',
+    floor: 'Tầng 3',
+    zone: 'Khu C (Kho thương mại)',
+    mapPositionSnippet: {
+      floorLabel: 'Tầng 3',
+      zoneLabel: 'Khu C',
+      corridor: 'Cửa cuốn số C-02 sát thang hàng',
+    },
+
+    status: 'expiring_soon',
+    statusLabel: 'Sắp hết hạn (Còn 5 ngày)',
+    startDate: '18/04/2026',
+    endDate: '18/10/2026',
+    nextPaymentDate: '18/10/2026',
+    daysRemaining: 5,
+    totalDays: 180,
+
+    monthlyRent: 2890000,
+    monthlyRentFormatted: '2.890.000 đ/tháng',
+    depositAmount: 2890000,
+    depositFormatted: '2.890.000 đ',
+    totalPaid: 17340000,
+    totalPaidFormatted: '17.340.000 đ',
+    currentBalance: 2890000,
+    currentBalanceFormatted: '2.890.000 đ (Chờ gia hạn)',
+
+    masterPin: '682914',
+    isPinVisible: false,
+    smartLockStatus: 'LOCKED',
+    lastUnlockedAt: 'Hôm qua lúc 16:15',
+
+    guestAccessCodes: [],
+
+    payments: [
+      {
+        id: 'pay-c1',
+        paymentCode: 'PAY-20260418-1002',
+        amount: 2890000,
+        type: 'DEPOSIT',
+        typeLabel: 'Tiền cọc kho doanh nghiệp',
+        status: 'PAID',
+        paidAt: '18/04/2026',
+        method: 'BANK_TRANSFER',
+        periodDescription: 'Cọc bảo đảm 01 tháng',
+      },
+    ],
+
+    supportTickets: [],
+
+    storedItems: [
+      {
+        id: 'item-c1',
+        name: 'Pallet linh kiện điện tử phụ tùng xe máy',
+        category: 'Hàng hóa thương mại',
+        quantity: 4,
+        unit: 'Pallet tiêu chuẩn',
+        estimatedValue: '85.000.000 đ',
+        notes: 'Chứa linh kiện cảm biến và bugi',
+        addedAt: '20/04/2026',
+      },
+    ],
+  },
+];

@@ -1,0 +1,332 @@
+import React from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+} from 'react-native';
+import { CustomerTab } from '../../types/customerStorage';
+import { CURRENT_CUSTOMER_USER } from '../../data/mockCustomerStorageData';
+
+interface CustomerSidebarProps {
+  visible: boolean;
+  onClose: () => void;
+  activeTab: CustomerTab;
+  onSelectTab: (tab: CustomerTab) => void;
+  rentedUnitsCount?: number;
+  onSwitchToStaff: () => void;
+}
+
+export default function CustomerSidebar({
+  visible,
+  onClose,
+  activeTab,
+  onSelectTab,
+  rentedUnitsCount = 2,
+  onSwitchToStaff,
+}: CustomerSidebarProps) {
+  const menuItems: { id: CustomerTab; icon: string; label: string; badge?: string }[] = [
+    { id: 'my_units', icon: '🏠', label: 'Ô kho của tôi', badge: `${rentedUnitsCount} ô` },
+    { id: 'payments', icon: '💳', label: 'Thanh toán & Hóa đơn' },
+    { id: 'access', icon: '🔑', label: 'Truy cập & Bảo mật' },
+    { id: 'documents', icon: '📄', label: 'Tài liệu & Hợp đồng' },
+    { id: 'support', icon: '🎧', label: 'Hỗ trợ & Trợ giúp' },
+    { id: 'profile', icon: '👤', label: 'Hồ sơ & Cài đặt' },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+
+        <View style={styles.sidebarContainer}>
+          {/* Header Customer Profile */}
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarRow}>
+              <Image source={{ uri: CURRENT_CUSTOMER_USER.avatar }} style={styles.avatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.customerName}>{CURRENT_CUSTOMER_USER.fullName}</Text>
+                <Text style={styles.customerPhone}>{CURRENT_CUSTOMER_USER.phone}</Text>
+                <View style={styles.tierBadge}>
+                  <Text style={styles.tierText}>⭐ {CURRENT_CUSTOMER_USER.membershipTier}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SaaS Portal Navigation Label */}
+          <View style={styles.portalBadgeRow}>
+            <View style={styles.portalIndicator} />
+            <Text style={styles.portalLabel}>SELF-SERVICE PORTAL • KHÁCH HÀNG</Text>
+          </View>
+
+          {/* Navigation Items */}
+          <ScrollView style={styles.menuScroll}>
+            {menuItems.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.menuItem, isActive && styles.menuItemActive]}
+                  onPress={() => {
+                    onSelectTab(item.id);
+                    onClose();
+                  }}
+                >
+                  <Text style={styles.menuIcon}>{item.icon}</Text>
+                  <Text style={[styles.menuLabel, isActive && styles.menuLabelActive]}>
+                    {item.label}
+                  </Text>
+                  {item.badge ? (
+                    <View style={[styles.badge, isActive && styles.badgeActive]}>
+                      <Text style={[styles.badgeText, isActive && styles.badgeTextActive]}>
+                        {item.badge}
+                      </Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Chuyển Phân Hệ Nhanh & Footer */}
+          <View style={styles.footerSection}>
+            <TouchableOpacity
+              style={styles.switchRoleBtn}
+              onPress={() => {
+                onClose();
+                onSwitchToStaff();
+              }}
+            >
+              <Text style={styles.switchRoleIcon}>🔄</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchRoleTitle}>Chuyển sang Cổng Nhân Viên</Text>
+                <Text style={styles.switchRoleSubtitle}>Bàn giao kho & Quản lý cơ sở</Text>
+              </View>
+              <Text style={styles.switchRoleArrow}>→</Text>
+            </TouchableOpacity>
+
+            <View style={styles.appVersionRow}>
+              <Text style={styles.appVersionText}>SelfStorage Customer Portal v2.4</Text>
+              <Text style={styles.appSupportPhone}>Hotline 24/7: 1900 8866</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+  },
+  sidebarContainer: {
+    width: 310,
+    maxWidth: '85%',
+    backgroundColor: '#0F172A',
+    height: '100%',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 20,
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  profileHeader: {
+    padding: 18,
+    paddingTop: 36,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#38BDF8',
+  },
+  customerName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  customerPhone: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  tierBadge: {
+    backgroundColor: 'rgba(234, 179, 8, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(234, 179, 8, 0.3)',
+  },
+  tierText: {
+    color: '#FACC15',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeBtnText: {
+    color: '#94A3B8',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  portalBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    backgroundColor: '#111827',
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
+  },
+  portalIndicator: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  portalLabel: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  menuScroll: {
+    flex: 1,
+    padding: 12,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 4,
+    gap: 12,
+  },
+  menuItemActive: {
+    backgroundColor: '#2563EB',
+  },
+  menuIcon: {
+    fontSize: 18,
+  },
+  menuLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#CBD5E1',
+    flex: 1,
+  },
+  menuLabelActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  badge: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  badgeActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  badgeTextActive: {
+    color: '#2563EB',
+  },
+  footerSection: {
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    backgroundColor: '#090D16',
+    gap: 10,
+  },
+  switchRoleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 10,
+  },
+  switchRoleIcon: {
+    fontSize: 18,
+  },
+  switchRoleTitle: {
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  switchRoleSubtitle: {
+    color: '#64748B',
+    fontSize: 9,
+    marginTop: 1,
+  },
+  switchRoleArrow: {
+    color: '#38BDF8',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  appVersionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  appVersionText: {
+    color: '#475569',
+    fontSize: 10,
+  },
+  appSupportPhone: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+});

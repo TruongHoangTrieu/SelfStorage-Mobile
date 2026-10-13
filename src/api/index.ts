@@ -206,3 +206,58 @@ export async function performCheckInApi(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+/**
+ * ==========================================================
+ * CÁC HÀM GỌI API CHO LUỒNG 3 (QUẢN LÝ Ô KHO ĐÃ THUÊ - CUSTOMER)
+ * ==========================================================
+ */
+
+/**
+ * Đăng nhập tài khoản khách hàng để lấy JWT Token
+ */
+export async function loginCustomerApi(email = 'hai.nguyen@example.com', password = '123456') {
+  const res = await apiRequest<{ accessToken: string; user?: any }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  if (res?.accessToken) {
+    setAuthToken(res.accessToken);
+  }
+  return res;
+}
+
+/**
+ * Lấy danh sách hợp đồng và các ô kho khách hàng đang thuê (GET /contracts/my-contracts)
+ */
+export async function fetchMyContractsApi() {
+  return apiRequest<any[]>('/contracts/my-contracts');
+}
+
+/**
+ * Đổi mã PIN Smart Lock của ô kho (POST /contracts/:contractId/units/:unitId/smart-lock/change-pin)
+ */
+export async function changeSmartLockPinApi(contractId: number, unitId: number, newPin: string) {
+  return apiRequest<any>(`/contracts/${contractId}/units/${unitId}/smart-lock/change-pin`, {
+    method: 'POST',
+    body: JSON.stringify({ newPin }),
+  });
+}
+
+/**
+ * Gửi yêu cầu hỗ trợ sự cố ô kho (POST /support)
+ */
+export async function createSupportRequestApi(payload: {
+  facilityId: number;
+  contractItemId?: number;
+  category: string;
+  subject: string;
+  description: string;
+  priority?: string;
+  photos?: any[];
+}) {
+  return apiRequest<any>('/support', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
