@@ -1,10 +1,11 @@
 /**
  * API Client config for Mobile App
  */
-export const API_BASE_URL = 'https://selfstorage-be-1.onrender.com/api';
+export const API_BASE_URL = 'http://localhost:5000/api';
+export const CLOUD_API_BASE_URL = 'https://selfstorage-be-1.onrender.com/api';
 
 export interface Facility {
-  id: string;
+  id: string | number;
   name: string;
   code: string;
   address: string;
@@ -18,7 +19,7 @@ export interface Facility {
 }
 
 export interface UnitType {
-  id: string;
+  id: string | number;
   name: string;
   code: string;
   size: number;
@@ -33,23 +34,10 @@ export interface UnitType {
   dimensions?: string;
 }
 
-export interface AvailabilityResult {
-  available: boolean;
-  availableUnitsCount: number;
-  unitType: UnitType;
-  estimatedPrice: {
-    monthlyRent: number;
-    deposit: number;
-    totalInitialPayment: number;
-    rentalPeriod: number;
-    rentalPeriodUnit: string;
-  };
-}
-
 export interface Reservation {
-  id: string;
-  facilityId: string;
-  unitTypeId: string;
+  id: string | number;
+  facilityId: string | number;
+  unitTypeId: string | number;
   appointmentDate: string;
   rentalPeriod: number;
   rentalPeriodUnit: string;
@@ -82,19 +70,139 @@ export async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${storedToken}`;
   }
 
-  const url = `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Thử gọi local backend trước (http://localhost:5000/api)
+  try {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    const errorMsg =
-      data?.message || data?.error || `Yêu cầu thất bại (${response.status})`;
-    throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+    if (!response.ok) {
+      const errorMsg =
+        data?.message || data?.error || `Yêu cầu thất bại (${response.status})`;
+      throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+    }
+
+    return data as T;
+  } catch (err: any) {
+    // Nếu kết nối local thất bại, thử sang cloud backend
+    if (err?.message?.indexOf('Failed to fetch') !== -1 || err?.message?.indexOf('Network request failed') !== -1) {
+      try {
+        const cloudUrl = `${CLOUD_API_BASE_URL}${endpoint}`;
+        const res = await fetch(cloudUrl, {
+          ...options,
+          headers,
+        });
+        const cloudData = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorMsg =
+            cloudData?.message || cloudData?.error || `Yêu cầu thất bại (${res.status})`;
+          throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+        }
+        return cloudData as T;
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
   }
+}
 
-  return data as T;
+/**
+ * ==========================================================
+ * CÁC HÀM GỌI API CHUYÊN BIỆT CHO LUỒNG 2 (CHECK-IN & HANDOVER)
+ * ==========================================================
+ */
+
+/**
+ * Đăng nhập tài khoản nhân viên cơ sở để lấy JWT accessToken
+ */
+export async function loginStaffApi(email = 'staff@selfstorage.vn', password = '123456') {
+  const res = await apiRequest<{ accessToken: string; user?: any }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  if (res?.accessToken) {
+    setAuthToken(res.accessToken);
+  }
+  return res;
+}
+
+/**
+ * Lấy danh sách đơn đặt chỗ từ Backend cho hàng đợi nhận kho
+ */
+export async function fetchStaffReservationsApi(facilityId?: number) {
+  let endpoint = '/reservations?limit=50';
+  if (facilityId) endpoint += `&facilityId=${facilityId}`;
+  return apiRequest<any>(endpoint);
+}
+
+/**
+ * Tra cứu chi tiết đơn đặt chỗ để chuẩn bị bàn giao (GET /handovers/reservations/:id)
+ */
+export async function getReservationForCheckInApi(reservationId: number) {
+  return apiRequest<any>(`/handovers/reservations/${reservationId}`);
+}
+
+/**
+ * Lấy danh sách ô kho vật lý (GET /storage-units)
+ */
+export async function getAvailableUnitsApi(facilityId = 1) {
+  return apiRequest<any>(`/storage-units?facilityId=${facilityId}`);
+}
+
+/**
+ * Kích hoạt bàn giao kho & hợp đồng (POST /handovers/check-in)
+ */
+export async function performCheckInApi(payload: {
+  reservationId: number;
+  condition: string;
+  notes?: string;
+  photos?: any[];
+  unitCode?: string;
+}) {
+  return apiRequest<{
+    message: string;
+    contract: {
+      id: number;
+      contractCode: string;
+      startDate: string;
+      endDate: string;
+      status: string;
+      monthlyRent: any;
+      depositAmount: any;
+    };
+    contractItems?: {
+      id: number;
+      unitId: number;
+      unitNumber: string;
+      rentalPrice?: any;
+      depositAmount?: any;
+      accessCode?: string;
+      accessCodeStatus?: string;
+      status?: string;
+    }[];
+    accessCodes?: {
+      id: number;
+      code: string;
+      unitId: number;
+      type: string;
+      validFrom: string;
+      validTo: string;
+    }[];
+    handoverRecords: {
+      id: number;
+      unitId: number;
+      type: string;
+      condition: string;
+      notes?: string;
+      handoverDate: string;
+    }[];
+  }>('/handovers/check-in', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }

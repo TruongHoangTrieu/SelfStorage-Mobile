@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,19 +13,60 @@ import {
   StatusBar,
   RefreshControl,
   Image,
-  Dimensions,
+  Platform,
 } from 'react-native';
 import {
   apiRequest,
   setAuthToken,
+  getAuthToken,
+  loginStaffApi,
+  fetchStaffReservationsApi,
+  getReservationForCheckInApi,
+  getAvailableUnitsApi,
+  performCheckInApi,
   Facility,
   UnitType,
   Reservation,
 } from './src/api';
+import {
+  CheckInAppointment,
+  AvailableUnit,
+  StaffTab,
+  FlowStep,
+} from './src/types/handover';
+import {
+  CURRENT_STAFF_USER,
+  INITIAL_APPOINTMENTS,
+  INITIAL_AVAILABLE_UNITS,
+} from './src/data/mockStaffData';
+import { formatVND, formatVietnameseDate } from './src/utils/formatters';
 
-const { width } = Dimensions.get('window');
+// Sub-components cho Phân hệ Nhân viên (Luồng 2)
+import StaffSidebar from './src/components/staff/StaffSidebar';
+import CheckInQueueScreen from './src/screens/staff/CheckInQueueScreen';
+import HandoverDetailScreen from './src/screens/staff/HandoverDetailScreen';
+import HandoverSuccessScreen from './src/screens/staff/HandoverSuccessScreen';
+import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
+import UnitMapScreen from './src/screens/staff/UnitMapScreen';
+import StaffSettingsScreen from './src/screens/staff/StaffSettingsScreen';
+import PrintReceiptModal from './src/components/staff/PrintReceiptModal';
 
-// High-quality imagery matching the web platform & real storage facility
+// Helper format khung giờ
+function formatSlotTime(isoString?: string): string {
+  if (!isoString) return '09:00 SA';
+  try {
+    const d = new Date(isoString);
+    let hours = d.getHours();
+    const minutes = ('0' + d.getMinutes()).slice(-2);
+    const period = hours >= 12 ? 'CH' : 'SA';
+    hours = hours % 12 || 12;
+    return `${('0' + hours).slice(-2)}:${minutes} ${period}`;
+  } catch {
+    return '09:00 SA';
+  }
+}
+
+// Hình ảnh kho thực tế chất lượng cao
 const DEFAULT_FACILITY_IMAGES = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80',
   'https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=1200&q=80',
@@ -39,28 +80,26 @@ const DEFAULT_UNIT_IMAGES: Record<string, string> = {
   climate: 'https://images.unsplash.com/photo-1605371924599-2d0365da1ae0?auto=format&fit=crop&w=800&q=80',
 };
 
-// Facility amenity gallery items matching web
-const FACILITY_AMENITIES = [
-  {
-    title: 'Khóa cửa bảo mật Smart PIN 24/7',
-    image: 'https://images.unsplash.com/photo-1508873696983-2df5293cb325?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    title: 'Sảnh bốc xếp hàng xe tải vào tận nơi',
-    image: 'https://images.unsplash.com/photo-1586528116480-1a74d75dca26?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    title: 'Thang máy hàng tải trọng lớn 2 tấn',
-    image: 'https://images.unsplash.com/photo-1580674684081-7617fbf3d745?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    title: 'Hệ thống hút ẩm & máy lạnh 24/7',
-    image: 'https://images.unsplash.com/photo-1605371924599-2d0365da1ae0?auto=format&fit=crop&w=600&q=80',
-  },
-];
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'book' | 'my_reservations'>('book');
+  // ================= CHẾ ĐỘ ỨNG DỤNG (CUSTOMER vs STAFF) =================
+  const [appMode, setAppMode] = useState<'customer' | 'staff'>('staff'); // Mặc định mở Staff Portal Luồng 2
+
+  // ================= STATE CHO CỔNG NHÂN VIÊN (LUỒNG 2) =================
+  const [staffTab, setStaffTab] = useState<StaffTab>('queue');
+  const [flowStep, setFlowStep] = useState<FlowStep>('queue');
+  const [isSidebarVisible, setIsSidebarVisible] = useState<boolean>(false);
+  const [appointments, setAppointments] = useState<CheckInAppointment[]>(INITIAL_APPOINTMENTS);
+  const [availableUnits, setAvailableUnits] = useState<AvailableUnit[]>(INITIAL_AVAILABLE_UNITS);
+  const [selectedAppointment, setSelectedAppointment] = useState<CheckInAppointment | null>(
+    INITIAL_APPOINTMENTS[0]
+  );
+  const [isStaffLoading, setIsStaffLoading] = useState<boolean>(false);
+  const [isSubmittingHandover, setIsSubmittingHandover] = useState<boolean>(false);
+  const [showQuickPrintModal, setShowQuickPrintModal] = useState<boolean>(false);
+  const [backendConnected, setBackendConnected] = useState<boolean>(false);
+
+  // ================= STATE CHO PHÂN HỆ KHÁCH HÀNG (CUSTOMER) =================
+  const [customerTab, setCustomerTab] = useState<'book' | 'my_reservations'>('book');
   const [step, setStep] = useState<number>(1);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);
@@ -85,9 +124,95 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
+  // ================= KHỞI TẠO SESSION & TẢI DỮ LIỆU TỪ BACKEND =================
+  const loadStaffData = useCallback(async () => {
+    try {
+      setIsStaffLoading(true);
+
+      // 1. Tự động xác thực tài khoản Staff với Backend để lấy JWT token
+      await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+
+      // 2. Gọi song song API lấy Đơn hẹn (`GET /reservations`) và Ô kho (`GET /storage-units`)
+      const [resData, unitsData] = await Promise.all([
+        fetchStaffReservationsApi(1).catch(() => null),
+        getAvailableUnitsApi(1).catch(() => null),
+      ]);
+
+      // Xử lý danh sách đơn hẹn từ Backend
+      const rawReservations = Array.isArray(resData?.data) ? resData.data : (Array.isArray(resData) ? resData : null);
+      if (rawReservations && rawReservations.length > 0) {
+        setBackendConnected(true);
+        const mappedAppointments: CheckInAppointment[] = rawReservations.map((item: any) => {
+          const firstItem = item.items?.[0];
+          const backendStatus = String(item.status || '').toUpperCase();
+          let appStatus: CheckInAppointment['status'] = 'pending';
+          if (backendStatus === 'COMPLETED') appStatus = 'completed';
+          else if (backendStatus === 'CONFIRMED') appStatus = 'confirmed';
+          else if (backendStatus === 'IN_PROGRESS') appStatus = 'in_progress';
+          else if (backendStatus === 'CANCELLED') appStatus = 'cancelled';
+
+          return {
+            id: item.reservationCode || `RSV-${item.id}`,
+            rawId: item.id,
+            facilityId: item.facilityId,
+            facilityName: item.facility?.name || 'Trụ sở chính Thủ Đức',
+            customerName: item.customer?.fullName || 'Khách hàng',
+            phone: item.customer?.phone || '0908123456',
+            email: item.customer?.email || 'customer@example.com',
+            idCard: item.customer?.idCard || 'Đã đối chiếu tại quầy',
+            slotTime: formatSlotTime(item.appointmentDate),
+            timeCategory: new Date(item.appointmentDate).getHours() >= 12 ? 'afternoon' : 'morning',
+            unitType: firstItem?.unitType?.name || 'Kho Cá Nhân Mini',
+            unitTypeId: firstItem?.unitTypeId || 1,
+            unitSize: `${firstItem?.unitType?.size || 4.9}m² (Tiêu chuẩn)`,
+            unitId: firstItem?.unitId || 1,
+            assignedUnit: firstItem?.unit?.unitNumber || 'A-101',
+            preferredFloor: firstItem?.unit?.floor || 'Tầng 1',
+            status: appStatus,
+            depositStatus: 'paid',
+            depositAmount: formatVND(firstItem?.depositAmount || item.totalAmount || 890000),
+            monthlyRent: formatVND(firstItem?.price || 890000) + '/tháng',
+            startDate: formatVietnameseDate(item.appointmentDate),
+            durationMonths: item.rentalPeriod || 1,
+            purpose: 'Lưu trữ tài liệu và đồ đạc',
+            specialNotes: item.notes || undefined,
+            accessPin: item.rentalContract?.contractItems?.[0]?.accessCode || item.rentalContract?.accessCodes?.[0]?.code || undefined,
+            contractCode: item.rentalContract?.contractCode || undefined,
+          };
+        });
+
+        setAppointments(mappedAppointments);
+        if (mappedAppointments.length > 0 && !selectedAppointment) {
+          setSelectedAppointment(mappedAppointments[0]);
+        }
+      }
+
+      // Xử lý danh sách ô kho từ Backend
+      if (Array.isArray(unitsData) && unitsData.length > 0) {
+        const mappedUnits: AvailableUnit[] = unitsData.map((u: any) => ({
+          id: String(u.id),
+          rawId: u.id,
+          code: u.unitNumber,
+          type: u.unitType?.name || 'Kho tiêu chuẩn',
+          size: `${u.unitType?.size || 5}m²`,
+          floor: u.floor || 'Tầng 1',
+          zone: 'Khu A',
+          features: u.condition || 'Khóa Smart PIN 24/7',
+          status: u.status === 'AVAILABLE' ? 'vacant' : 'occupied',
+        }));
+        setAvailableUnits(mappedUnits);
+      }
+    } catch (err: any) {
+      console.warn('Backend loadStaffData notice:', err.message);
+    } finally {
+      setIsStaffLoading(false);
+    }
+  }, [selectedAppointment]);
+
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    loadStaffData();
+    loadCustomerData();
+  }, [loadStaffData]);
 
   const getUnitImage = (name: string = '', index: number = 0) => {
     const lower = name.toLowerCase();
@@ -107,7 +232,7 @@ export default function App() {
     return keys[index % keys.length];
   };
 
-  const loadInitialData = async () => {
+  const loadCustomerData = async () => {
     try {
       setLoading(true);
       const [facData, utData] = await Promise.all([
@@ -123,31 +248,22 @@ export default function App() {
           }))
         : [
             {
-              id: 'fac-1',
+              id: 1,
+              name: 'SelfStorage Thủ Đức (Trụ sở Võ Nguyên Giáp)',
+              code: 'SS-TD',
+              address: '456 Võ Văn Ngân, Phường Linh Chiểu, TP. Thủ Đức, TP.HCM',
+              status: 'ACTIVE',
+              image: DEFAULT_FACILITY_IMAGES[1],
+              rating: 4.9,
+            },
+            {
+              id: 3,
               name: 'SelfStorage Quận 1 (Central Hub)',
               code: 'SS-Q1',
               address: '123 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
               status: 'ACTIVE',
               image: DEFAULT_FACILITY_IMAGES[0],
               rating: 4.9,
-            },
-            {
-              id: 'fac-2',
-              name: 'SelfStorage Thủ Đức (Khu Công Nghệ)',
-              code: 'SS-TD',
-              address: '456 Võ Văn Ngân, Phường Linh Chiểu, TP. Thủ Đức, TP.HCM',
-              status: 'ACTIVE',
-              image: DEFAULT_FACILITY_IMAGES[1],
-              rating: 4.8,
-            },
-            {
-              id: 'fac-3',
-              name: 'SelfStorage Quận 7 (Phú Mỹ Hưng)',
-              code: 'SS-Q7',
-              address: '789 Nguyễn Văn Linh, Tân Phong, Quận 7, TP.HCM',
-              status: 'ACTIVE',
-              image: DEFAULT_FACILITY_IMAGES[2],
-              rating: 5.0,
             },
           ];
 
@@ -167,7 +283,7 @@ export default function App() {
           }))
         : [
             {
-              id: 'ut-1',
+              id: 1,
               name: 'Kho Cá Nhân Mini (Box 4.9m²)',
               code: 'UT-MINI',
               size: 4.9,
@@ -181,7 +297,7 @@ export default function App() {
               features: ['Khóa Smart Lock PIN cá nhân', 'Máy hút ẩm chống mốc', 'Phù hợp 20 thùng đồ'],
             },
             {
-              id: 'ut-2',
+              id: 2,
               name: 'Kho Gia Đình Tiêu Chuẩn (Box 9.0m²)',
               code: 'UT-MED',
               size: 9.0,
@@ -195,7 +311,7 @@ export default function App() {
               features: ['Đầy đủ nội thất căn hộ 1-2PN', 'Điều hòa không khí 24/7', 'Xe đẩy bốc xếp miễn phí'],
             },
             {
-              id: 'ut-3',
+              id: 3,
               name: 'Kho Doanh Nghiệp & TMĐT (Box 14.5m²)',
               code: 'UT-LARGE',
               size: 14.5,
@@ -206,21 +322,7 @@ export default function App() {
               status: 'ACTIVE',
               image: DEFAULT_UNIT_IMAGES.large,
               dimensions: 'Dài 3.6m x Rộng 4.0m x Cao 2.8m',
-              features: ['Cửa cuộn rộng 2m bốc xếp nhanh', 'Xe tải vào tận sảnh tầng kho', 'Hỗ trợ xuất hóa đơn VAT'],
-            },
-            {
-              id: 'ut-4',
-              name: 'Kho Mát Bảo Quản (23-25°C & 55% RH)',
-              code: 'UT-CLIMATE',
-              size: 6.5,
-              sizeUnit: 'm²',
-              price: 1990000,
-              depositAmount: 1990000,
-              description: 'Bảo quản mỹ phẩm, rượu vang, thiết bị điện tử tinh xảo và đồ gỗ cao cấp.',
-              status: 'ACTIVE',
-              image: DEFAULT_UNIT_IMAGES.climate,
-              dimensions: 'Dài 2.5m x Rộng 2.6m x Cao 2.8m',
-              features: ['Nhiệt độ ổn định 23-25°C', 'Độ ẩm chuẩn < 55% RH', 'Cảm biến IoT báo động cháy'],
+              features: ['Cửa cuốn rộng 2m bốc xếp nhanh', 'Xe tải vào tận sảnh tầng kho', 'Hỗ trợ xuất hóa đơn VAT'],
             },
           ];
 
@@ -229,7 +331,7 @@ export default function App() {
       setSelectedFacility(resolvedFacilities[0]);
       setSelectedUnitType(resolvedUnitTypes[0]);
     } catch (err: any) {
-      console.warn('Lỗi tải dữ liệu:', err.message);
+      console.warn('Lỗi tải dữ liệu khách:', err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -265,7 +367,7 @@ export default function App() {
       setLoadingReservations(true);
       const data = await apiRequest<Reservation[]>('/reservations/my');
       setMyReservations(Array.isArray(data) ? data : []);
-    } catch (err: any) {
+    } catch {
       // ignore
     } finally {
       setLoadingReservations(false);
@@ -280,23 +382,10 @@ export default function App() {
 
     try {
       setSubmitting(true);
-      if (!isLoggedIn) {
-        const loginRes = await apiRequest<any>('/auth/google', {
-          method: 'POST',
-          body: JSON.stringify({
-            credential: 'demo-google-token-mobile-' + Date.now(),
-          }),
-        }).catch(() => null);
-        if (loginRes?.accessToken) {
-          setAuthToken(loginRes.accessToken);
-          setIsLoggedIn(true);
-        }
-      }
-
       const isoAppointmentDate = new Date(`${appointmentDate}T09:00:00.000Z`).toISOString();
       const payload = {
-        facilityId: selectedFacility.id,
-        unitTypeId: selectedUnitType.id,
+        facilityId: Number(selectedFacility.id),
+        unitTypeId: Number(selectedUnitType.id),
         appointmentDate: isoAppointmentDate,
         rentalPeriod: Number(rentalPeriod),
         rentalPeriodUnit: 'MONTHS',
@@ -319,6 +408,7 @@ export default function App() {
 
       setSuccessReservation(result);
       loadMyReservations();
+      loadStaffData(); // Cập nhật hàng đợi staff
     } catch (err: any) {
       Alert.alert('Đặt kho thất bại', err.message || 'Vui lòng thử lại');
     } finally {
@@ -341,500 +431,748 @@ export default function App() {
     return { monthly, deposit, total, discount: discountAmount, discountPercent };
   };
 
+  // ================= XỬ LÝ NGHIỆP VỤ LUỒNG 2: BẮT ĐẦU VÀ HOÀN TẤT BÀN GIAO =================
+  const handleStartHandover = async (app: CheckInAppointment) => {
+    try {
+      // 1. [ Bắt đầu nhận kho ]: Gọi API Backend lấy chi tiết đơn đặt chỗ nếu có ID số
+      let activeApp = { ...app, status: 'in_progress' as const };
+      if (app.rawId) {
+        const detail = await getReservationForCheckInApi(app.rawId).catch(() => null);
+        if (detail) {
+          const firstItem = detail.items?.[0];
+          activeApp = {
+            ...activeApp,
+            customerName: detail.customer?.fullName || activeApp.customerName,
+            phone: detail.customer?.phone || activeApp.phone,
+            email: detail.customer?.email || activeApp.email,
+            assignedUnit: firstItem?.unit?.unitNumber || activeApp.assignedUnit,
+            unitType: firstItem?.unitType?.name || activeApp.unitType,
+            unitSize: `${firstItem?.unitType?.size || 4.9}m²`,
+            depositAmount: formatVND(firstItem?.depositAmount || activeApp.depositAmount),
+          };
+        }
+      }
+
+      setAppointments((prev) =>
+        prev.map((item) => (item.id === app.id ? activeApp : item))
+      );
+      setSelectedAppointment(activeApp);
+      setFlowStep('handover');
+    } catch (err: any) {
+      Alert.alert('Thông báo', err.message || 'Chuyển sang màn hình bàn giao');
+      setSelectedAppointment({ ...app, status: 'in_progress' });
+      setFlowStep('handover');
+    }
+  };
+
+  const handleCompleteHandover = async (updatedData: {
+    appointmentId: string;
+    unitCode: string;
+    condition: string;
+    notes?: string;
+  }) => {
+    setIsSubmittingHandover(true);
+    try {
+      const app =
+        appointments.find((a) => a.id === updatedData.appointmentId) ||
+        selectedAppointment;
+      if (!app) {
+        throw new Error('Không tìm thấy thông tin cuộc hẹn để bàn giao');
+      }
+
+      let generatedContract = '';
+      let generatedPin = '';
+
+      // Tự động đảm bảo JWT Token hợp lệ cho Staff
+      if (!getAuthToken()) {
+        await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+      }
+
+      // Gọi API atomic check-in chính thức của Backend (POST /handovers/check-in)
+      if (app.rawId) {
+        try {
+          const checkInResponse = await performCheckInApi({
+            reservationId: app.rawId,
+            condition: updatedData.condition,
+            notes: updatedData.notes,
+            unitCode: updatedData.unitCode,
+          });
+
+          if (checkInResponse?.contract) {
+            generatedContract = checkInResponse.contract.contractCode;
+            generatedPin =
+              checkInResponse.contractItems?.[0]?.accessCode ||
+              checkInResponse.accessCodes?.[0]?.code ||
+              '682914';
+          }
+        } catch (apiErr: any) {
+          console.warn('Backend performCheckInApi notice:', apiErr.message);
+          // Nếu backend trả về đã check in rồi thì tiếp tục hiển thị trạng thái hoàn tất
+          if (!apiErr.message?.includes('already been checked in')) {
+            throw apiErr;
+          }
+        }
+      }
+
+      // Fallback code nếu chưa kết nối server
+      if (!generatedContract) {
+        const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+        generatedContract = `CON-${datePart}-${randomPart}`;
+        generatedPin = app.accessPin || Math.floor(100000 + Math.random() * 900000).toString();
+      }
+
+      // [ Hoàn tất bàn giao ]: Cập nhật trạng thái ô kho thành ĐANG THUÊ (Occupied) và đơn hàng thành HOÀN TẤT
+      const completedRecord: CheckInAppointment = {
+        ...app,
+        assignedUnit: updatedData.unitCode,
+        status: 'completed',
+        contractCode: generatedContract,
+        accessPin: generatedPin,
+        completedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setAppointments((prev) =>
+        prev.map((item) => (item.id === app.id ? completedRecord : item))
+      );
+
+      // Cập nhật ô kho sang OCCUPIED trong availableUnits
+      setAvailableUnits((prev) =>
+        prev.map((u) => (u.code === updatedData.unitCode ? { ...u, status: 'occupied' } : u))
+      );
+
+      setSelectedAppointment(completedRecord);
+
+      // Chuyển sang Trang C: Hoàn tất bàn giao
+      setFlowStep('success');
+
+      // Tự động tải lại dữ liệu từ backend để đồng bộ
+      loadStaffData();
+    } catch (err: any) {
+      console.error('Handover complete error:', err);
+      const errMsg = err.message || 'Không thể hoàn tất bàn giao. Vui lòng thử lại.';
+      if (Platform.OS === 'web') {
+        window.alert(`Lỗi bàn giao: ${errMsg}`);
+      } else {
+        Alert.alert('Lỗi bàn giao', errMsg);
+      }
+    } finally {
+      setIsSubmittingHandover(false);
+    }
+  };
+
   const estimate = calculateEstimate();
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
 
-      {/* Top Navigation Bar */}
-      <View style={styles.navBar}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoIcon}>📦</Text>
-          <Text style={styles.logoText}>SelfStorage</Text>
-        </View>
+      {/* ================= GIAO DIỆN PHÂN HỆ CỔNG NHÂN VIÊN (STAFF PORTAL - LUỒNG 2) ================= */}
+      {appMode === 'staff' ? (
+        <View style={{ flex: 1 }}>
+          {/* Thanh Sidebar (Drawer) 6 mục */}
+          <StaffSidebar
+            visible={isSidebarVisible}
+            onClose={() => setIsSidebarVisible(false)}
+            activeTab={staffTab}
+            onSelectTab={(tab) => {
+              setStaffTab(tab);
+              if (tab === 'queue') setFlowStep('queue');
+            }}
+            currentUser={CURRENT_STAFF_USER}
+            pendingCount={appointments.filter((a) => a.status === 'pending' || a.status === 'arrived').length}
+            onSwitchToCustomer={() => setAppMode('customer')}
+          />
 
-        <TouchableOpacity
-          style={styles.authButton}
-          onPress={() => setShowAuthModal(true)}
-        >
-          <Text style={styles.authButtonText}>
-            {isLoggedIn ? '👤 Khách Hàng' : 'Đăng Nhập'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Segmented Control Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'book' && styles.tabItemActive]}
-          onPress={() => setActiveTab('book')}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'book' && styles.tabLabelActive]}>
-            ✨ Đặt Kho Mới
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'my_reservations' && styles.tabItemActive]}
-          onPress={() => {
-            setActiveTab('my_reservations');
-            if (isLoggedIn) loadMyReservations();
-          }}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'my_reservations' && styles.tabLabelActive]}>
-            📋 Đơn Của Tôi ({myReservations.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.centerText}>Đang tải hình ảnh & danh sách kho...</Text>
-        </View>
-      ) : activeTab === 'book' ? (
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={styles.scrollPadding}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadInitialData} />}
-        >
-          {/* Stepper Wizard Progress */}
-          <View style={styles.stepperContainer}>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepCircle, step >= 1 && styles.stepCircleActive]}>
-                <Text style={styles.stepNumber}>1</Text>
-              </View>
-              <Text style={[styles.stepLabel, step === 1 && styles.stepLabelActive]}>Chọn Cơ Sở</Text>
-            </View>
-
-            <View style={[styles.stepDivider, step >= 2 && styles.stepDividerActive]} />
-
-            <View style={styles.stepItem}>
-              <View style={[styles.stepCircle, step >= 2 && styles.stepCircleActive]}>
-                <Text style={styles.stepNumber}>2</Text>
-              </View>
-              <Text style={[styles.stepLabel, step === 2 && styles.stepLabelActive]}>Chọn Ngăn Kho</Text>
-            </View>
-
-            <View style={[styles.stepDivider, step >= 3 && styles.stepDividerActive]} />
-
-            <View style={styles.stepItem}>
-              <View style={[styles.stepCircle, step >= 3 && styles.stepCircleActive]}>
-                <Text style={styles.stepNumber}>3</Text>
-              </View>
-              <Text style={[styles.stepLabel, step === 3 && styles.stepLabelActive]}>Xác Nhận & Cọc</Text>
-            </View>
-          </View>
-
-          {/* ================= STEP 1: CHỌN CƠ SỞ KHO CÓ ẢNH THỰC TẾ ================= */}
-          {step === 1 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>1. Chọn Chi Nhánh Kho Gần Bạn</Text>
-              <Text style={styles.sectionSubtitle}>
-                Hệ thống kho tự quản hiện đại đạt chuẩn an ninh quốc tế với camera 24/7.
-              </Text>
-
-              {facilities.map((fac) => {
-                const isSelected = selectedFacility?.id === fac.id;
-                return (
-                  <TouchableOpacity
-                    key={fac.id}
-                    activeOpacity={0.9}
-                    style={[styles.facilityCard, isSelected && styles.facilityCardActive]}
-                    onPress={() => setSelectedFacility(fac)}
-                  >
-                    {/* Facility Image Cover */}
-                    <View style={styles.facilityImageWrapper}>
-                      <Image
-                        source={{ uri: fac.image }}
-                        style={styles.facilityImage}
-                        resizeMode="cover"
-                      />
-                      <View style={styles.ratingBadge}>
-                        <Text style={styles.ratingText}>⭐ {fac.rating || '4.9'}</Text>
-                      </View>
-                      <View style={styles.statusBadge}>
-                        <Text style={styles.statusText}>🟢 Mở cửa 24/7</Text>
-                      </View>
-                    </View>
-
-                    {/* Facility Details */}
-                    <View style={styles.facilityContent}>
-                      <View style={styles.facilityHeaderRow}>
-                        <Text style={styles.facilityTitle}>{fac.name}</Text>
-                        <View style={[styles.checkCircle, isSelected && styles.checkCircleActive]}>
-                          {isSelected && <Text style={styles.checkIcon}>✓</Text>}
-                        </View>
-                      </View>
-
-                      <Text style={styles.facilityAddress}>📍 {fac.address}</Text>
-
-                      <View style={styles.facilityPillsRow}>
-                        <Text style={styles.pillTag}>Mã kho: {fac.code}</Text>
-                        <Text style={styles.pillTag}>Xe tải vào tận nơi</Text>
-                        <Text style={styles.pillTag}>Bảo vệ 24/7</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-
-              <TouchableOpacity
-                style={styles.nextBtn}
-                onPress={() => {
-                  if (!selectedFacility) {
-                    Alert.alert('Thông báo', 'Vui lòng chọn cơ sở kho');
-                    return;
-                  }
-                  setStep(2);
+          {/* Render Nội Dung Staff Theo Tab & FlowStep */}
+          {staffTab === 'queue' ? (
+            flowStep === 'queue' ? (
+              /* TRANG A: Hàng đợi Nhận kho trong ngày */
+              <CheckInQueueScreen
+                appointments={appointments}
+                onStartHandover={handleStartHandover}
+                onRefresh={loadStaffData}
+                isRefreshing={isStaffLoading}
+                onOpenSidebar={() => setIsSidebarVisible(true)}
+                facilityName={CURRENT_STAFF_USER.facilityName}
+              />
+            ) : flowStep === 'handover' && selectedAppointment ? (
+              /* TRANG B: Xác thực khách hàng & Bàn giao kho */
+              <HandoverDetailScreen
+                appointment={selectedAppointment}
+                availableUnits={availableUnits}
+                onBackToQueue={() => setFlowStep('queue')}
+                onCompleteHandover={handleCompleteHandover}
+                isSubmitting={isSubmittingHandover}
+              />
+            ) : flowStep === 'success' && selectedAppointment ? (
+              /* TRANG C: Hoàn tất Bàn giao */
+              <HandoverSuccessScreen
+                appointment={selectedAppointment}
+                assignedUnitCode={selectedAppointment.assignedUnit}
+                contractCode={selectedAppointment.contractCode}
+                accessPin={selectedAppointment.accessPin}
+                onBackToQueue={() => {
+                  setFlowStep('queue');
+                  setStaffTab('queue');
+                  loadStaffData();
                 }}
-              >
-                <Text style={styles.nextBtnText}>Tiếp Tục: Chọn Kích Thước Kho →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ================= STEP 2: CHỌN LOẠI KHO CÓ HÌNH ẢNH MINH HỌA & KÍCH THƯỚC ================= */}
-          {step === 2 && (
-            <View style={styles.section}>
-              <View style={styles.stepBackHeader}>
-                <TouchableOpacity onPress={() => setStep(1)} style={styles.backBtnTextRow}>
-                  <Text style={styles.backBtnText}>← Đổi Chi Nhánh ({selectedFacility?.code})</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.sectionTitle}>2. Chọn Kích Thước Ngăn Kho</Text>
-              <Text style={styles.sectionSubtitle}>
-                Tất cả phòng kho đều trang bị máy lạnh, hút ẩm và khóa điện tử Smart Lock.
-              </Text>
-
-              {unitTypes.map((ut) => {
-                const isSelected = selectedUnitType?.id === ut.id;
-                return (
-                  <TouchableOpacity
-                    key={ut.id}
-                    activeOpacity={0.9}
-                    style={[styles.unitCard, isSelected && styles.unitCardActive]}
-                    onPress={() => setSelectedUnitType(ut)}
-                  >
-                    <Image
-                      source={{ uri: ut.image }}
-                      style={styles.unitImage}
-                      resizeMode="cover"
-                    />
-
-                    <View style={styles.unitContent}>
-                      <View style={styles.unitTopRow}>
-                        <View>
-                          <Text style={styles.unitName}>{ut.name}</Text>
-                          <Text style={styles.unitDimensions}>{ut.dimensions || `${ut.size} m²`}</Text>
-                        </View>
-                        <View style={styles.sizePill}>
-                          <Text style={styles.sizePillText}>{ut.size} {ut.sizeUnit || 'm²'}</Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.unitDescription}>{ut.description}</Text>
-
-                      {/* Feature Bullet Points */}
-                      <View style={styles.featuresList}>
-                        {ut.features?.map((feat, idx) => (
-                          <View key={idx} style={styles.featureItem}>
-                            <Text style={styles.featureCheck}>✓</Text>
-                            <Text style={styles.featureText}>{feat}</Text>
-                          </View>
-                        ))}
-                      </View>
-
-                      {/* Price Section */}
-                      <View style={styles.priceRow}>
-                        <View>
-                          <Text style={styles.priceText}>
-                            {Number(ut.price).toLocaleString('vi-VN')} đ
-                            <Text style={styles.priceSub}> /tháng</Text>
-                          </Text>
-                          <Text style={styles.depositSub}>
-                            Tiền cọc giữ chỗ: {Number(ut.depositAmount || ut.price).toLocaleString('vi-VN')} đ
-                          </Text>
-                        </View>
-
-                        <View style={[styles.selectBtn, isSelected && styles.selectBtnActive]}>
-                          <Text style={[styles.selectBtnText, isSelected && styles.selectBtnTextActive]}>
-                            {isSelected ? 'ĐÃ CHỌN ✓' : 'CHỌN Ô NÀY'}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-
-              <View style={styles.buttonActionRow}>
-                <TouchableOpacity style={styles.outlineBackBtn} onPress={() => setStep(1)}>
-                  <Text style={styles.outlineBackBtnText}>← Quay Lại</Text>
-                </TouchableOpacity>
-
+                onPrintAgain={() => setShowQuickPrintModal(true)}
+              />
+            ) : (
+              <CheckInQueueScreen
+                appointments={appointments}
+                onStartHandover={handleStartHandover}
+                onRefresh={loadStaffData}
+                isRefreshing={isStaffLoading}
+                onOpenSidebar={() => setIsSidebarVisible(true)}
+                facilityName={CURRENT_STAFF_USER.facilityName}
+              />
+            )
+          ) : staffTab === 'dashboard' ? (
+            /* TAB 1: Bảng điều khiển (Tổng quan hôm nay) */
+            <StaffDashboardScreen
+              appointments={appointments}
+              onGoToQueue={() => {
+                setStaffTab('queue');
+                setFlowStep('queue');
+              }}
+              onOpenSidebar={() => setIsSidebarVisible(true)}
+              facilityName={CURRENT_STAFF_USER.facilityName}
+            />
+          ) : staffTab === 'facility' ? (
+            /* TAB 4: Sơ đồ cơ sở & Trạng thái ô kho */
+            <UnitMapScreen
+              availableUnits={availableUnits}
+              onOpenSidebar={() => setIsSidebarVisible(true)}
+              facilityName={CURRENT_STAFF_USER.facilityName}
+            />
+          ) : staffTab === 'settings' ? (
+            /* TAB 6: Cài đặt nhân viên */
+            <StaffSettingsScreen
+              currentUser={CURRENT_STAFF_USER}
+              onOpenSidebar={() => setIsSidebarVisible(true)}
+              onSwitchToCustomer={() => setAppMode('customer')}
+            />
+          ) : (
+            /* Các tab khác: Checkout / Support */
+            <View style={styles.otherTabContainer}>
+              <View style={styles.otherTabTopBar}>
                 <TouchableOpacity
-                  style={[styles.nextBtn, { flex: 1 }]}
+                  style={styles.menuIconBtn}
+                  onPress={() => setIsSidebarVisible(true)}
+                >
+                  <Text style={{ color: '#fff', fontSize: 20 }}>☰</Text>
+                </TouchableOpacity>
+                <Text style={styles.otherTabTitle}>
+                  {staffTab === 'checkout' ? '📤 TRẢ KHO / THANH LÝ' : '🛠️ HỖ TRỢ & SỰ CỐ'}
+                </Text>
+              </View>
+              <View style={styles.otherTabBody}>
+                <Text style={{ fontSize: 40, marginBottom: 10 }}>
+                  {staffTab === 'checkout' ? '📤' : '🛠️'}
+                </Text>
+                <Text style={styles.otherTabHeadline}>
+                  {staffTab === 'checkout'
+                    ? 'Phân hệ Trả kho & Nghiệm thu hoàn cọc'
+                    : 'Phân hệ Xử lý sự cố tại chỗ (Ticket)'}
+                </Text>
+                <Text style={styles.otherTabDesc}>
+                  Tính năng đang kết nối với hệ thống Backend. Bạn có thể chuyển sang Hàng Đợi Nhận Kho (Luồng 2) để tiếp tục thao tác.
+                </Text>
+                <TouchableOpacity
+                  style={styles.backToQueueActionBtn}
                   onPress={() => {
-                    if (!selectedUnitType) {
-                      Alert.alert('Thông báo', 'Vui lòng chọn loại ngăn kho');
-                      return;
-                    }
-                    setStep(3);
+                    setStaffTab('queue');
+                    setFlowStep('queue');
                   }}
                 >
-                  <Text style={styles.nextBtnText}>Tiếp Theo: Lịch Nhận Kho →</Text>
+                  <Text style={styles.backToQueueActionText}>Vào Hàng Đợi Nhận Kho (Luồng 2) →</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* ================= STEP 3: LỊCH BÀN GIAO & TÍNH TIỀN CỌC ================= */}
-          {step === 3 && (
-            <View style={styles.section}>
-              <View style={styles.stepBackHeader}>
-                <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtnTextRow}>
-                  <Text style={styles.backBtnText}>← Đổi loại kho ({selectedUnitType?.name})</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.sectionTitle}>3. Lịch Nhận Kho & Xác Nhận Đặt Chỗ</Text>
-
-              {/* Selected Summary Card */}
-              <View style={styles.summaryBox}>
-                <Image
-                  source={{ uri: selectedUnitType?.image }}
-                  style={styles.summaryBoxImage}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.summaryFacilityName}>{selectedFacility?.name}</Text>
-                  <Text style={styles.summaryUnitName}>{selectedUnitType?.name} ({selectedUnitType?.size}m²)</Text>
-                  <Text style={styles.summaryPrice}>
-                    {Number(selectedUnitType?.price).toLocaleString('vi-VN')} đ/tháng
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.inputHeader}>📅 Ngày bạn đến nhận kho (YYYY-MM-DD):</Text>
-              <TextInput
-                style={styles.textInputBox}
-                value={appointmentDate}
-                onChangeText={setAppointmentDate}
-                placeholder="2026-10-15"
-              />
-
-              <Text style={styles.inputHeader}>⏱️ Thời hạn thuê (Nhận ưu đãi giảm giá):</Text>
-              <View style={styles.durationRow}>
-                {[
-                  { m: 1, label: '1 Tháng', discount: '' },
-                  { m: 3, label: '3 Tháng', discount: '-5%' },
-                  { m: 6, label: '6 Tháng', discount: '-10%' },
-                  { m: 12, label: '1 Năm', discount: '-15%' },
-                ].map((item) => (
-                  <TouchableOpacity
-                    key={item.m}
-                    style={[
-                      styles.durationCard,
-                      rentalPeriod === item.m && styles.durationCardActive,
-                    ]}
-                    onPress={() => setRentalPeriod(item.m)}
-                  >
-                    <Text
-                      style={[
-                        styles.durationTitle,
-                        rentalPeriod === item.m && styles.durationTitleActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                    {item.discount ? (
-                      <View style={styles.discountBadge}>
-                        <Text style={styles.discountBadgeText}>{item.discount}</Text>
-                      </View>
-                    ) : null}
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.inputHeader}>📝 Yêu cầu đặc biệt (Tùy chọn):</Text>
-              <TextInput
-                style={[styles.textInputBox, { height: 70 }]}
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Ví dụ: Cần mượn xe đẩy nâng hàng, chuyển đồ vào cuối tuần..."
-                multiline
-              />
-
-              {/* Bảng tính chi phí chuẩn VietQR */}
-              <View style={styles.costBreakdownCard}>
-                <Text style={styles.costTitle}>Bảng Tính Chi Phí Thuê Kho:</Text>
-
-                <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Tiền thuê ({rentalPeriod} tháng):</Text>
-                  <Text style={styles.costVal}>
-                    {(estimate.monthly * rentalPeriod).toLocaleString('vi-VN')} đ
-                  </Text>
-                </View>
-
-                {estimate.discount > 0 && (
-                  <View style={styles.costRow}>
-                    <Text style={[styles.costLabel, { color: '#059669' }]}>
-                      Ưu đãi giảm giá {Math.round((estimate.discountPercent || 0) * 100)}%:
-                    </Text>
-                    <Text style={[styles.costVal, { color: '#059669' }]}>
-                      - {estimate.discount.toLocaleString('vi-VN')} đ
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Tiền cọc giữ chỗ (Hoàn lại 100%):</Text>
-                  <Text style={styles.costVal}>
-                    {estimate.deposit.toLocaleString('vi-VN')} đ
-                  </Text>
-                </View>
-
-                <View style={styles.costTotalRow}>
-                  <Text style={styles.costTotalLabel}>Tổng tạm tính:</Text>
-                  <Text style={styles.costTotalVal}>
-                    {estimate.total.toLocaleString('vi-VN')} đ
-                  </Text>
-                </View>
-
-                <Text style={styles.costNote}>
-                  * Bạn chỉ cần thanh toán tiền cọc để giữ chỗ. Số tiền này sẽ được trừ thẳng vào hợp đồng khi bạn nhận phòng.
-                </Text>
-              </View>
-
-              <View style={styles.buttonActionRow}>
-                <TouchableOpacity style={styles.outlineBackBtn} onPress={() => setStep(2)}>
-                  <Text style={styles.outlineBackBtnText}>← Quay Lại</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.confirmBookBtn, { flex: 1 }]}
-                  disabled={submitting}
-                  onPress={handleCreateReservation}
-                >
-                  {submitting ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.confirmBookBtnText}>✓ Xác Nhận Đặt Chỗ Ngay</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
+          {/* Quick Print Modal khi in lại ở Trang C */}
+          {selectedAppointment && (
+            <PrintReceiptModal
+              visible={showQuickPrintModal}
+              onClose={() => setShowQuickPrintModal(false)}
+              appointment={selectedAppointment}
+              assignedUnitCode={selectedAppointment.assignedUnit}
+            />
           )}
-        </ScrollView>
+        </View>
       ) : (
-        /* MY RESERVATIONS */
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={styles.scrollPadding}
-          refreshControl={<RefreshControl refreshing={loadingReservations} onRefresh={loadMyReservations} />}
-        >
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Lịch Sử Đặt Kho Của Bạn</Text>
-            <Text style={styles.sectionSubtitle}>
-              Quản lý các phòng kho đã giữ chỗ và trạng thái bàn giao.
-            </Text>
+        /* ================= GIAO DIỆN PHÂN HỆ KHÁCH HÀNG (CUSTOMER PORTAL) ================= */
+        <View style={{ flex: 1 }}>
+          {/* Top Bar Khách Hàng */}
+          <View style={styles.navBar}>
+            <View style={styles.logoBadge}>
+              <Text style={styles.logoIcon}>📦</Text>
+              <Text style={styles.logoText}>SelfStorage</Text>
+            </View>
 
-            {myReservations.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>📦</Text>
-                <Text style={styles.emptyHeadline}>Bạn chưa có đơn đặt kho nào</Text>
-                <Text style={styles.emptySubheadline}>
-                  Hãy chọn kho và đặt chỗ ngay để bảo vệ đồ đạc của bạn với ưu đãi hấp dẫn.
-                </Text>
-                <TouchableOpacity style={styles.nextBtn} onPress={() => setActiveTab('book')}>
-                  <Text style={styles.nextBtnText}>+ Đặt Ngăn Kho Mới</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              myReservations.map((r) => (
-                <View key={r.id} style={styles.historyCard}>
-                  <View style={styles.historyTopRow}>
-                    <Text style={styles.historyCode}>Đơn #{r.id.slice(-6).toUpperCase()}</Text>
-                    <View style={styles.historyBadge}>
-                      <Text style={styles.historyBadgeText}>{r.status}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.historyDetail}>📅 Ngày hẹn nhận kho: {new Date(r.appointmentDate).toLocaleDateString('vi-VN')}</Text>
-                  <Text style={styles.historyDetail}>⏱️ Thời hạn thuê: {r.rentalPeriod} tháng</Text>
-                  {r.notes ? <Text style={styles.historyDetail}>📝 Ghi chú: {r.notes}</Text> : null}
-                </View>
-              ))
-            )}
-          </View>
-        </ScrollView>
-      )}
-
-      {/* POPUP MODAL ĐẶT CHỖ THÀNH CÔNG */}
-      {successReservation && (
-        <Modal visible={!!successReservation} transparent animationType="slide">
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalDialog}>
-              <Text style={styles.modalPartyIcon}>🎉</Text>
-              <Text style={styles.modalHeadline}>Đặt Chỗ Thành Công!</Text>
-              <Text style={styles.modalCode}>
-                Mã Đơn: #{successReservation.id.slice(-6).toUpperCase()}
-              </Text>
-
-              <Image
-                source={{ uri: selectedUnitType?.image }}
-                style={styles.modalUnitImg}
-              />
-
-              <Text style={styles.modalFacilityText}>
-                {selectedFacility?.name}
-              </Text>
-              <Text style={styles.modalUnitText}>
-                {selectedUnitType?.name} ({selectedUnitType?.size}m²)
-              </Text>
-              <Text style={styles.modalInstruction}>
-                Đơn đặt chỗ đã được lưu vào hệ thống. Bạn có thể đến chi nhánh vào ngày hẹn để nhân viên hỗ trợ bàn giao kho và cấp mã Smart Key.
-              </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {/* Nút Chuyển Nhanh Sang Cổng Nhân Viên */}
+              <TouchableOpacity
+                style={styles.switchStaffBtn}
+                onPress={() => setAppMode('staff')}
+              >
+                <Text style={styles.switchStaffText}>👔 Cổng Nhân Viên</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.nextBtn}
-                onPress={() => {
-                  setSuccessReservation(null);
-                  setActiveTab('my_reservations');
-                  setStep(1);
-                }}
+                style={styles.authButton}
+                onPress={() => setShowAuthModal(true)}
               >
-                <Text style={styles.nextBtnText}>Xem Đơn Của Tôi →</Text>
+                <Text style={styles.authButtonText}>
+                  {isLoggedIn ? '👤 Khách' : 'Đăng Nhập'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      )}
 
-      {/* MODAL AUTH */}
-      <Modal visible={showAuthModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalDialog}>
-            <Text style={styles.modalHeadline}>Tài Khoản Khách Hàng</Text>
-            <Text style={styles.modalInstruction}>
-              Đăng nhập để đồng bộ các đơn thuê kho và mở cửa phòng kho 24/7.
-            </Text>
-
-            <TouchableOpacity style={styles.nextBtn} onPress={handleQuickLogin}>
-              <Text style={styles.nextBtnText}>Đăng Nhập Khách Hàng (Google / Test)</Text>
+          {/* Segmented Control Tabs */}
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity
+              style={[styles.tabItem, customerTab === 'book' && styles.tabItemActive]}
+              onPress={() => setCustomerTab('book')}
+            >
+              <Text style={[styles.tabLabel, customerTab === 'book' && styles.tabLabelActive]}>
+                ✨ Đặt Kho Mới
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.outlineBackBtn, { width: '100%', marginTop: 10 }]}
-              onPress={() => setShowAuthModal(false)}
+              style={[styles.tabItem, customerTab === 'my_reservations' && styles.tabItemActive]}
+              onPress={() => {
+                setCustomerTab('my_reservations');
+                if (isLoggedIn) loadMyReservations();
+              }}
             >
-              <Text style={styles.outlineBackBtnText}>Đóng</Text>
+              <Text style={[styles.tabLabel, customerTab === 'my_reservations' && styles.tabLabelActive]}>
+                📋 Đơn Của Tôi ({myReservations.length})
+              </Text>
             </TouchableOpacity>
           </View>
+
+          {loading ? (
+            <View style={styles.centerBox}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={styles.centerText}>Đang tải hình ảnh & danh sách kho...</Text>
+            </View>
+          ) : customerTab === 'book' ? (
+            <ScrollView
+              style={styles.contentScroll}
+              contentContainerStyle={styles.scrollPadding}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadCustomerData} />}
+            >
+              {/* Stepper Wizard Progress */}
+              <View style={styles.stepperContainer}>
+                <View style={styles.stepItem}>
+                  <View style={[styles.stepCircle, step >= 1 && styles.stepCircleActive]}>
+                    <Text style={styles.stepNumber}>1</Text>
+                  </View>
+                  <Text style={[styles.stepLabel, step === 1 && styles.stepLabelActive]}>Chọn Cơ Sở</Text>
+                </View>
+
+                <View style={[styles.stepDivider, step >= 2 && styles.stepDividerActive]} />
+
+                <View style={styles.stepItem}>
+                  <View style={[styles.stepCircle, step >= 2 && styles.stepCircleActive]}>
+                    <Text style={styles.stepNumber}>2</Text>
+                  </View>
+                  <Text style={[styles.stepLabel, step === 2 && styles.stepLabelActive]}>Chọn Ngăn Kho</Text>
+                </View>
+
+                <View style={[styles.stepDivider, step >= 3 && styles.stepDividerActive]} />
+
+                <View style={styles.stepItem}>
+                  <View style={[styles.stepCircle, step >= 3 && styles.stepCircleActive]}>
+                    <Text style={styles.stepNumber}>3</Text>
+                  </View>
+                  <Text style={[styles.stepLabel, step === 3 && styles.stepLabelActive]}>Xác Nhận & Cọc</Text>
+                </View>
+              </View>
+
+              {/* STEP 1: CHỌN CƠ SỞ KHO */}
+              {step === 1 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>1. Chọn Chi Nhánh Kho Gần Bạn</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Hệ thống kho tự quản hiện đại đạt chuẩn an ninh quốc tế với camera 24/7.
+                  </Text>
+
+                  {facilities.map((fac) => {
+                    const isSelected = String(selectedFacility?.id) === String(fac.id);
+                    return (
+                      <TouchableOpacity
+                        key={fac.id}
+                        activeOpacity={0.9}
+                        style={[styles.facilityCard, isSelected && styles.facilityCardActive]}
+                        onPress={() => setSelectedFacility(fac)}
+                      >
+                        <View style={styles.facilityImageWrapper}>
+                          <Image
+                            source={{ uri: fac.image }}
+                            style={styles.facilityImage}
+                            resizeMode="cover"
+                          />
+                          <View style={styles.ratingBadge}>
+                            <Text style={styles.ratingText}>⭐ {fac.rating || '4.9'}</Text>
+                          </View>
+                          <View style={styles.statusBadge}>
+                            <Text style={styles.statusText}>🟢 Mở cửa 24/7</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.facilityContent}>
+                          <View style={styles.facilityHeaderRow}>
+                            <Text style={styles.facilityTitle}>{fac.name}</Text>
+                            <View style={[styles.checkCircle, isSelected && styles.checkCircleActive]}>
+                              {isSelected && <Text style={styles.checkIcon}>✓</Text>}
+                            </View>
+                          </View>
+
+                          <Text style={styles.facilityAddress}>📍 {fac.address}</Text>
+
+                          <View style={styles.facilityPillsRow}>
+                            <Text style={styles.pillTag}>Mã kho: {fac.code}</Text>
+                            <Text style={styles.pillTag}>Xe tải vào tận nơi</Text>
+                            <Text style={styles.pillTag}>Bảo vệ 24/7</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  <TouchableOpacity
+                    style={styles.nextBtn}
+                    onPress={() => {
+                      if (!selectedFacility) {
+                        Alert.alert('Thông báo', 'Vui lòng chọn cơ sở kho');
+                        return;
+                      }
+                      setStep(2);
+                    }}
+                  >
+                    <Text style={styles.nextBtnText}>Tiếp Tục: Chọn Kích Thước Kho →</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* STEP 2: CHỌN LOẠI KHO */}
+              {step === 2 && (
+                <View style={styles.section}>
+                  <View style={styles.stepBackHeader}>
+                    <TouchableOpacity onPress={() => setStep(1)} style={styles.backBtnTextRow}>
+                      <Text style={styles.backBtnText}>← Đổi Chi Nhánh ({selectedFacility?.code})</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.sectionTitle}>2. Chọn Kích Thước Ngăn Kho</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Tất cả phòng kho đều trang bị máy lạnh, hút ẩm và khóa điện tử Smart Lock.
+                  </Text>
+
+                  {unitTypes.map((ut) => {
+                    const isSelected = String(selectedUnitType?.id) === String(ut.id);
+                    return (
+                      <TouchableOpacity
+                        key={ut.id}
+                        activeOpacity={0.9}
+                        style={[styles.unitCard, isSelected && styles.unitCardActive]}
+                        onPress={() => setSelectedUnitType(ut)}
+                      >
+                        <Image
+                          source={{ uri: ut.image }}
+                          style={styles.unitImage}
+                          resizeMode="cover"
+                        />
+
+                        <View style={styles.unitContent}>
+                          <View style={styles.unitTopRow}>
+                            <View>
+                              <Text style={styles.unitName}>{ut.name}</Text>
+                              <Text style={styles.unitDimensions}>{ut.dimensions || `${ut.size} m²`}</Text>
+                            </View>
+                            <View style={styles.sizePill}>
+                              <Text style={styles.sizePillText}>{ut.size} {ut.sizeUnit || 'm²'}</Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.unitDescription}>{ut.description}</Text>
+
+                          <View style={styles.featuresList}>
+                            {ut.features?.map((feat, idx) => (
+                              <View key={idx} style={styles.featureItem}>
+                                <Text style={styles.featureCheck}>✓</Text>
+                                <Text style={styles.featureText}>{feat}</Text>
+                              </View>
+                            ))}
+                          </View>
+
+                          <View style={styles.priceRow}>
+                            <View>
+                              <Text style={styles.priceText}>
+                                {Number(ut.price).toLocaleString('vi-VN')} đ
+                                <Text style={styles.priceSub}> /tháng</Text>
+                              </Text>
+                              <Text style={styles.depositSub}>
+                                Tiền cọc: {Number(ut.depositAmount || ut.price).toLocaleString('vi-VN')} đ
+                              </Text>
+                            </View>
+
+                            <View style={[styles.selectBtn, isSelected && styles.selectBtnActive]}>
+                              <Text style={[styles.selectBtnText, isSelected && styles.selectBtnTextActive]}>
+                                {isSelected ? 'ĐÃ CHỌN ✓' : 'CHỌN Ô NÀY'}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  <View style={styles.buttonActionRow}>
+                    <TouchableOpacity style={styles.outlineBackBtn} onPress={() => setStep(1)}>
+                      <Text style={styles.outlineBackBtnText}>← Quay Lại</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.nextBtn, { flex: 1 }]}
+                      onPress={() => {
+                        if (!selectedUnitType) {
+                          Alert.alert('Thông báo', 'Vui lòng chọn loại ngăn kho');
+                          return;
+                        }
+                        setStep(3);
+                      }}
+                    >
+                      <Text style={styles.nextBtnText}>Tiếp Theo: Lịch Nhận Kho →</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* STEP 3: LỊCH BÀN GIAO & TÍNH TIỀN CỌC */}
+              {step === 3 && (
+                <View style={styles.section}>
+                  <View style={styles.stepBackHeader}>
+                    <TouchableOpacity onPress={() => setStep(2)} style={styles.backBtnTextRow}>
+                      <Text style={styles.backBtnText}>← Đổi loại kho ({selectedUnitType?.name})</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.sectionTitle}>3. Lịch Nhận Kho & Xác Nhận Đặt Chỗ</Text>
+
+                  <View style={styles.summaryBox}>
+                    <Image
+                      source={{ uri: selectedUnitType?.image }}
+                      style={styles.summaryBoxImage}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.summaryFacilityName}>{selectedFacility?.name}</Text>
+                      <Text style={styles.summaryUnitName}>{selectedUnitType?.name} ({selectedUnitType?.size}m²)</Text>
+                      <Text style={styles.summaryPrice}>
+                        {Number(selectedUnitType?.price).toLocaleString('vi-VN')} đ/tháng
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.inputHeader}>📅 Ngày bạn đến nhận kho (YYYY-MM-DD):</Text>
+                  <TextInput
+                    style={styles.textInputBox}
+                    value={appointmentDate}
+                    onChangeText={setAppointmentDate}
+                    placeholder="2026-10-15"
+                  />
+
+                  <Text style={styles.inputHeader}>⏱️ Thời hạn thuê (Ưu đãi chiết khấu):</Text>
+                  <View style={styles.durationRow}>
+                    {[
+                      { m: 1, label: '1 Tháng', discount: '' },
+                      { m: 3, label: '3 Tháng', discount: '-5%' },
+                      { m: 6, label: '6 Tháng', discount: '-10%' },
+                      { m: 12, label: '1 Năm', discount: '-15%' },
+                    ].map((item) => (
+                      <TouchableOpacity
+                        key={item.m}
+                        style={[
+                          styles.durationCard,
+                          rentalPeriod === item.m && styles.durationCardActive,
+                        ]}
+                        onPress={() => setRentalPeriod(item.m)}
+                      >
+                        <Text
+                          style={[
+                            styles.durationTitle,
+                            rentalPeriod === item.m && styles.durationTitleActive,
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                        {item.discount ? (
+                          <View style={styles.discountBadge}>
+                            <Text style={styles.discountBadgeText}>{item.discount}</Text>
+                          </View>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.inputHeader}>📝 Yêu cầu đặc biệt (Tùy chọn):</Text>
+                  <TextInput
+                    style={[styles.textInputBox, { height: 60 }]}
+                    value={notes}
+                    onChangeText={setNotes}
+                    placeholder="Ví dụ: Cần mượn xe đẩy nâng hàng..."
+                    multiline
+                  />
+
+                  <View style={styles.costBreakdownCard}>
+                    <Text style={styles.costTitle}>Bảng Tính Chi Phí Thuê Kho:</Text>
+
+                    <View style={styles.costRow}>
+                      <Text style={styles.costLabel}>Tiền thuê ({rentalPeriod} tháng):</Text>
+                      <Text style={styles.costVal}>
+                        {(estimate.monthly * rentalPeriod).toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
+
+                    {estimate.discount > 0 && (
+                      <View style={styles.costRow}>
+                        <Text style={[styles.costLabel, { color: '#059669' }]}>
+                          Ưu đãi giảm giá {Math.round((estimate.discountPercent || 0) * 100)}%:
+                        </Text>
+                        <Text style={[styles.costVal, { color: '#059669' }]}>
+                          - {estimate.discount.toLocaleString('vi-VN')} đ
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.costRow}>
+                      <Text style={styles.costLabel}>Tiền cọc giữ chỗ (Hoàn lại 100%):</Text>
+                      <Text style={styles.costVal}>
+                        {estimate.deposit.toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
+
+                    <View style={styles.costTotalRow}>
+                      <Text style={styles.costTotalLabel}>Tổng tạm tính:</Text>
+                      <Text style={styles.costTotalVal}>
+                        {estimate.total.toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.buttonActionRow}>
+                    <TouchableOpacity style={styles.outlineBackBtn} onPress={() => setStep(2)}>
+                      <Text style={styles.outlineBackBtnText}>← Quay Lại</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.confirmBookBtn, { flex: 1 }]}
+                      disabled={submitting}
+                      onPress={handleCreateReservation}
+                    >
+                      {submitting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.confirmBookBtnText}>✓ Xác Nhận Đặt Chỗ</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            /* MY RESERVATIONS */
+            <ScrollView
+              style={styles.contentScroll}
+              contentContainerStyle={styles.scrollPadding}
+              refreshControl={<RefreshControl refreshing={loadingReservations} onRefresh={loadMyReservations} />}
+            >
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Lịch Sử Đặt Kho Của Bạn</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Quản lý các phòng kho đã giữ chỗ và trạng thái bàn giao.
+                </Text>
+
+                {myReservations.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptyIcon}>📦</Text>
+                    <Text style={styles.emptyHeadline}>Bạn chưa có đơn đặt kho nào</Text>
+                    <TouchableOpacity style={styles.nextBtn} onPress={() => setCustomerTab('book')}>
+                      <Text style={styles.nextBtnText}>+ Đặt Ngăn Kho Mới</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  myReservations.map((r) => (
+                    <View key={r.id} style={styles.historyCard}>
+                      <View style={styles.historyTopRow}>
+                        <Text style={styles.historyCode}>Đơn #{String(r.id).slice(-6).toUpperCase()}</Text>
+                        <View style={styles.historyBadge}>
+                          <Text style={styles.historyBadgeText}>{r.status}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.historyDetail}>📅 Ngày hẹn: {new Date(r.appointmentDate).toLocaleDateString('vi-VN')}</Text>
+                      <Text style={styles.historyDetail}>⏱️ Thời hạn thuê: {r.rentalPeriod} tháng</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          )}
+
+          {/* POPUP MODAL ĐẶT CHỖ THÀNH CÔNG */}
+          {successReservation && (
+            <Modal visible={!!successReservation} transparent animationType="slide">
+              <View style={styles.modalBackdrop}>
+                <View style={styles.modalDialog}>
+                  <Text style={styles.modalPartyIcon}>🎉</Text>
+                  <Text style={styles.modalHeadline}>Đặt Chỗ Thành Công!</Text>
+                  <Text style={styles.modalCode}>
+                    Mã Đơn: #{String(successReservation.id).slice(-6).toUpperCase()}
+                  </Text>
+                  <Text style={styles.modalInstruction}>
+                    Đơn đặt chỗ đã được lưu vào hệ thống. Bạn có thể đến chi nhánh vào ngày hẹn để nhân viên hỗ trợ bàn giao kho và cấp mã Smart Key.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.nextBtn}
+                    onPress={() => {
+                      setSuccessReservation(null);
+                      setCustomerTab('my_reservations');
+                      setStep(1);
+                    }}
+                  >
+                    <Text style={styles.nextBtnText}>Xem Đơn Của Tôi →</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+          )}
+
+          {/* MODAL AUTH */}
+          <Modal visible={showAuthModal} transparent animationType="fade">
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalDialog}>
+                <Text style={styles.modalHeadline}>Tài Khoản Khách Hàng</Text>
+                <TouchableOpacity style={styles.nextBtn} onPress={handleQuickLogin}>
+                  <Text style={styles.nextBtnText}>Đăng Nhập Khách Hàng (Google / Test)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.outlineBackBtn, { width: '100%', marginTop: 10 }]}
+                  onPress={() => setShowAuthModal(false)}
+                >
+                  <Text style={styles.outlineBackBtnText}>Đóng</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </View>
-      </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -846,8 +1184,8 @@ const styles = StyleSheet.create({
   },
   navBar: {
     backgroundColor: '#0F172A',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -863,22 +1201,33 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   logoText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -0.5,
   },
+  switchStaffBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  switchStaffText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   authButton: {
     backgroundColor: '#1E293B',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#334155',
   },
   authButtonText: {
     color: '#38BDF8',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   tabsContainer: {
@@ -889,7 +1238,7 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
@@ -898,7 +1247,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#2563EB',
   },
   tabLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -910,8 +1259,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   scrollPadding: {
-    padding: 16,
-    paddingBottom: 50,
+    padding: 14,
+    paddingBottom: 40,
   },
   centerBox: {
     flex: 1,
@@ -922,17 +1271,17 @@ const styles = StyleSheet.create({
   centerText: {
     marginTop: 12,
     color: '#64748B',
-    fontSize: 14,
+    fontSize: 13,
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -941,9 +1290,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
@@ -955,10 +1304,10 @@ const styles = StyleSheet.create({
   stepNumber: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 12,
+    fontSize: 11,
   },
   stepLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
     fontWeight: '600',
   },
@@ -970,57 +1319,45 @@ const styles = StyleSheet.create({
     height: 2,
     flex: 0.6,
     backgroundColor: '#E2E8F0',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   stepDividerActive: {
     backgroundColor: '#2563EB',
   },
   section: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     color: '#0F172A',
     marginBottom: 4,
   },
   sectionSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  stepBackHeader: {
-    marginBottom: 10,
-  },
-  backBtnTextRow: {
-    alignSelf: 'flex-start',
-  },
-  backBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB',
+    marginBottom: 14,
+    lineHeight: 16,
   },
   facilityCard: {
-    borderRadius: 16,
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderRadius: 14,
+    marginBottom: 12,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 16,
     overflow: 'hidden',
   },
   facilityCardActive: {
     borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
   },
   facilityImageWrapper: {
+    height: 120,
     position: 'relative',
-    height: 140,
-    width: '100%',
   },
   facilityImage: {
     width: '100%',
@@ -1028,70 +1365,69 @@ const styles = StyleSheet.create({
   },
   ratingBadge: {
     position: 'absolute',
-    top: 10,
-    left: 10,
+    top: 8,
+    left: 8,
     backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   ratingText: {
     color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
   statusBadge: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   statusText: {
     color: '#4ADE80',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   facilityContent: {
-    padding: 14,
+    padding: 12,
   },
   facilityHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   facilityTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
     flex: 1,
   },
   checkCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
   checkCircleActive: {
-    borderColor: '#2563EB',
     backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
   checkIcon: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   facilityAddress: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   facilityPillsRow: {
     flexDirection: 'row',
@@ -1099,73 +1435,92 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   pillTag: {
-    fontSize: 11,
-    color: '#334155',
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontSize: 10,
+    color: '#475569',
     fontWeight: '600',
   },
+  nextBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  nextBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  stepBackHeader: {
+    marginBottom: 8,
+  },
+  backBtnTextRow: {
+    paddingVertical: 4,
+  },
+  backBtnText: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   unitCard: {
-    borderRadius: 16,
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderRadius: 14,
+    marginBottom: 12,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 16,
     overflow: 'hidden',
   },
   unitCardActive: {
     borderColor: '#2563EB',
-    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
   },
   unitImage: {
     width: '100%',
-    height: 150,
+    height: 110,
   },
   unitContent: {
-    padding: 14,
+    padding: 12,
   },
   unitTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 6,
   },
   unitName: {
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
   },
   unitDimensions: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
-    fontWeight: '600',
-    marginTop: 2,
+    marginTop: 1,
   },
   sizePill: {
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   sizePillText: {
-    color: '#1D4ED8',
+    color: '#2563EB',
+    fontSize: 11,
     fontWeight: '800',
-    fontSize: 13,
   },
   unitDescription: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#475569',
-    lineHeight: 18,
-    marginBottom: 10,
+    lineHeight: 16,
+    marginBottom: 8,
   },
   featuresList: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
     gap: 4,
+    marginBottom: 10,
   },
   featureItem: {
     flexDirection: 'row',
@@ -1175,12 +1530,11 @@ const styles = StyleSheet.create({
   featureCheck: {
     color: '#059669',
     fontWeight: 'bold',
-    fontSize: 12,
+    fontSize: 11,
   },
   featureText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#334155',
-    fontWeight: '500',
   },
   priceRow: {
     flexDirection: 'row',
@@ -1188,101 +1542,121 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 10,
+    paddingTop: 8,
   },
   priceText: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
-    color: '#2563EB',
+    color: '#0F172A',
   },
   priceSub: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: 'normal',
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '400',
   },
   depositSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#64748B',
     marginTop: 2,
   },
   selectBtn: {
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   selectBtnActive: {
     backgroundColor: '#2563EB',
   },
   selectBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     color: '#475569',
   },
   selectBtnTextActive: {
     color: '#FFFFFF',
   },
+  buttonActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  outlineBackBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+  },
+  outlineBackBtnText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   summaryBox: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
     padding: 10,
-    gap: 12,
+    gap: 10,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   summaryBoxImage: {
-    width: 65,
-    height: 65,
-    borderRadius: 10,
+    width: 60,
+    height: 60,
+    borderRadius: 8,
   },
   summaryFacilityName: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#64748B',
     fontWeight: '600',
   },
   summaryUnitName: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '800',
     color: '#0F172A',
     marginTop: 2,
   },
   summaryPrice: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#2563EB',
     marginTop: 2,
   },
   inputHeader: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#334155',
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 8,
   },
   textInputBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
     color: '#0F172A',
   },
   durationRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 6,
   },
   durationCard: {
     flex: 1,
-    borderWidth: 1.5,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 8,
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     position: 'relative',
   },
   durationCardActive: {
@@ -1290,53 +1664,50 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
   },
   durationTitle: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#334155',
+    color: '#475569',
   },
   durationTitleActive: {
     color: '#2563EB',
-    fontWeight: '900',
   },
   discountBadge: {
     position: 'absolute',
-    top: -8,
-    backgroundColor: '#EA580C',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    top: -6,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 4,
+    borderRadius: 4,
   },
   discountBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '900',
   },
   costBreakdownCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginTop: 16,
-    marginBottom: 16,
   },
   costTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   costRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   costLabel: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#64748B',
   },
   costVal: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     color: '#0F172A',
   },
@@ -1344,136 +1715,77 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#CBD5E1',
-    paddingTop: 10,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 6,
     marginTop: 6,
   },
   costTotalLabel: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '900',
     color: '#0F172A',
   },
   costTotalVal: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
     color: '#2563EB',
   },
-  costNote: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  buttonActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  outlineBackBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outlineBackBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  nextBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  nextBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
   confirmBookBtn: {
-    backgroundColor: '#EA580C',
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
   },
   confirmBookBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    fontSize: 13,
+    fontWeight: '800',
   },
   emptyCard: {
-    paddingVertical: 40,
     alignItems: 'center',
-    paddingHorizontal: 20,
+    padding: 24,
   },
   emptyIcon: {
-    fontSize: 48,
-    marginBottom: 10,
+    fontSize: 36,
+    marginBottom: 8,
   },
   emptyHeadline: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 6,
-  },
-  emptySubheadline: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   historyCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   historyTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   historyCode: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
   },
   historyBadge: {
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   historyBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#15803D',
   },
   historyDetail: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#475569',
     marginTop: 2,
   },
@@ -1482,54 +1794,93 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 16,
   },
   modalDialog: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 20,
+    padding: 20,
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     alignItems: 'center',
   },
   modalPartyIcon: {
-    fontSize: 48,
-    marginBottom: 6,
+    fontSize: 40,
+    marginBottom: 4,
   },
   modalHeadline: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '900',
     color: '#0F172A',
     marginBottom: 4,
   },
   modalCode: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#2563EB',
-    marginBottom: 12,
-  },
-  modalUnitImg: {
-    width: '100%',
-    height: 140,
-    borderRadius: 14,
-    marginBottom: 12,
-  },
-  modalFacilityText: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  modalUnitText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 2,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   modalInstruction: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#475569',
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 14,
+  },
+  otherTabContainer: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  otherTabTopBar: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  menuIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#1E293B',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otherTabTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  otherTabBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  otherTabHeadline: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  otherTabDesc: {
+    fontSize: 12,
+    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 16,
+  },
+  backToQueueActionBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+  },
+  backToQueueActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
