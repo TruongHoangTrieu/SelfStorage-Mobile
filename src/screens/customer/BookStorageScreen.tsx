@@ -10,10 +10,12 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Facility, UnitType, Reservation } from '../../api';
 
-// ─── Tailwind Tokens verbatim from User's Design System ──────────────────────
+// ─── Tailwind Color Palette verbatim from User's Design System ───────────────
 const T = {
   bg: '#f8f9ff',
   onSurface: '#0b1c30',
@@ -46,9 +48,11 @@ interface Props {
   onRefresh?: () => void;
   onReservationCreated: (reservation: Reservation) => void;
   onViewMyReservations: () => void;
+  onNavigateTab?: (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => void;
+  activeBottomTab?: 'search' | 'my-storage' | 'digital-key' | 'support';
+  onSwitchToStaff?: () => void;
 }
 
-// Default items matching user's design preview
 interface StorageDisplayItem {
   id: string;
   facilityId: number | string;
@@ -141,11 +145,20 @@ export default function BookStorageScreen({
   loading,
   onReservationCreated,
   onViewMyReservations,
+  onNavigateTab,
+  activeBottomTab = 'search',
+  onSwitchToStaff,
 }: Props) {
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'personal' | 'family' | 'business'>('all');
   const [selectedAmenity, setSelectedAmenity] = useState<string | null>(null);
+
+  // Active Bottom Tab
+  const [currentBottomTab, setCurrentBottomTab] = useState<'search' | 'my-storage' | 'digital-key' | 'support'>(
+    activeBottomTab
+  );
 
   // Booking Modal States
   const [selectedItem, setSelectedItem] = useState<StorageDisplayItem | null>(null);
@@ -158,7 +171,7 @@ export default function BookStorageScreen({
   const [submitting, setSubmitting] = useState(false);
   const [successReservation, setSuccessReservation] = useState<Reservation | null>(null);
 
-  // Combine real backend data or fallback to rich mockup data
+  // Generate storage items
   const storageItems: StorageDisplayItem[] = useMemo(() => {
     if (facilities.length > 0 && unitTypes.length > 0) {
       const generated: StorageDisplayItem[] = [];
@@ -193,10 +206,9 @@ export default function BookStorageScreen({
     return DEFAULT_ITEMS;
   }, [facilities, unitTypes]);
 
-  // Filtered Items
+  // Filter items
   const filteredItems = useMemo(() => {
     return storageItems.filter((item) => {
-      // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesName = item.title.toLowerCase().includes(q);
@@ -205,11 +217,9 @@ export default function BookStorageScreen({
         const matchesDim = item.dimensions.toLowerCase().includes(q);
         if (!matchesName && !matchesFac && !matchesLoc && !matchesDim) return false;
       }
-      // Category
       if (selectedCategory !== 'all' && item.category !== selectedCategory) {
         return false;
       }
-      // Amenity
       if (selectedAmenity && !item.amenities.includes(selectedAmenity)) {
         return false;
       }
@@ -217,13 +227,15 @@ export default function BookStorageScreen({
     });
   }, [storageItems, searchQuery, selectedCategory, selectedAmenity]);
 
-  // Handle open booking modal
-  const handleOpenBooking = (item: StorageDisplayItem) => {
-    setSelectedItem(item);
-    setShowBookingModal(true);
+  const handleTabPress = (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => {
+    setCurrentBottomTab(tab);
+    if (onNavigateTab) {
+      onNavigateTab(tab);
+    } else if (tab === 'my-storage') {
+      onViewMyReservations();
+    }
   };
 
-  // Submit Reservation
   const handleConfirmReservation = async () => {
     if (!selectedItem) return;
     try {
@@ -270,250 +282,292 @@ export default function BookStorageScreen({
     return (
       <View style={s.loadWrap}>
         <ActivityIndicator color={T.secondaryContainer} size="large" />
-        <Text style={s.loadText}>Đang tải dữ liệu kho thông minh...</Text>
+        <Text style={s.loadText}>Đang tải dữ liệu kho tự quản...</Text>
       </View>
     );
   }
 
   return (
-    <View style={s.container}>
-      <ScrollView
-        style={s.scrollView}
-        contentContainerStyle={s.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+    <View style={s.outerWrapper}>
+      <View style={s.mobileContainer}>
         {/* ==================== TOP APP BAR ==================== */}
         <View style={s.topAppBar}>
           <View style={s.brandRow}>
-            <TouchableOpacity style={s.brandIconBtn} activeOpacity={0.8}>
-              <Text style={s.brandIconText}>🏢</Text>
+            <TouchableOpacity style={s.brandIconBtn} activeOpacity={0.85}>
+              <MaterialCommunityIcons name="warehouse" size={24} color={T.primary} />
             </TouchableOpacity>
             <View>
               <Text style={s.brandTitle}>Kho Thông Minh</Text>
               <View style={s.brandLocationRow}>
-                <Text style={s.brandLocationIcon}>📍</Text>
+                <MaterialIcons name="near-me" size={13} color={T.secondary} />
                 <Text style={s.brandLocationText}>Quận 7, TP. Hồ Chí Minh</Text>
               </View>
             </View>
           </View>
 
-          <TouchableOpacity style={s.notifBtn} activeOpacity={0.8}>
-            <Text style={s.notifIcon}>🔔</Text>
-            <View style={s.notifBadgeDot} />
-          </TouchableOpacity>
+          <View style={s.topActionsRow}>
+            {onSwitchToStaff && (
+              <TouchableOpacity style={s.switchPortalBtn} onPress={onSwitchToStaff} activeOpacity={0.8}>
+                <Text style={s.switchPortalText}>👔 Nhân Viên</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={s.notifBtn} activeOpacity={0.8}>
+              <MaterialIcons name="notifications-none" size={22} color={T.onSurface} />
+              <View style={s.notifBadgeDot} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* ==================== SEARCH & SMART FILTERS ==================== */}
-        <View style={s.searchFilterSection}>
-          {/* Smart Search Bar */}
-          <View style={s.searchRow}>
-            <View style={s.searchInputWrap}>
-              <Text style={s.searchIcon}>🔍</Text>
-              <TextInput
-                style={s.searchInput}
-                placeholder="Tìm theo vị trí, tên kho hoặc kích thước..."
-                placeholderTextColor={T.onSurfaceVariant}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={s.micIcon}>✕</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={s.micIcon}>🎙️</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+        {/* ==================== MAIN CONTENT SCROLL ==================== */}
+        <ScrollView
+          style={s.scrollView}
+          contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ==================== SEARCH & SMART FILTERS ==================== */}
+          <View style={s.searchFilterSection}>
+            {/* Smart Search Bar */}
+            <View style={s.searchRow}>
+              <View style={[s.searchInputWrap, isSearchFocused && s.searchInputWrapFocused]}>
+                <MaterialIcons
+                  name="search"
+                  size={20}
+                  color={T.onSurfaceVariant}
+                  style={{ marginRight: 8 }}
+                />
+                <TextInput
+                  style={s.searchInput}
+                  placeholder="Tìm theo vị trí, tên kho hoặc kích thước..."
+                  placeholderTextColor="#76777d"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <MaterialIcons name="close" size={18} color={T.onSurfaceVariant} />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <MaterialIcons name="mic" size={18} color={T.onSurfaceVariant} />
+                  </TouchableOpacity>
+                )}
+              </View>
 
-            <TouchableOpacity style={s.filterToggleBtn} activeOpacity={0.85}>
-              <Text style={s.filterToggleIcon}>⚙️</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Size Classification Title & Guide */}
-          <View style={s.sizeGuideRow}>
-            <Text style={s.sizeGuideTitle}>Phân loại thể tích</Text>
-            <TouchableOpacity style={s.sizeGuideLink} activeOpacity={0.7}>
-              <Text style={s.sizeGuideLinkIcon}>📏</Text>
-              <Text style={s.sizeGuideLinkText}>Hướng dẫn chọn size</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Size Filter Chips (Horizontal Scroll) */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.sizeChipsScroll}>
-            <TouchableOpacity
-              style={[s.sizeChip, selectedCategory === 'all' && s.sizeChipActive]}
-              onPress={() => setSelectedCategory('all')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.sizeChipText, selectedCategory === 'all' && s.sizeChipTextActive]}>
-                Tất cả ({storageItems.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.sizeChip, selectedCategory === 'personal' && s.sizeChipActive]}
-              onPress={() => setSelectedCategory('personal')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.sizeChipText, selectedCategory === 'personal' && s.sizeChipTextActive]}>
-                Cá nhân (1-3m²)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.sizeChip, selectedCategory === 'family' && s.sizeChipActive]}
-              onPress={() => setSelectedCategory('family')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.sizeChipText, selectedCategory === 'family' && s.sizeChipTextActive]}>
-                Gia đình (4-9m²)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.sizeChip, selectedCategory === 'business' && s.sizeChipActive]}
-              onPress={() => setSelectedCategory('business')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.sizeChipText, selectedCategory === 'business' && s.sizeChipTextActive]}>
-                Doanh nghiệp (&gt;10m²)
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Rapid Amenity Tags Bar */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.amenityTagsScroll}>
-            <TouchableOpacity
-              style={[s.amenityTag, selectedAmenity === 'ac' && s.amenityTagActive]}
-              onPress={() => setSelectedAmenity(selectedAmenity === 'ac' ? null : 'ac')}
-              activeOpacity={0.8}
-            >
-              <Text style={s.amenityTagIcon}>❄️</Text>
-              <Text style={[s.amenityTagText, selectedAmenity === 'ac' && s.amenityTagTextActive]}>
-                Có máy lạnh 24/24
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.amenityTag, selectedAmenity === 'delivery' && s.amenityTagActive]}
-              onPress={() => setSelectedAmenity(selectedAmenity === 'delivery' ? null : 'delivery')}
-              activeOpacity={0.8}
-            >
-              <Text style={s.amenityTagIcon}>🚚</Text>
-              <Text style={[s.amenityTagText, selectedAmenity === 'delivery' && s.amenityTagTextActive]}>
-                Tầng trệt xe vào tận nơi
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.amenityTag, selectedAmenity === 'fingerprint' && s.amenityTagActive]}
-              onPress={() => setSelectedAmenity(selectedAmenity === 'fingerprint' ? null : 'fingerprint')}
-              activeOpacity={0.8}
-            >
-              <Text style={s.amenityTagIcon}>🔒</Text>
-              <Text style={[s.amenityTagText, selectedAmenity === 'fingerprint' && s.amenityTagTextActive]}>
-                An ninh FaceID/Mã số
-              </Text>
-            </TouchableOpacity>
-
-            <View style={s.amenityPromoTag}>
-              <Text style={s.amenityPromoIcon}>🔥</Text>
-              <Text style={s.amenityPromoText}>Ưu đãi tháng đầu</Text>
-            </View>
-          </ScrollView>
-        </View>
-
-        {/* ==================== SUCCESS BANNER ==================== */}
-        {successReservation && (
-          <View style={s.successBox}>
-            <View style={s.successBadge}>
-              <Text style={s.successBadgeText}>ĐÃ XÁC NHẬN</Text>
-            </View>
-            <Text style={s.successTitle}>Đặt kho thành công!</Text>
-            <Text style={s.successCode}>
-              Mã đặt chỗ: #{String(successReservation.id).slice(-6).toUpperCase()}
-            </Text>
-            <Text style={s.successDesc}>
-              Yêu cầu đặt kho của bạn đã được ghi nhận. Hệ thống sẽ gửi mã PIN tự động mở cửa vào ngày hẹn.
-            </Text>
-            <View style={s.successActions}>
+              {/* Advanced Filter Toggle Button */}
               <TouchableOpacity
-                style={s.successPrimaryBtn}
-                onPress={onViewMyReservations}
-                activeOpacity={0.85}
-              >
-                <Text style={s.successPrimaryText}>Xem đơn đặt chỗ</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={s.successSecondaryBtn}
-                onPress={() => setSuccessReservation(null)}
-                activeOpacity={0.8}
-              >
-                <Text style={s.successSecondaryText}>Đặt thêm kho khác</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ==================== STORAGE UNIT CARDS LIST ==================== */}
-        <View style={s.mainListSection}>
-          {/* Header Summary */}
-          <View style={s.listHeaderRow}>
-            <View style={s.listHeaderLeft}>
-              <View style={s.livePulseDot} />
-              <Text style={s.listHeaderTitle}>Kho nổi bật & gần bạn</Text>
-            </View>
-            <Text style={s.listHeaderSort}>
-              Sắp xếp: <Text style={s.listHeaderSortBold}>Gần nhất</Text>
-            </Text>
-          </View>
-
-          {/* Cards Loop */}
-          {filteredItems.length === 0 ? (
-            <View style={s.emptyWrap}>
-              <Text style={s.emptyIcon}>📦</Text>
-              <Text style={s.emptyTitle}>Không tìm thấy kho phù hợp</Text>
-              <Text style={s.emptySub}>Thử thay đổi từ khóa hoặc bộ lọc thể tích kho.</Text>
-              <TouchableOpacity
-                style={s.resetFilterBtn}
+                style={s.filterToggleBtn}
+                activeOpacity={0.9}
                 onPress={() => {
-                  setSearchQuery('');
                   setSelectedCategory('all');
                   setSelectedAmenity(null);
                 }}
               >
-                <Text style={s.resetFilterBtnText}>Đặt lại bộ lọc</Text>
+                <MaterialIcons name="tune" size={20} color={T.onPrimary} />
               </TouchableOpacity>
             </View>
-          ) : (
-            filteredItems.map((item) => (
-              <ArticleStorageCard
-                key={item.id}
-                item={item}
-                onBookNow={() => handleOpenBooking(item)}
-              />
-            ))
+
+            {/* Size Classification Header & Guide Link */}
+            <View style={s.sizeGuideRow}>
+              <Text style={s.sizeGuideTitle}>Phân loại thể tích</Text>
+              <TouchableOpacity style={s.sizeGuideLink} activeOpacity={0.7}>
+                <MaterialIcons name="straighten" size={14} color={T.secondary} />
+                <Text style={s.sizeGuideLinkText}>Hướng dẫn chọn size</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Size Filter Chips (Horizontal Scrollable Strip) */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.sizeChipsScroll}
+            >
+              <TouchableOpacity
+                style={[s.sizeChip, selectedCategory === 'all' && s.sizeChipActive]}
+                onPress={() => setSelectedCategory('all')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.sizeChipText, selectedCategory === 'all' && s.sizeChipTextActive]}>
+                  Tất cả ({storageItems.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.sizeChip, selectedCategory === 'personal' && s.sizeChipActive]}
+                onPress={() => setSelectedCategory('personal')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.sizeChipText, selectedCategory === 'personal' && s.sizeChipTextActive]}>
+                  Cá nhân (1-3m²)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.sizeChip, selectedCategory === 'family' && s.sizeChipActive]}
+                onPress={() => setSelectedCategory('family')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.sizeChipText, selectedCategory === 'family' && s.sizeChipTextActive]}>
+                  Gia đình (4-9m²)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.sizeChip, selectedCategory === 'business' && s.sizeChipActive]}
+                onPress={() => setSelectedCategory('business')}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.sizeChipText, selectedCategory === 'business' && s.sizeChipTextActive]}>
+                  Doanh nghiệp (&gt;10m²)
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Rapid Amenity Tags Bar */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.amenityTagsScroll}
+            >
+              <TouchableOpacity
+                style={[s.amenityTag, selectedAmenity === 'ac' && s.amenityTagActive]}
+                onPress={() => setSelectedAmenity(selectedAmenity === 'ac' ? null : 'ac')}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="ac-unit" size={14} color={T.secondaryContainer} />
+                <Text style={[s.amenityTagText, selectedAmenity === 'ac' && s.amenityTagTextActive]}>
+                  Có máy lạnh 24/24
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.amenityTag, selectedAmenity === 'delivery' && s.amenityTagActive]}
+                onPress={() => setSelectedAmenity(selectedAmenity === 'delivery' ? null : 'delivery')}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="local-shipping" size={14} color={T.primary} />
+                <Text style={[s.amenityTagText, selectedAmenity === 'delivery' && s.amenityTagTextActive]}>
+                  Tầng trệt xe vào tận nơi
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.amenityTag, selectedAmenity === 'fingerprint' && s.amenityTagActive]}
+                onPress={() => setSelectedAmenity(selectedAmenity === 'fingerprint' ? null : 'fingerprint')}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="fingerprint" size={14} color={T.secondary} />
+                <Text style={[s.amenityTagText, selectedAmenity === 'fingerprint' && s.amenityTagTextActive]}>
+                  An ninh FaceID/Mã số
+                </Text>
+              </TouchableOpacity>
+
+              <View style={s.amenityPromoTag}>
+                <MaterialIcons name="whatshot" size={14} color={T.secondaryBrand} />
+                <Text style={s.amenityPromoText}>Ưu đãi tháng đầu</Text>
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* ==================== SUCCESS BANNER ==================== */}
+          {successReservation && (
+            <View style={s.successBox}>
+              <View style={s.successBadge}>
+                <Text style={s.successBadgeText}>ĐÃ XÁC NHẬN</Text>
+              </View>
+              <Text style={s.successTitle}>Đặt kho thành công!</Text>
+              <Text style={s.successCode}>
+                Mã đặt chỗ: #{String(successReservation.id).slice(-6).toUpperCase()}
+              </Text>
+              <Text style={s.successDesc}>
+                Yêu cầu đặt kho của bạn đã được ghi nhận. Hệ thống sẽ cấp mã PIN tự động mở cửa vào ngày hẹn.
+              </Text>
+              <View style={s.successActions}>
+                <TouchableOpacity
+                  style={s.successPrimaryBtn}
+                  onPress={onViewMyReservations}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.successPrimaryText}>Xem đơn đặt chỗ</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.successSecondaryBtn}
+                  onPress={() => setSuccessReservation(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.successSecondaryText}>Đặt thêm kho</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
 
-          {/* Tactical Reassurance Micro-banner */}
-          <View style={s.reassuranceBanner}>
-            <View style={s.reassuranceIconWrap}>
-              <Text style={s.reassuranceIcon}>🛡️</Text>
-            </View>
-            <View style={s.reassuranceTextWrap}>
-              <Text style={s.reassuranceTitle}>Cam kết an toàn tuyệt đối 100%</Text>
-              <Text style={s.reassuranceSub}>
-                Hợp đồng pháp lý số, bảo hiểm PCCC tiêu chuẩn quốc gia
+          {/* ==================== STORAGE UNIT CARDS LIST ==================== */}
+          <View style={s.mainListSection}>
+            {/* Header Summary */}
+            <View style={s.listHeaderRow}>
+              <View style={s.listHeaderLeft}>
+                <View style={s.livePulseDot} />
+                <Text style={s.listHeaderTitle}>Kho nổi bật & gần bạn</Text>
+              </View>
+              <Text style={s.listHeaderSort}>
+                Sắp xếp: <Text style={s.listHeaderSortBold}>Gần nhất</Text>
               </Text>
             </View>
-          </View>
-        </View>
-      </ScrollView>
 
-      {/* ==================== BOOKING MODAL ==================== */}
+            {/* Cards Loop */}
+            {filteredItems.length === 0 ? (
+              <View style={s.emptyWrap}>
+                <MaterialCommunityIcons name="package-variant" size={40} color={T.outline} />
+                <Text style={s.emptyTitle}>Không tìm thấy kho phù hợp</Text>
+                <Text style={s.emptySub}>Thử thay đổi từ khóa hoặc bộ lọc thể tích kho.</Text>
+                <TouchableOpacity
+                  style={s.resetFilterBtn}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('all');
+                    setSelectedAmenity(null);
+                  }}
+                >
+                  <Text style={s.resetFilterBtnText}>Đặt lại bộ lọc</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              filteredItems.map((item) => (
+                <ArticleStorageCard
+                  key={item.id}
+                  item={item}
+                  onBookNow={() => {
+                    setSelectedItem(item);
+                    setShowBookingModal(true);
+                  }}
+                />
+              ))
+            )}
+
+            {/* Tactical Reassurance Micro-banner */}
+            <View style={s.reassuranceBanner}>
+              <View style={s.reassuranceIconWrap}>
+                <MaterialIcons name="verified" size={24} color={T.secondaryFixed} />
+              </View>
+              <View style={s.reassuranceTextWrap}>
+                <Text style={s.reassuranceTitle}>Cam kết an toàn tuyệt đối 100%</Text>
+                <Text style={s.reassuranceSub}>
+                  Hợp đồng pháp lý số, bảo hiểm PCCC tiêu chuẩn quốc gia
+                </Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* ==================== BOTTOM NAVIGATION BAR ==================== */}
+        <BottomNavBar activeTab={currentBottomTab} onSelectTab={handleTabPress} />
+      </View>
+
+      {/* ==================== BOOKING MODAL SHEET ==================== */}
       {selectedItem && (
         <BookingDetailModal
           visible={showBookingModal}
@@ -533,7 +587,7 @@ export default function BookStorageScreen({
   );
 }
 
-// ─── Article Storage Card ───────────────────────────────────────────────────
+// ─── Article Storage Card Component ─────────────────────────────────────────
 function ArticleStorageCard({
   item,
   onBookNow,
@@ -566,7 +620,7 @@ function ArticleStorageCard({
         {/* Distance & Title Overlay */}
         <View style={ac.mediaBottomOverlay}>
           <View style={ac.distanceRow}>
-            <Text style={ac.distanceIcon}>📍</Text>
+            <MaterialIcons name="location-on" size={14} color={T.secondaryFixed} />
             <Text style={ac.distanceText}>{item.locationText}</Text>
           </View>
           <Text style={ac.mediaTitle} numberOfLines={2}>
@@ -581,7 +635,7 @@ function ArticleStorageCard({
         <View style={ac.metricGrid}>
           <View style={ac.metricCol}>
             <View style={ac.metricHeader}>
-              <Text style={ac.metricIcon}>📐</Text>
+              <MaterialIcons name="aspect-ratio" size={18} color={T.primary} />
               <Text style={ac.metricLabel}>Kích thước (D x R x C)</Text>
             </View>
             <Text style={ac.metricValue}>{item.dimensions}</Text>
@@ -589,7 +643,7 @@ function ArticleStorageCard({
 
           <View style={[ac.metricCol, ac.metricColBorder]}>
             <View style={ac.metricHeader}>
-              <Text style={ac.metricIcon}>📦</Text>
+              <MaterialIcons name="inventory" size={18} color={T.secondary} />
               <Text style={ac.metricLabel}>Sức chứa ước lượng</Text>
             </View>
             <Text style={ac.metricValue}>{item.capacity}</Text>
@@ -598,12 +652,26 @@ function ArticleStorageCard({
 
         {/* Facility Feature Chips */}
         <View style={ac.featureChipsRow}>
-          {item.features.map((feat, idx) => (
-            <View key={idx} style={ac.featureChip}>
-              <Text style={ac.featureChipDot}>✓</Text>
-              <Text style={ac.featureChipText}>{feat}</Text>
-            </View>
-          ))}
+          {item.features.map((feat, idx) => {
+            const isTemp = feat.includes('nhiệt độ');
+            const isBlue = feat.includes('Bluetooth');
+            const isCam = feat.includes('Camera');
+
+            return (
+              <View key={idx} style={ac.featureChip}>
+                {isTemp ? (
+                  <MaterialIcons name="device-thermostat" size={14} color="#2563eb" />
+                ) : isCam ? (
+                  <MaterialIcons name="videocam" size={14} color={T.onSurface} />
+                ) : isBlue ? (
+                  <MaterialIcons name="bluetooth" size={14} color={T.secondary} />
+                ) : (
+                  <MaterialIcons name="check" size={14} color={T.secondaryBrand} />
+                )}
+                <Text style={ac.featureChipText}>{feat}</Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* Price and CTA Conversion Tier */}
@@ -622,10 +690,110 @@ function ArticleStorageCard({
 
           <TouchableOpacity style={ac.ctaBtn} onPress={onBookNow} activeOpacity={0.88}>
             <Text style={ac.ctaBtnText}>Xem & Đặt ngay</Text>
-            <Text style={ac.ctaBtnArrow}>→</Text>
+            <MaterialIcons name="arrow-forward" size={18} color={T.onPrimary} />
           </TouchableOpacity>
         </View>
       </View>
+    </View>
+  );
+}
+
+// ─── Bottom Navigation Bar Component ─────────────────────────────────────────
+function BottomNavBar({
+  activeTab,
+  onSelectTab,
+}: {
+  activeTab: 'search' | 'my-storage' | 'digital-key' | 'support';
+  onSelectTab: (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => void;
+}) {
+  return (
+    <View style={bn.container}>
+      {/* Tab 1: Tìm kho */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab('search')}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons
+          name="search"
+          size={24}
+          color={activeTab === 'search' ? T.secondary : T.onSurfaceVariant}
+        />
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === 'search' ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
+          Tìm kho
+        </Text>
+      </TouchableOpacity>
+
+      {/* Tab 2: Kho của tôi */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab('my-storage')}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons
+          name="inventory-2"
+          size={22}
+          color={activeTab === 'my-storage' ? T.secondary : T.onSurfaceVariant}
+        />
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === 'my-storage' ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
+          Kho của tôi
+        </Text>
+      </TouchableOpacity>
+
+      {/* Tab 3: Chìa khoá */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab('digital-key')}
+        activeOpacity={0.7}
+      >
+        <View style={{ position: 'relative' }}>
+          <MaterialIcons
+            name="vpn-key"
+            size={22}
+            color={activeTab === 'digital-key' ? T.secondary : T.onSurfaceVariant}
+          />
+          <View style={bn.keyBadgeDot} />
+        </View>
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === 'digital-key' ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
+          Chìa khoá
+        </Text>
+      </TouchableOpacity>
+
+      {/* Tab 4: Hỗ trợ */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab('support')}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons
+          name="support-agent"
+          size={24}
+          color={activeTab === 'support' ? T.secondary : T.onSurfaceVariant}
+        />
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === 'support' ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
+          Hỗ trợ
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -675,7 +843,7 @@ function BookingDetailModal({
               </Text>
             </View>
             <TouchableOpacity style={bm.closeBtn} onPress={onClose}>
-              <Text style={bm.closeBtnText}>✕</Text>
+              <MaterialIcons name="close" size={18} color={T.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
 
@@ -790,15 +958,22 @@ function BookingDetailModal({
 
 // ─── Main StyleSheet ────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  container: {
+  outerWrapper: {
     flex: 1,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+  },
+  mobileContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 500,
     backgroundColor: T.bg,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   loadWrap: {
     flex: 1,
@@ -820,29 +995,32 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: 56,
     backgroundColor: T.surfaceLowest,
     borderBottomWidth: 1,
     borderBottomColor: T.surfaceContainerHigh,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 40,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   brandIconBtn: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerLow,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  brandIconText: {
-    fontSize: 20,
-  },
   brandTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: T.onSurface,
     letterSpacing: -0.3,
@@ -850,28 +1028,37 @@ const s = StyleSheet.create({
   brandLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    marginTop: 1,
-  },
-  brandLocationIcon: {
-    fontSize: 11,
+    gap: 2,
   },
   brandLocationText: {
     fontSize: 11,
     color: T.onSurfaceVariant,
     fontWeight: '600',
   },
+  topActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  switchPortalBtn: {
+    backgroundColor: T.primaryContainer,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  switchPortalText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   notifBtn: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerLow,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-  },
-  notifIcon: {
-    fontSize: 18,
   },
   notifBadgeDot: {
     position: 'absolute',
@@ -904,30 +1091,25 @@ const s = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: T.surfaceLowest,
     borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     height: 44,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#c6c6cd',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
+  searchInputWrapFocused: {
+    borderColor: T.primaryContainer,
+    borderWidth: 1.5,
   },
   searchInput: {
     flex: 1,
     fontSize: 13,
     color: T.onSurface,
     paddingVertical: 0,
-  },
-  micIcon: {
-    fontSize: 15,
-    color: T.onSurfaceVariant,
-    marginLeft: 6,
   },
   filterToggleBtn: {
     width: 44,
@@ -941,10 +1123,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
-  },
-  filterToggleIcon: {
-    fontSize: 18,
-    color: T.onPrimary,
   },
 
   // Size Guide Row
@@ -962,15 +1140,12 @@ const s = StyleSheet.create({
   sizeGuideLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-  },
-  sizeGuideLinkIcon: {
-    fontSize: 12,
+    gap: 3,
   },
   sizeGuideLinkText: {
     fontSize: 11,
     fontWeight: '700',
-    color: T.secondaryBrand,
+    color: T.secondary,
   },
 
   // Size Chips Scroll
@@ -982,10 +1157,10 @@ const s = StyleSheet.create({
   sizeChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: T.surfaceLowest,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#c6c6cd',
   },
   sizeChipActive: {
     backgroundColor: T.primaryContainer,
@@ -1010,7 +1185,7 @@ const s = StyleSheet.create({
   amenityTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 16,
@@ -1021,9 +1196,6 @@ const s = StyleSheet.create({
   amenityTagActive: {
     backgroundColor: T.surfaceContainerHigh,
     borderColor: T.primaryContainer,
-  },
-  amenityTagIcon: {
-    fontSize: 12,
   },
   amenityTagText: {
     fontSize: 11,
@@ -1043,9 +1215,6 @@ const s = StyleSheet.create({
     backgroundColor: T.secondaryFixed,
     borderWidth: 1,
     borderColor: '#ffb599',
-  },
-  amenityPromoIcon: {
-    fontSize: 12,
   },
   amenityPromoText: {
     fontSize: 11,
@@ -1100,8 +1269,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  emptyIcon: { fontSize: 36, marginBottom: 8 },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: T.onSurface },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: T.onSurface, marginTop: 8 },
   emptySub: { fontSize: 12, color: T.onSurfaceVariant, textAlign: 'center', marginTop: 4, marginBottom: 14 },
   resetFilterBtn: {
     paddingHorizontal: 14,
@@ -1128,9 +1296,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  reassuranceIcon: {
-    fontSize: 18,
   },
   reassuranceTextWrap: {
     flex: 1,
@@ -1194,7 +1359,7 @@ const ac = StyleSheet.create({
     backgroundColor: T.surfaceLowest,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#c6c6cd',
     marginBottom: 16,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -1204,7 +1369,7 @@ const ac = StyleSheet.create({
     elevation: 2,
   },
   mediaWrap: {
-    height: 170,
+    height: 176,
     position: 'relative',
     backgroundColor: T.primaryContainer,
   },
@@ -1224,9 +1389,11 @@ const ac = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 205, 0.3)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -1239,7 +1406,7 @@ const ac = StyleSheet.create({
     backgroundColor: T.green,
   },
   liveBadgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     color: T.onSurface,
   },
@@ -1248,12 +1415,12 @@ const ac = StyleSheet.create({
     top: 10,
     right: 10,
     backgroundColor: T.secondaryContainer,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
   },
   discountBadgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     color: T.surfaceLowest,
   },
@@ -1268,9 +1435,6 @@ const ac = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
     marginBottom: 2,
-  },
-  distanceIcon: {
-    fontSize: 11,
   },
   distanceText: {
     fontSize: 11,
@@ -1303,7 +1467,7 @@ const ac = StyleSheet.create({
   },
   metricColBorder: {
     borderLeftWidth: 1,
-    borderLeftColor: '#cbd5e1',
+    borderLeftColor: '#c6c6cd',
     paddingLeft: 10,
   },
   metricHeader: {
@@ -1311,9 +1475,6 @@ const ac = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginBottom: 2,
-  },
-  metricIcon: {
-    fontSize: 12,
   },
   metricLabel: {
     fontSize: 10,
@@ -1340,14 +1501,9 @@ const ac = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: T.surfaceContainer,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  featureChipDot: {
-    fontSize: 10,
-    color: T.secondaryBrand,
-    fontWeight: '800',
+    borderColor: '#c6c6cd',
   },
   featureChipText: {
     fontSize: 11,
@@ -1380,7 +1536,7 @@ const ac = StyleSheet.create({
     gap: 2,
   },
   priceAmount: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '900',
     color: T.secondaryBrand,
   },
@@ -1392,14 +1548,14 @@ const ac = StyleSheet.create({
   ctaBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     backgroundColor: T.secondaryContainer,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     shadowColor: T.secondaryContainer,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 3,
     elevation: 3,
   },
@@ -1408,10 +1564,53 @@ const ac = StyleSheet.create({
     fontWeight: '800',
     color: T.surfaceLowest,
   },
-  ctaBtnArrow: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: T.surfaceLowest,
+});
+
+// ─── Bottom Navigation Bar Styles ───────────────────────────────────────────
+const bn = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    backgroundColor: T.surfaceLowest,
+    borderTopWidth: 1,
+    borderTopColor: T.outlineVariant,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  tabLabel: {
+    fontSize: 11,
+    marginTop: 2,
+    letterSpacing: 0.1,
+  },
+  tabLabelActive: {
+    color: T.secondary,
+    fontWeight: '700',
+  },
+  tabLabelInactive: {
+    color: T.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  keyBadgeDot: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: T.secondaryContainer,
   },
 });
 
@@ -1457,11 +1656,6 @@ const bm = StyleSheet.create({
     backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  closeBtnText: {
-    fontSize: 13,
-    color: T.onSurfaceVariant,
-    fontWeight: '700',
   },
   body: {
     padding: 16,

@@ -1016,76 +1016,78 @@ export default function App() {
             }}
           />
 
-          {/* Top Bar Khách Hàng */}
-          <View style={styles.navBar}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <TouchableOpacity
-                style={styles.customerMenuBtn}
-                onPress={() => setIsCustomerSidebarVisible(true)}
-              >
-                <Text style={{ color: '#fff', fontSize: 20 }}>☰</Text>
-              </TouchableOpacity>
-              <View style={styles.logoBadge}>
-                <Text style={styles.logoIcon}>📦</Text>
-                <Text style={styles.logoText}>SelfStorage</Text>
+          {/* Top Bar Khách Hàng & Tabs (ẩn khi ở trang Book để giao diện full screen theo thiết kế mới) */}
+          {customerTab !== 'book' && (
+            <>
+              <View style={styles.navBar}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TouchableOpacity
+                    style={styles.customerMenuBtn}
+                    onPress={() => setIsCustomerSidebarVisible(true)}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 20 }}>☰</Text>
+                  </TouchableOpacity>
+                  <View style={styles.logoBadge}>
+                    <Text style={styles.logoIcon}>📦</Text>
+                    <Text style={styles.logoText}>SelfStorage</Text>
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    style={styles.switchStaffBtn}
+                    onPress={() => setAppMode('staff')}
+                  >
+                    <Text style={styles.switchStaffText}>👔 Cổng Nhân Viên</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.authButton}
+                    onPress={() => setShowAuthModal(true)}
+                  >
+                    <Text style={styles.authButtonText}>
+                      {isLoggedIn ? '👤 Khách' : 'Đăng Nhập'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
 
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {/* Nút Chuyển Nhanh Sang Cổng Nhân Viên */}
-              <TouchableOpacity
-                style={styles.switchStaffBtn}
-                onPress={() => setAppMode('staff')}
-              >
-                <Text style={styles.switchStaffText}>👔 Cổng Nhân Viên</Text>
-              </TouchableOpacity>
+              <View style={styles.tabsContainer}>
+                <TouchableOpacity
+                  style={[styles.tabItem, customerTab === 'my_units' && styles.tabItemActive]}
+                  onPress={() => {
+                    setCustomerTab('my_units');
+                    setCustomerNavTab('my_units');
+                  }}
+                >
+                  <Text style={[styles.tabLabel, customerTab === 'my_units' && styles.tabLabelActive]}>
+                    🏠 Ô Kho Của Tôi ({rentedUnits.length})
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.authButton}
-                onPress={() => setShowAuthModal(true)}
-              >
-                <Text style={styles.authButtonText}>
-                  {isLoggedIn ? '👤 Khách' : 'Đăng Nhập'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+                <TouchableOpacity
+                  style={[styles.tabItem, customerTab === 'book' && styles.tabItemActive]}
+                  onPress={() => setCustomerTab('book')}
+                >
+                  <Text style={[styles.tabLabel, customerTab === 'book' && styles.tabLabelActive]}>
+                    ✨ Đặt Kho Mới
+                  </Text>
+                </TouchableOpacity>
 
-          {/* Segmented Control Tabs */}
-          <View style={styles.tabsContainer}>
-            <TouchableOpacity
-              style={[styles.tabItem, customerTab === 'my_units' && styles.tabItemActive]}
-              onPress={() => {
-                setCustomerTab('my_units');
-                setCustomerNavTab('my_units');
-              }}
-            >
-              <Text style={[styles.tabLabel, customerTab === 'my_units' && styles.tabLabelActive]}>
-                🏠 Ô Kho Của Tôi ({rentedUnits.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, customerTab === 'book' && styles.tabItemActive]}
-              onPress={() => setCustomerTab('book')}
-            >
-              <Text style={[styles.tabLabel, customerTab === 'book' && styles.tabLabelActive]}>
-                ✨ Đặt Kho Mới
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, customerTab === 'my_reservations' && styles.tabItemActive]}
-              onPress={() => {
-                setCustomerTab('my_reservations');
-                if (isLoggedIn) loadMyReservations();
-              }}
-            >
-              <Text style={[styles.tabLabel, customerTab === 'my_reservations' && styles.tabLabelActive]}>
-                📋 Đơn Của Tôi ({myReservations.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity
+                  style={[styles.tabItem, customerTab === 'my_reservations' && styles.tabItemActive]}
+                  onPress={() => {
+                    setCustomerTab('my_reservations');
+                    if (isLoggedIn) loadMyReservations();
+                  }}
+                >
+                  <Text style={[styles.tabLabel, customerTab === 'my_reservations' && styles.tabLabelActive]}>
+                    📋 Đơn Của Tôi ({myReservations.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
           {/* Nội dung theo Tab chính */}
           {customerTab === 'my_units' ? (
@@ -1204,6 +1206,23 @@ export default function App() {
                 loadStaffData();
               }}
               onViewMyReservations={() => setCustomerTab('my_reservations')}
+              onSwitchToStaff={() => setAppMode('staff')}
+              activeBottomTab="search"
+              onNavigateTab={(tab) => {
+                if (tab === 'search') {
+                  setCustomerTab('book');
+                } else if (tab === 'my-storage') {
+                  setCustomerTab('my_units');
+                  setCustomerNavTab('my_units');
+                  setCustomerFlowStep('dashboard');
+                } else if (tab === 'digital-key') {
+                  setCustomerTab('my_units');
+                  setCustomerNavTab('access');
+                } else if (tab === 'support') {
+                  setCustomerTab('my_units');
+                  setCustomerNavTab('support');
+                }
+              }}
             />
           ) : loading ? (
             <View style={styles.centerBox}>
