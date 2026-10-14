@@ -115,7 +115,7 @@ const DEFAULT_UNIT_IMAGES: Record<string, string> = {
 
 export default function App() {
   // ================= CHẾ ĐỘ ỨNG DỤNG (CUSTOMER vs STAFF) =================
-  const [appMode, setAppMode] = useState<'customer' | 'staff'>('staff'); // Mặc định mở Staff Portal Luồng 2
+  const [appMode, setAppMode] = useState<'customer' | 'staff'>('customer'); // Mặc định mở Customer Portal để dev trực tiếp trang Đặt kho
 
   // ================= STATE CHO CỔNG NHÂN VIÊN (LUỒNG 2) =================
   const [staffTab, setStaffTab] = useState<StaffTab>('queue');
@@ -149,7 +149,7 @@ export default function App() {
   const [showChangePinModal, setShowChangePinModal] = useState<boolean>(false);
 
   // State đặt kho (Luồng 1) & đơn cũ & Luồng 3
-  const [customerTab, setCustomerTab] = useState<'my_units' | 'book' | 'my_reservations'>('my_units');
+  const [customerTab, setCustomerTab] = useState<'my_units' | 'book' | 'my_reservations'>('book');
   const [step, setStep] = useState<number>(1);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);
