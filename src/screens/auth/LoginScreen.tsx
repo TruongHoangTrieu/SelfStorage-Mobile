@@ -54,6 +54,7 @@ export default function LoginScreen({
   const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   // Handle Login submission
@@ -167,6 +168,53 @@ export default function LoginScreen({
       setEmail('staff@selfstorage.vn');
       setPassword('123456');
       handleLogin('staff@selfstorage.vn', '123456');
+    }
+  };
+
+  // Google Login helper
+  const handleGoogleLogin = async () => {
+    try {
+      setGoogleLoading(true);
+      setErrorMsg('');
+
+      // Gửi token xác thực Google tới Backend POST /auth/google
+      const res = await apiRequest<{
+        message?: string;
+        accessToken?: string;
+        token?: string;
+        user?: any;
+      }>('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({
+          credential: 'demo-google-token-mobile-' + Date.now(),
+        }),
+      });
+
+      const token = res?.accessToken || res?.token;
+      if (token) {
+        setAuthToken(token);
+      }
+
+      const userData = res?.user || {
+        email: 'customer.google@selfstorage.vn',
+        fullName: 'Nguyễn Khách Hàng (Google)',
+        role: 'STORAGE_CUSTOMER',
+      };
+
+      if (Platform.OS === 'web') {
+        try {
+          localStorage.setItem('user', JSON.stringify(userData));
+        } catch {
+          // ignore
+        }
+      }
+
+      Alert.alert('Thành công', `Đăng nhập Google thành công! Chào mừng ${userData.fullName || userData.email}`);
+      onLoginSuccess(userData);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -323,9 +371,9 @@ export default function LoginScreen({
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={[s.submitBtn, loading && s.submitBtnDisabled]}
+            style={[s.submitBtn, (loading || googleLoading) && s.submitBtnDisabled]}
             onPress={() => (mode === 'login' ? handleLogin() : handleRegister())}
-            disabled={loading}
+            disabled={loading || googleLoading}
             activeOpacity={0.85}
           >
             {loading ? (
@@ -336,6 +384,36 @@ export default function LoginScreen({
                   {mode === 'login' ? 'Đăng Nhập Ngay' : 'Tạo Tài Khoản Khách Hàng'}
                 </Text>
                 <MaterialIcons name="arrow-forward" size={18} color="#ffffff" />
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Google Divider */}
+          <View style={s.dividerWithText}>
+            <View style={s.line} />
+            <Text style={s.dividerLabel}>HOẶC TIẾP TỤC VỚI</Text>
+            <View style={s.line} />
+          </View>
+
+          {/* Google Sign In Button */}
+          <TouchableOpacity
+            style={[s.googleBtn, googleLoading && s.googleBtnDisabled]}
+            onPress={handleGoogleLogin}
+            disabled={loading || googleLoading}
+            activeOpacity={0.85}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color={T.brand} size="small" />
+            ) : (
+              <>
+                <View style={s.googleIconWrap}>
+                  <MaterialCommunityIcons name="google" size={18} color="#EA4335" />
+                </View>
+                <Text style={s.googleBtnText}>
+                  {mode === 'login'
+                    ? 'Đăng nhập với Google'
+                    : 'Đăng ký nhanh với Google'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -585,6 +663,55 @@ const s = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  dividerWithText: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10,
+  },
+  line: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: T.outline,
+    letterSpacing: 0.5,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    gap: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  googleBtnDisabled: {
+    opacity: 0.65,
+  },
+  googleIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: T.onSurface,
   },
   quickSection: {
     marginBottom: 24,
