@@ -1216,8 +1216,7 @@ export default function App() {
               loading={loading}
               refreshing={refreshing}
               onRefresh={loadCustomerData}
-              onReservationCreated={(res) => {
-                setSuccessReservation(res);
+              onReservationCreated={() => {
                 loadMyReservations();
                 loadStaffData();
               }}
@@ -1336,34 +1335,6 @@ export default function App() {
                 onPinChanged={handlePinChanged}
               />
             </>
-          )}
-
-          {/* POPUP MODAL ĐẶT CHỖ THÀNH CÔNG */}
-          {successReservation && (
-            <Modal visible={!!successReservation} transparent animationType="slide">
-              <View style={styles.modalBackdrop}>
-                <View style={styles.modalDialog}>
-                  <Text style={styles.modalPartyIcon}>🎉</Text>
-                  <Text style={styles.modalHeadline}>Đặt Chỗ Thành Công!</Text>
-                  <Text style={styles.modalCode}>
-                    Mã Đơn: #{String(successReservation.id).slice(-6).toUpperCase()}
-                  </Text>
-                  <Text style={styles.modalInstruction}>
-                    Đơn đặt chỗ đã được lưu vào hệ thống. Bạn có thể đến chi nhánh vào ngày hẹn để nhân viên hỗ trợ bàn giao kho và cấp mã Smart Key.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.nextBtn}
-                    onPress={() => {
-                      setSuccessReservation(null);
-                      setCustomerTab('my_reservations');
-                      setStep(1);
-                    }}
-                  >
-                    <Text style={styles.nextBtnText}>Xem Đơn Của Tôi →</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
           )}
 
           {/* MODAL AUTH */}

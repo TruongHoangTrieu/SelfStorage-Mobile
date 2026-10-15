@@ -188,9 +188,6 @@ export default function BookStorageScreen({
   const [moveInDateStr, setMoveInDateStr] = useState('2026-10-18');
   const [appointmentTimeSlot, setAppointmentTimeSlot] = useState('09:00 - 10:00');
   const [rentalTermMonths, setRentalTermMonths] = useState<1 | 3 | 6 | 12>(6);
-  const [insurancePlan, setInsurancePlan] = useState<'standard' | 'comprehensive'>('comprehensive');
-  const [addonTrolley, setAddonTrolley] = useState(true);
-  const [addonCartons, setAddonCartons] = useState(false);
   const [contractNotes, setContractNotes] = useState('');
 
   // SePay VietQR Deposit States (Step 3)
@@ -361,26 +358,20 @@ export default function BookStorageScreen({
       ratePerMonth = Math.round(baseRate * 0.85);
     }
 
+    const grossRent = baseRate * rentalTermMonths;
     const totalRent = ratePerMonth * rentalTermMonths;
-    const insuranceMonthly = insurancePlan === 'comprehensive' ? 99000 : 0;
-    const totalInsurance = insuranceMonthly * rentalTermMonths;
-    const depositAmount = Number(selectedUnit.depositAmount) || 300000;
-    const voucherDiscount = 200000;
-    const addonCartonsCost = addonCartons ? 120000 : 0;
-
-    const grandTotal = totalRent + totalInsurance + depositAmount - voucherDiscount + addonCartonsCost;
+    const discountSavings = grossRent - totalRent;
+    const depositAmount = Number(selectedUnit.depositAmount) || baseRate;
 
     return {
       ratePerMonth,
       discountPct,
+      grossRent,
+      discountSavings,
       totalRent,
-      totalInsurance,
       depositAmount,
-      voucherDiscount,
-      addonCartonsCost,
-      grandTotal,
     };
-  }, [selectedUnit, rentalTermMonths, insurancePlan, addonCartons]);
+  }, [selectedUnit, rentalTermMonths]);
 
   // Handle Bottom Nav Press
   const handleTabPress = (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => {
@@ -422,7 +413,6 @@ export default function BookStorageScreen({
 
       const resId = resResult.id;
       setConfirmedReservation(resResult);
-      onReservationCreated(resResult);
 
       // 2. Gọi API tạo mã cọc VietQR từ Backend (POST /payments/deposit)
       try {
@@ -498,6 +488,9 @@ export default function BookStorageScreen({
           clearInterval(interval);
           setIsDepositPaid(true);
           setCurrentStep(4);
+          if (confirmedReservation) {
+            onReservationCreated(confirmedReservation);
+          }
         }
       } catch {
         // silent
@@ -527,6 +520,9 @@ export default function BookStorageScreen({
       if (summary?.depositPaid || summary?.reservationStatus === 'CONFIRMED') {
         setIsDepositPaid(true);
         setCurrentStep(4);
+        if (confirmedReservation) {
+          onReservationCreated(confirmedReservation);
+        }
         Alert.alert('Thành công', 'Hệ thống đã nhận được tiền cọc. Ô kho đã được giữ chỗ!');
       } else {
         Alert.alert(
@@ -565,12 +561,18 @@ export default function BookStorageScreen({
       if (res?.success) {
         setIsDepositPaid(true);
         setCurrentStep(4);
+        if (confirmedReservation) {
+          onReservationCreated(confirmedReservation);
+        }
         Alert.alert('Thành công', 'Thanh toán cọc giữ chỗ thành công!');
       }
     } catch (err: any) {
       Alert.alert('Thông báo', err.message || 'Mô phỏng thanh toán hoàn tất');
       setIsDepositPaid(true);
       setCurrentStep(4);
+      if (confirmedReservation) {
+        onReservationCreated(confirmedReservation);
+      }
     } finally {
       setSimulatingPayment(false);
     }
@@ -1132,161 +1134,55 @@ export default function BookStorageScreen({
                   </View>
                 </View>
 
-                {/* 4. Asset Protection & Insurance */}
-                <View style={s.step2Card}>
-                  <View style={s.cardSectionHeader}>
-                    <View style={s.headerWithIcon}>
-                      <MaterialIcons name="shield" size={22} color={T.secondary} />
-                      <Text style={s.sectionTitle}>Bảo hiểm tài sản lưu trữ</Text>
-                    </View>
-                    <Text style={s.sectionHeaderSub}>Tiêu chuẩn PCCC & Vệ sinh</Text>
-                  </View>
-
-                  {/* Standard Option */}
-                  <TouchableOpacity
-                    style={[s.insuranceCard, insurancePlan === 'standard' && s.insuranceCardSelected]}
-                    onPress={() => setInsurancePlan('standard')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[s.radioCircle, insurancePlan === 'standard' && s.radioCircleSelected]} />
-                    <View style={{ flex: 1 }}>
-                      <View style={s.insuranceTopRow}>
-                        <Text style={s.insuranceTitle}>Gói Tiêu chuẩn</Text>
-                        <View style={s.freePill}>
-                          <Text style={s.freePillText}>Miễn phí</Text>
-                        </View>
-                      </View>
-                      <Text style={s.insuranceDesc}>
-                        Bồi thường rủi ro va đập và sự cố kỹ thuật cơ bản lên đến{' '}
-                        <Text style={{ fontWeight: '700', color: T.onSurface }}>20.000.000 đ</Text>.
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Comprehensive Option */}
-                  <TouchableOpacity
-                    style={[s.insuranceCard, insurancePlan === 'comprehensive' && s.insuranceCardSelected]}
-                    onPress={() => setInsurancePlan('comprehensive')}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[s.radioCircle, insurancePlan === 'comprehensive' && s.radioCircleSelected]} />
-                    <View style={{ flex: 1 }}>
-                      <View style={s.insuranceTopRow}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={[s.insuranceTitle, { fontWeight: '700' }]}>Gói Toàn diện</Text>
-                          <MaterialIcons name="verified-user" size={16} color={T.secondary} />
-                        </View>
-                        <Text style={s.insurancePriceTag}>+99.000 đ/tháng</Text>
-                      </View>
-                      <Text style={[s.insuranceDesc, { color: T.onSurface }]}>
-                        Bảo hiểm toàn diện độ ẩm, nấm mốc, ngập nước, chập cháy nổ. Bồi thường tối đa lên đến{' '}
-                        <Text style={{ fontWeight: '700', color: T.secondary }}>100.000.000 đ</Text> qua đối tác Bảo Việt.
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-
-                {/* 5. Add-on Services Checklist */}
-                <View style={s.step2Card}>
-                  <View style={s.headerWithIcon}>
-                    <MaterialIcons name="add-box" size={22} color={T.secondary} />
-                    <Text style={s.sectionTitle}>Dịch vụ hỗ trợ kèm theo</Text>
-                  </View>
-
-                  <View style={{ gap: 8 }}>
-                    {/* Addon 1 */}
-                    <TouchableOpacity
-                      style={s.addonItem}
-                      onPress={() => setAddonTrolley(!addonTrolley)}
-                      activeOpacity={0.85}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                        <View style={[s.checkbox, addonTrolley && s.checkboxChecked]}>
-                          {addonTrolley && <MaterialIcons name="check" size={16} color={T.surfaceLowest} />}
-                        </View>
-                        <View>
-                          <Text style={s.addonTitle}>Mượn xe đẩy & pallet miễn phí</Text>
-                          <Text style={s.addonSub}>Sẵn có tại sảnh tiếp nhận kho 24/7</Text>
-                        </View>
-                      </View>
-                      <Text style={s.addonPrice}>0 đ</Text>
-                    </TouchableOpacity>
-
-                    {/* Addon 2 */}
-                    <TouchableOpacity
-                      style={s.addonItem}
-                      onPress={() => setAddonCartons(!addonCartons)}
-                      activeOpacity={0.85}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                        <View style={[s.checkbox, addonCartons && s.checkboxChecked]}>
-                          {addonCartons && <MaterialIcons name="check" size={16} color={T.surfaceLowest} />}
-                        </View>
-                        <View>
-                          <Text style={s.addonTitle}>Combo 5 thùng carton & băng dính</Text>
-                          <Text style={s.addonSub}>Giao trước buồng kho ngày nhận kho</Text>
-                        </View>
-                      </View>
-                      <Text style={s.addonPrice}>+120.000 đ</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* 6. Cost Breakdown & Payment Summary */}
+                {/* 4. Cost Breakdown & Payment Summary */}
                 <View style={s.step2Card}>
                   <View style={s.costBreakdownHeader}>
                     <View style={s.headerWithIcon}>
                       <MaterialIcons name="receipt-long" size={22} color={T.secondary} />
-                      <Text style={s.sectionTitle}>Bảng tính chi phí</Text>
+                      <Text style={s.sectionTitle}>Bảng tính chi phí thuê & Tiền cọc</Text>
                     </View>
-                    <Text style={s.sectionHeaderSub}>Hợp đồng {rentalTermMonths} tháng</Text>
+                    <Text style={s.sectionHeaderSub}>Kỳ hạn {rentalTermMonths} tháng</Text>
                   </View>
 
                   <View style={s.costLinesList}>
                     <View style={s.costLine}>
                       <Text style={s.costLineLabel}>
-                        Giá thuê kho ({rentalTermMonths} tháng x {formatVND(calc.ratePerMonth)})
+                        Tiền thuê kho niêm yết ({rentalTermMonths} tháng x {formatVND(selectedUnit.monthlyBasePrice)})
                       </Text>
-                      <Text style={s.costLineValue}>{formatVND(calc.totalRent)}</Text>
+                      <Text style={s.costLineValue}>{formatVND(calc.grossRent)}</Text>
                     </View>
 
-                    {calc.totalInsurance > 0 && (
+                    {calc.discountPct > 0 && (
                       <View style={s.costLine}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={s.costLineLabel}>Bảo hiểm tài sản toàn diện ({rentalTermMonths} tháng)</Text>
-                          <MaterialIcons name="help-outline" size={14} color={T.outline} />
-                        </View>
-                        <Text style={s.costLineValue}>+{formatVND(calc.totalInsurance)}</Text>
+                        <Text style={[s.costLineLabel, { color: T.secondary }]}>
+                          Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm {calc.discountPct}%)
+                        </Text>
+                        <Text style={[s.costLineValue, { color: T.secondary, fontWeight: '700' }]}>
+                          -{formatVND(calc.discountSavings)}
+                        </Text>
                       </View>
                     )}
+
+                    <View style={[s.costLine, { paddingTop: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9' }]}>
+                      <Text style={[s.costLineLabel, { fontWeight: '700' }]}>
+                        Tổng tiền thuê thực tế ({rentalTermMonths} tháng)
+                      </Text>
+                      <Text style={[s.costLineValue, { fontWeight: '700' }]}>
+                        {formatVND(calc.totalRent)}
+                      </Text>
+                    </View>
 
                     <View style={s.costLine}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[s.costLineLabel, { fontWeight: '700', color: T.onSurface }]}>
-                          Tiền cọc giữ chỗ kho (Hoàn lại 100%)
+                          Tiền cọc giữ chỗ (Hoàn lại 100%)
                         </Text>
                         <View style={s.refundPill}>
                           <Text style={s.refundPillText}>Cọc đảm bảo</Text>
                         </View>
                       </View>
-                      <Text style={[s.costLineValue, { fontWeight: '700', color: T.secondary }]}>
+                      <Text style={[s.costLineValue, { fontWeight: '800', color: T.secondary, fontSize: 14 }]}>
                         {formatVND(calc.depositAmount)}
-                      </Text>
-                    </View>
-
-                    {addonCartons && (
-                      <View style={s.costLine}>
-                        <Text style={s.costLineLabel}>Combo thùng carton & băng dính</Text>
-                        <Text style={s.costLineValue}>+{formatVND(calc.addonCartonsCost)}</Text>
-                      </View>
-                    )}
-
-                    <View style={s.costLine}>
-                      <Text style={[s.costLineLabel, { color: T.secondary }]}>
-                        Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm {calc.discountPct}%)
-                      </Text>
-                      <Text style={[s.costLineValue, { color: T.secondary }]}>
-                        -{formatVND(Math.round((selectedUnit.monthlyBasePrice * rentalTermMonths) - calc.totalRent))}
                       </Text>
                     </View>
                   </View>
@@ -1299,7 +1195,7 @@ export default function BookStorageScreen({
                     </View>
                     <Text style={s.depositHighlightAmount}>{formatVND(calc.depositAmount)}</Text>
                     <Text style={s.depositHighlightSub}>
-                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp đồng. Tiền thuê kho theo tháng sẽ thanh toán vào ngày nhận kho.
+                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp đồng. Tiền thuê kho sẽ được thanh toán vào ngày nhận kho.
                     </Text>
                   </View>
                 </View>
