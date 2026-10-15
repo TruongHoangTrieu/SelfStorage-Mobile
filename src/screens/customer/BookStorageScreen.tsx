@@ -195,13 +195,75 @@ export default function BookStorageScreen({
 
   // Combined real & fallback data
   const storageItems: StorageDisplayItem[] = useMemo(() => {
-    if (facilities.length > 0 && unitTypes.length > 0) {
+    if (unitTypes && unitTypes.length > 0) {
+      return unitTypes.map((ut, idx) => {
+        const fac =
+          facilities.find((f) => String(f.id) === String(ut.facilityId)) ||
+          (ut as any).facility ||
+          facilities[idx % (facilities.length || 1)] || {
+            id: ut.facilityId || 'fac-1',
+            name: 'Hệ thống Kho Tự Quản Thông Minh',
+            address: 'Hồ Chí Minh',
+            code: 'FAC',
+          };
+
+        const cat: 'personal' | 'family' | 'business' =
+          ut.size && ut.size <= 3 ? 'personal' : ut.size && ut.size <= 9 ? 'family' : 'business';
+        const mockRef = DEFAULT_ITEMS[idx % DEFAULT_ITEMS.length];
+
+        const facImage =
+          Array.isArray((fac as any).images) && (fac as any).images.length > 0
+            ? (fac as any).images[0]
+            : fac.image || fac.imageUrl;
+        const utImage =
+          Array.isArray((ut as any).images) && (ut as any).images.length > 0
+            ? (ut as any).images[0]
+            : ut.image || ut.imageUrl;
+
+        const available = (ut as any).availableUnits ?? (ut as any).availableCount;
+        const badgeStatus =
+          available !== undefined
+            ? available > 0
+              ? `Còn ${available} kho trống`
+              : 'Tạm hết phòng'
+            : mockRef.badgeStatus;
+
+        return {
+          id: `item-${ut.id}`,
+          facilityId: fac.id || ut.facilityId,
+          unitTypeId: ut.id,
+          facilityName: fac.name,
+          locationText: fac.address || mockRef.locationText,
+          title: ut.name,
+          unitCode: `#${fac.code || 'FAC'}-${ut.code || String(ut.id).slice(-4).toUpperCase()}`,
+          floorText: `Sơ đồ buồng kho ${fac.name}`,
+          image: utImage || facImage || mockRef.image,
+          blueprintImage: mockRef.blueprintImage,
+          badgeStatus,
+          badgeDiscount: idx === 0 ? '-15% Tháng đầu' : undefined,
+          floorArea: `${ut.size || 5} m²`,
+          volume: `${Math.round((ut.size || 5) * 2.8 * 10) / 10} m³`,
+          dimensions: (ut as any).dimensions || `${ut.size}m² (Tiêu chuẩn cao 2.8m)`,
+          capacity: ut.description || mockRef.capacity,
+          features: (ut.features as string[]) || mockRef.features,
+          originalPrice: idx === 0 ? Math.round(Number(ut.price) * 1.2) : undefined,
+          monthlyBasePrice: Number(ut.price) || mockRef.monthlyBasePrice,
+          category: cat,
+          amenities: mockRef.amenities,
+        };
+      });
+    }
+
+    if (facilities && facilities.length > 0) {
       const generated: StorageDisplayItem[] = [];
       facilities.forEach((fac, facIndex) => {
-        unitTypes.forEach((ut, utIndex) => {
+        const nestedTypes = (fac as any).storageUnitTypes || [];
+        nestedTypes.forEach((ut: any, utIndex: number) => {
           const cat: 'personal' | 'family' | 'business' =
             ut.size && ut.size <= 3 ? 'personal' : ut.size && ut.size <= 9 ? 'family' : 'business';
           const mockRef = DEFAULT_ITEMS[(facIndex + utIndex) % DEFAULT_ITEMS.length];
+          const facImage =
+            Array.isArray(fac.images) && fac.images.length > 0 ? fac.images[0] : fac.image;
 
           generated.push({
             id: `item-${fac.id}-${ut.id}`,
@@ -209,27 +271,26 @@ export default function BookStorageScreen({
             unitTypeId: ut.id,
             facilityName: fac.name,
             locationText: fac.address || mockRef.locationText,
-            title: `${ut.name} - ${fac.name}`,
-            unitCode: `#${fac.code || 'B2'}-${100 + facIndex * 10 + utIndex}`,
+            title: ut.name,
+            unitCode: `#${fac.code || 'FAC'}-${ut.code || String(ut.id).slice(-4).toUpperCase()}`,
             floorText: `Sơ đồ buồng kho ${fac.name}`,
-            image: ut.image || fac.image || mockRef.image,
+            image: facImage || mockRef.image,
             blueprintImage: mockRef.blueprintImage,
-            badgeStatus: (ut as any).availableCount ? `Còn ${(ut as any).availableCount} kho trống` : mockRef.badgeStatus,
-            badgeDiscount: utIndex === 0 ? '-15% Tháng đầu' : undefined,
-            floorArea: `${ut.size || 6.0} m²`,
-            volume: `${Math.round((ut.size || 6.0) * 2.8 * 10) / 10} m³`,
-            dimensions: (ut as any).dimensions || `2 x 3 x 2.8m`,
-            capacity: (ut as any).capacity || mockRef.capacity,
-            features: (ut.features as string[]) || mockRef.features,
-            originalPrice: utIndex === 0 ? Math.round(Number(ut.price) * 1.2) : undefined,
-            monthlyBasePrice: Number(ut.price) || mockRef.monthlyBasePrice,
+            badgeStatus: ut.status === 'ACTIVE' ? 'Còn kho trống' : 'Bảo trì',
+            floorArea: `${ut.size || 5} m²`,
+            volume: `${Math.round((ut.size || 5) * 2.8 * 10) / 10} m³`,
+            dimensions: `${ut.size}m² (Cao 2.8m)`,
+            capacity: ut.description || mockRef.capacity,
+            features: mockRef.features,
+            monthlyBasePrice: Number(ut.price || ut.depositAmount) || mockRef.monthlyBasePrice,
             category: cat,
             amenities: mockRef.amenities,
           });
         });
       });
-      return generated;
+      if (generated.length > 0) return generated;
     }
+
     return DEFAULT_ITEMS;
   }, [facilities, unitTypes]);
 
@@ -312,11 +373,15 @@ export default function BookStorageScreen({
   const handleSignContract = async () => {
     try {
       setSubmitting(true);
-      const { apiRequest } = await import('../../api');
+      const { apiRequest, getAuthToken, loginCustomerApi } = await import('../../api');
+      if (!getAuthToken()) {
+        await loginCustomerApi().catch(() => null);
+      }
+
       const isoDate = new Date(`${moveInDateStr}T09:00:00.000Z`).toISOString();
       const payload = {
-        facilityId: Number(selectedUnit.facilityId) || 1,
-        unitTypeId: Number(selectedUnit.unitTypeId) || 1,
+        facilityId: selectedUnit.facilityId,
+        unitTypeId: selectedUnit.unitTypeId,
         appointmentDate: isoDate,
         rentalPeriod: rentalTermMonths,
         rentalPeriodUnit: 'MONTHS',

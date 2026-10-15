@@ -1,8 +1,16 @@
-/**
- * API Client config for Mobile App
- */
-export const API_BASE_URL = 'http://localhost:5000/api';
+import { Platform } from 'react-native';
+
+export const LOCAL_API_BASE_URL = 'http://localhost:5000/api';
 export const CLOUD_API_BASE_URL = 'https://selfstorage-be-1.onrender.com/api';
+
+// On Web (browser), prioritize local dev proxy on port 5000 to bypass browser CORS restrictions.
+// On Native iOS/Android, call the deployed Render backend directly.
+export const PRIMARY_API_BASE_URL =
+  Platform.OS === 'web' ? LOCAL_API_BASE_URL : CLOUD_API_BASE_URL;
+export const FALLBACK_API_BASE_URL =
+  Platform.OS === 'web' ? CLOUD_API_BASE_URL : LOCAL_API_BASE_URL;
+
+export const API_BASE_URL = PRIMARY_API_BASE_URL;
 
 export interface Facility {
   id: string | number;
@@ -62,7 +70,6 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Requested-With': 'XMLHttpRequest',
     ...(options.headers as Record<string, string>),
   };
 
@@ -70,12 +77,13 @@ export async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${storedToken}`;
   }
 
-  // Thử gọi local backend trước (http://localhost:5000/api)
+  // 1. Thử gọi URL chính
   try {
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = `${PRIMARY_API_BASE_URL}${endpoint}`;
     const response = await fetch(url, {
       ...options,
       headers,
+      credentials: 'include',
     });
 
     const data = await response.json().catch(() => ({}));
@@ -88,26 +96,24 @@ export async function apiRequest<T>(
 
     return data as T;
   } catch (err: any) {
-    // Nếu kết nối local thất bại, thử sang cloud backend
-    if (err?.message?.indexOf('Failed to fetch') !== -1 || err?.message?.indexOf('Network request failed') !== -1) {
-      try {
-        const cloudUrl = `${CLOUD_API_BASE_URL}${endpoint}`;
-        const res = await fetch(cloudUrl, {
-          ...options,
-          headers,
-        });
-        const cloudData = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const errorMsg =
-            cloudData?.message || cloudData?.error || `Yêu cầu thất bại (${res.status})`;
-          throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
-        }
-        return cloudData as T;
-      } catch {
-        throw err;
+    // 2. Thử sang URL dự phòng nếu URL chính không kết nối được
+    try {
+      const fallbackUrl = `${FALLBACK_API_BASE_URL}${endpoint}`;
+      const res = await fetch(fallbackUrl, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+      const fallbackData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errorMsg =
+          fallbackData?.message || fallbackData?.error || `Yêu cầu thất bại (${res.status})`;
+        throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
       }
+      return fallbackData as T;
+    } catch {
+      throw err;
     }
-    throw err;
   }
 }
 
@@ -216,13 +222,14 @@ export async function performCheckInApi(payload: {
 /**
  * Đăng nhập tài khoản khách hàng để lấy JWT Token
  */
-export async function loginCustomerApi(email = 'hai.nguyen@example.com', password = '123456') {
-  const res = await apiRequest<{ accessToken: string; user?: any }>('/auth/login', {
+export async function loginCustomerApi(email = 'customer@selfstorage.vn', password = '123456') {
+  const res = await apiRequest<{ accessToken?: string; token?: string; user?: any }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  if (res?.accessToken) {
-    setAuthToken(res.accessToken);
+  const token = res?.accessToken || res?.token;
+  if (token) {
+    setAuthToken(token);
   }
   return res;
 }
