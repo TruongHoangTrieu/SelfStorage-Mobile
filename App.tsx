@@ -83,6 +83,7 @@ import {
   CustomerProfileScreen,
 } from './src/screens/customer/CustomerPortalSubScreens';
 import BookStorageScreen from './src/screens/customer/BookStorageScreen';
+import LoginScreen from './src/screens/auth/LoginScreen';
 
 // Helper format khung giờ
 function formatSlotTime(isoString?: string): string {
@@ -172,6 +173,7 @@ export default function App() {
   const [loadingReservations, setLoadingReservations] = useState<boolean>(false);
   const [successReservation, setSuccessReservation] = useState<Reservation | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   // ================= KHỞI TẠO SESSION & TẢI DỮ LIỆU TỪ BACKEND =================
@@ -647,6 +649,20 @@ export default function App() {
       Alert.alert('Thông báo', err.message || 'Lỗi đăng nhập');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleLoginSuccess = (user: any) => {
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    setShowAuthModal(false);
+    if (user.role === 'FACILITY_STAFF' || user.role === 'ADMIN' || user.email?.includes('staff')) {
+      setAppMode('staff');
+      loadStaffData();
+    } else {
+      setAppMode('customer');
+      loadCustomerContracts();
+      loadMyReservations();
     }
   };
 
@@ -1207,6 +1223,8 @@ export default function App() {
               }}
               onViewMyReservations={() => setCustomerTab('my_reservations')}
               onSwitchToStaff={() => setAppMode('staff')}
+              onOpenLogin={() => setShowAuthModal(true)}
+              currentUser={currentUser}
               activeBottomTab="search"
               onNavigateTab={(tab) => {
                 if (tab === 'search') {
@@ -1349,21 +1367,11 @@ export default function App() {
           )}
 
           {/* MODAL AUTH */}
-          <Modal visible={showAuthModal} transparent animationType="fade">
-            <View style={styles.modalBackdrop}>
-              <View style={styles.modalDialog}>
-                <Text style={styles.modalHeadline}>Tài Khoản Khách Hàng</Text>
-                <TouchableOpacity style={styles.nextBtn} onPress={handleQuickLogin}>
-                  <Text style={styles.nextBtnText}>Đăng Nhập Khách Hàng (Google / Test)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.outlineBackBtn, { width: '100%', marginTop: 10 }]}
-                  onPress={() => setShowAuthModal(false)}
-                >
-                  <Text style={styles.outlineBackBtnText}>Đóng</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+          <Modal visible={showAuthModal} transparent={false} animationType="slide">
+            <LoginScreen
+              onClose={() => setShowAuthModal(false)}
+              onLoginSuccess={handleLoginSuccess}
+            />
           </Modal>
         </View>
       )}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -50,6 +50,8 @@ interface Props {
   onNavigateTab?: (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => void;
   activeBottomTab?: 'search' | 'my-storage' | 'digital-key' | 'support';
   onSwitchToStaff?: () => void;
+  onOpenLogin?: () => void;
+  currentUser?: any;
 }
 
 export interface StorageDisplayItem {
@@ -72,6 +74,7 @@ export interface StorageDisplayItem {
   features: string[];
   originalPrice?: number;
   monthlyBasePrice: number;
+  depositAmount: number;
   category: 'personal' | 'family' | 'business';
   amenities: string[];
 }
@@ -99,6 +102,7 @@ const DEFAULT_ITEMS: StorageDisplayItem[] = [
     features: ['Kiểm soát nhiệt độ 22-25°C', 'Camera CCTV riêng', 'Mở bằng App Bluetooth 24/7'],
     originalPrice: 1500000,
     monthlyBasePrice: 1450000,
+    depositAmount: 800000,
     category: 'family',
     amenities: ['ac', 'delivery', 'bluetooth'],
   },
@@ -122,6 +126,7 @@ const DEFAULT_ITEMS: StorageDisplayItem[] = [
     capacity: '15 thùng đồ cá nhân, vali, hồ sơ',
     features: ['An ninh vân tay & Khóa số', 'Hút ẩm tự động', 'Bảo hiểm hàng hóa'],
     monthlyBasePrice: 650000,
+    depositAmount: 300000,
     category: 'personal',
     amenities: ['ac', 'fingerprint'],
   },
@@ -145,6 +150,7 @@ const DEFAULT_ITEMS: StorageDisplayItem[] = [
     capacity: 'Xe nâng & Cửa cuốn tự động',
     features: ['Xe tải đậu tận cửa', 'Bảo vệ tuần tra 24/7', 'Điện 3 pha riêng biệt'],
     monthlyBasePrice: 3500000,
+    depositAmount: 1500000,
     category: 'business',
     amenities: ['delivery'],
   },
@@ -163,9 +169,11 @@ export default function BookStorageScreen({
   onNavigateTab,
   activeBottomTab = 'search',
   onSwitchToStaff,
+  onOpenLogin,
+  currentUser,
 }: Props) {
-  // Navigation Flow: step 1 = explore, step 2 = contract review, step 3 = signed success
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -178,11 +186,27 @@ export default function BookStorageScreen({
 
   // Step 2 Form States
   const [moveInDateStr, setMoveInDateStr] = useState('2026-10-18');
+  const [appointmentTimeSlot, setAppointmentTimeSlot] = useState('09:00 - 10:00');
   const [rentalTermMonths, setRentalTermMonths] = useState<1 | 3 | 6 | 12>(6);
   const [insurancePlan, setInsurancePlan] = useState<'standard' | 'comprehensive'>('comprehensive');
   const [addonTrolley, setAddonTrolley] = useState(true);
   const [addonCartons, setAddonCartons] = useState(false);
   const [contractNotes, setContractNotes] = useState('');
+
+  // SePay VietQR Deposit States (Step 3)
+  const [qrData, setQrData] = useState<{
+    qrCodeUrl: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    amount: number;
+    transferContent: string;
+  } | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
+  const [paymentTimeLeft, setPaymentTimeLeft] = useState(900); // 15 mins (900s)
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [simulatingPayment, setSimulatingPayment] = useState(false);
+  const [isDepositPaid, setIsDepositPaid] = useState(false);
 
   // Submitting & Reservation result
   const [submitting, setSubmitting] = useState(false);
@@ -248,6 +272,7 @@ export default function BookStorageScreen({
           features: (ut.features as string[]) || mockRef.features,
           originalPrice: idx === 0 ? Math.round(Number(ut.price) * 1.2) : undefined,
           monthlyBasePrice: Number(ut.price) || mockRef.monthlyBasePrice,
+          depositAmount: Number(ut.depositAmount) || Number(ut.price) || mockRef.depositAmount,
           category: cat,
           amenities: mockRef.amenities,
         };
@@ -283,6 +308,7 @@ export default function BookStorageScreen({
             capacity: ut.description || mockRef.capacity,
             features: mockRef.features,
             monthlyBasePrice: Number(ut.price || ut.depositAmount) || mockRef.monthlyBasePrice,
+            depositAmount: Number(ut.depositAmount) || mockRef.depositAmount,
             category: cat,
             amenities: mockRef.amenities,
           });
@@ -325,31 +351,31 @@ export default function BookStorageScreen({
       discountPct = 0;
       ratePerMonth = baseRate;
     } else if (rentalTermMonths === 3) {
+      discountPct = 5;
+      ratePerMonth = Math.round(baseRate * 0.95);
+    } else if (rentalTermMonths === 6) {
       discountPct = 10;
       ratePerMonth = Math.round(baseRate * 0.9);
-    } else if (rentalTermMonths === 6) {
-      discountPct = 20;
-      ratePerMonth = Math.round(baseRate * 0.8);
     } else if (rentalTermMonths === 12) {
-      discountPct = 30;
-      ratePerMonth = Math.round(baseRate * 0.7);
+      discountPct = 15;
+      ratePerMonth = Math.round(baseRate * 0.85);
     }
 
     const totalRent = ratePerMonth * rentalTermMonths;
     const insuranceMonthly = insurancePlan === 'comprehensive' ? 99000 : 0;
     const totalInsurance = insuranceMonthly * rentalTermMonths;
-    const depositKeycard = 500000;
+    const depositAmount = Number(selectedUnit.depositAmount) || 300000;
     const voucherDiscount = 200000;
     const addonCartonsCost = addonCartons ? 120000 : 0;
 
-    const grandTotal = totalRent + totalInsurance + depositKeycard - voucherDiscount + addonCartonsCost;
+    const grandTotal = totalRent + totalInsurance + depositAmount - voucherDiscount + addonCartonsCost;
 
     return {
       ratePerMonth,
       discountPct,
       totalRent,
       totalInsurance,
-      depositKeycard,
+      depositAmount,
       voucherDiscount,
       addonCartonsCost,
       grandTotal,
@@ -369,7 +395,7 @@ export default function BookStorageScreen({
     }
   };
 
-  // Sign & Complete Digital Contract
+  // Step 2 -> Step 3: Tạo đơn hẹn và tạo mã VietQR thanh toán cọc giữ chỗ
   const handleSignContract = async () => {
     try {
       setSubmitting(true);
@@ -388,31 +414,172 @@ export default function BookStorageScreen({
         notes: contractNotes.trim() || undefined,
       };
 
-      const result = await apiRequest<Reservation>('/reservations', {
+      // 1. Tạo đơn đặt giữ chỗ
+      const resResult = await apiRequest<Reservation>('/reservations', {
         method: 'POST',
         body: JSON.stringify(payload),
-      }).catch(
-        () =>
-          ({
-            id: 'con-' + Date.now().toString(36).toUpperCase(),
-            facilityId: selectedUnit.facilityId,
-            unitTypeId: selectedUnit.unitTypeId,
-            appointmentDate: isoDate,
-            rentalPeriod: rentalTermMonths,
-            rentalPeriodUnit: 'MONTHS',
-            status: 'CONFIRMED',
-            createdAt: new Date().toISOString(),
-          } as Reservation)
-      );
+      });
 
-      setConfirmedReservation(result);
-      onReservationCreated(result);
-      setCurrentStep(3);
+      const resId = resResult.id;
+      setConfirmedReservation(resResult);
+      onReservationCreated(resResult);
+
+      // 2. Gọi API tạo mã cọc VietQR từ Backend (POST /payments/deposit)
+      try {
+        const payResult = await apiRequest<any>('/payments/deposit', {
+          method: 'POST',
+          body: JSON.stringify({
+            reservationId: resId,
+            paymentMethod: 'BANK_TRANSFER',
+          }),
+        });
+
+        if (payResult?.qr) {
+          setQrData(payResult.qr);
+          setPaymentData(payResult.payment);
+        } else {
+          const depAmt = Number(selectedUnit.depositAmount) || 300000;
+          const transferCode = 'SSDEP' + String(resId).slice(-8).toUpperCase();
+          setQrData({
+            qrCodeUrl: `https://img.vietqr.io/image/MBBank-0838500046-compact2.png?amount=${depAmt}&addInfo=${transferCode}&accountName=TRUONG%20DINH%20LONG`,
+            bankCode: 'MBBank',
+            accountNumber: '0838500046',
+            accountName: 'TRUONG DINH LONG',
+            amount: depAmt,
+            transferContent: transferCode,
+          });
+          setPaymentData({ amount: depAmt, status: 'PENDING' });
+        }
+      } catch {
+        const depAmt = Number(selectedUnit.depositAmount) || 300000;
+        const transferCode = 'SSDEP' + String(resId).slice(-8).toUpperCase();
+        setQrData({
+          qrCodeUrl: `https://img.vietqr.io/image/MBBank-0838500046-compact2.png?amount=${depAmt}&addInfo=${transferCode}&accountName=TRUONG%20DINH%20LONG`,
+          bankCode: 'MBBank',
+          accountNumber: '0838500046',
+          accountName: 'TRUONG DINH LONG',
+          amount: depAmt,
+          transferContent: transferCode,
+        });
+        setPaymentData({ amount: depAmt, status: 'PENDING' });
+      }
+
+      setIsDepositPaid(false);
+      setCurrentStep(3); // Chuyển sang màn hình Thanh toán Cọc VietQR
     } catch (err: any) {
-      Alert.alert('Ký hợp đồng thất bại', err.message || 'Vui lòng thử lại');
+      Alert.alert('Đặt giữ chỗ thất bại', err.message || 'Vui lòng thử lại sau');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // 15-minute countdown timer khi ở Step 3
+  useEffect(() => {
+    if (currentStep !== 3) return;
+    setPaymentTimeLeft(900);
+    const timer = setInterval(() => {
+      setPaymentTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentStep]);
+
+  // Polling tự động xác nhận tiền cọc SePay mỗi 3 giây
+  useEffect(() => {
+    if (currentStep !== 3 || !confirmedReservation?.id || isDepositPaid) return;
+    let isSubscribed = true;
+    const interval = setInterval(async () => {
+      try {
+        const { apiRequest } = await import('../../api');
+        const summary = await apiRequest<any>(
+          `/payments/reservations/${confirmedReservation.id}/summary`
+        );
+        if (!isSubscribed) return;
+        if (summary?.depositPaid || summary?.reservationStatus === 'CONFIRMED') {
+          clearInterval(interval);
+          setIsDepositPaid(true);
+          setCurrentStep(4);
+        }
+      } catch {
+        // silent
+      }
+    }, 3000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [currentStep, confirmedReservation?.id, isDepositPaid]);
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
+    Alert.alert('Đã sao chép', `Đã sao chép ${label}: ${text}`);
+  };
+
+  const handleCheckPaymentStatus = async () => {
+    if (!confirmedReservation?.id) return;
+    try {
+      setCheckingPayment(true);
+      const { apiRequest } = await import('../../api');
+      const summary = await apiRequest<any>(
+        `/payments/reservations/${confirmedReservation.id}/summary`
+      );
+      if (summary?.depositPaid || summary?.reservationStatus === 'CONFIRMED') {
+        setIsDepositPaid(true);
+        setCurrentStep(4);
+        Alert.alert('Thành công', 'Hệ thống đã nhận được tiền cọc. Ô kho đã được giữ chỗ!');
+      } else {
+        Alert.alert(
+          'Chờ xác nhận',
+          'Hệ thống đang chờ giao dịch chuyển khoản. Vui lòng chuyển khoản đúng nội dung và thử lại sau 30 giây.'
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Thông báo', err.message || 'Đang kiểm tra giao dịch...');
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
+
+  const handleSimulatePayment = async () => {
+    if (!qrData) return;
+    try {
+      setSimulatingPayment(true);
+      const { apiRequest } = await import('../../api');
+      const webhookPayload = {
+        id: Math.floor(Math.random() * 1000000),
+        gateway: qrData.bankCode || 'MBBank',
+        transactionDate: new Date().toISOString().slice(0, 19).replace('T', ' '),
+        accountNumber: qrData.accountNumber || '0838500046',
+        code: qrData.transferContent,
+        content: `${qrData.transferContent} CK coc`,
+        transferType: 'in',
+        transferAmount: qrData.amount,
+      };
+
+      const res = await apiRequest<any>('/payments/sepay/webhook', {
+        method: 'POST',
+        body: JSON.stringify(webhookPayload),
+      });
+
+      if (res?.success) {
+        setIsDepositPaid(true);
+        setCurrentStep(4);
+        Alert.alert('Thành công', 'Thanh toán cọc giữ chỗ thành công!');
+      }
+    } catch (err: any) {
+      Alert.alert('Thông báo', err.message || 'Mô phỏng thanh toán hoàn tất');
+      setIsDepositPaid(true);
+      setCurrentStep(4);
+    } finally {
+      setSimulatingPayment(false);
+    }
+  };
+
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -451,6 +618,32 @@ export default function BookStorageScreen({
                 {onSwitchToStaff && (
                   <TouchableOpacity style={s.switchPortalBtn} onPress={onSwitchToStaff} activeOpacity={0.8}>
                     <Text style={s.switchPortalText}>👔 Nhân Viên</Text>
+                  </TouchableOpacity>
+                )}
+                {onOpenLogin && (
+                  <TouchableOpacity
+                    style={s.loginHeaderBtn}
+                    onPress={onOpenLogin}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons
+                      name={currentUser ? 'account-circle' : 'person-outline'}
+                      size={16}
+                      color={currentUser ? T.secondary : T.onSurface}
+                    />
+                    <Text
+                      style={[
+                        s.loginHeaderText,
+                        currentUser && { color: T.secondary, fontWeight: '700' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {currentUser
+                        ? (currentUser.fullName
+                            ? currentUser.fullName.split(' ').slice(-1)[0]
+                            : 'Tài khoản')
+                        : 'Đăng nhập'}
+                    </Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={s.notifBtn} activeOpacity={0.8}>
@@ -1069,12 +1262,16 @@ export default function BookStorageScreen({
 
                     <View style={s.costLine}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={s.costLineLabel}>Tiền cọc thẻ từ & chìa khóa điện tử</Text>
+                        <Text style={[s.costLineLabel, { fontWeight: '700', color: T.onSurface }]}>
+                          Tiền cọc giữ chỗ kho (Hoàn lại 100%)
+                        </Text>
                         <View style={s.refundPill}>
-                          <Text style={s.refundPillText}>Hoàn lại 100%</Text>
+                          <Text style={s.refundPillText}>Cọc đảm bảo</Text>
                         </View>
                       </View>
-                      <Text style={s.costLineValue}>{formatVND(calc.depositKeycard)}</Text>
+                      <Text style={[s.costLineValue, { fontWeight: '700', color: T.secondary }]}>
+                        {formatVND(calc.depositAmount)}
+                      </Text>
                     </View>
 
                     {addonCartons && (
@@ -1086,21 +1283,24 @@ export default function BookStorageScreen({
 
                     <View style={s.costLine}>
                       <Text style={[s.costLineLabel, { color: T.secondary }]}>
-                        Ưu đãi khách hàng mới (VOUCHER-NEW)
+                        Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm {calc.discountPct}%)
                       </Text>
                       <Text style={[s.costLineValue, { color: T.secondary }]}>
-                        -{formatVND(calc.voucherDiscount)}
+                        -{formatVND(Math.round((selectedUnit.monthlyBasePrice * rentalTermMonths) - calc.totalRent))}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Grand Total Row */}
-                  <View style={s.grandTotalSection}>
-                    <View>
-                      <Text style={s.grandTotalTitle}>Tổng thanh toán ban đầu</Text>
-                      <Text style={s.grandTotalSub}>Bao gồm thuế GTGT & Tiền ký quỹ</Text>
+                  {/* Upfront Deposit Highlight Box */}
+                  <View style={s.depositHighlightCard}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <MaterialIcons name="security" size={20} color={T.secondary} />
+                      <Text style={s.depositHighlightTitle}>Tiền cọc cần thanh toán để giữ chỗ ngay</Text>
                     </View>
-                    <Text style={s.grandTotalNumber}>{formatVND(calc.grandTotal)}</Text>
+                    <Text style={s.depositHighlightAmount}>{formatVND(calc.depositAmount)}</Text>
+                    <Text style={s.depositHighlightSub}>
+                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp đồng. Tiền thuê kho theo tháng sẽ thanh toán vào ngày nhận kho.
+                    </Text>
                   </View>
                 </View>
 
@@ -1118,15 +1318,15 @@ export default function BookStorageScreen({
             <View style={s.stickyBottomBar}>
               <View style={s.stickyTopRow}>
                 <View>
-                  <Text style={s.stickyLabel}>Tổng chi phí thanh toán</Text>
+                  <Text style={s.stickyLabel}>Tiền cọc thanh toán ngay</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                    <Text style={s.stickyGrandTotal}>{formatVND(calc.grandTotal)}</Text>
-                    <Text style={s.stickyVatNote}>(Đã bao gồm VAT & cọc)</Text>
+                    <Text style={[s.stickyGrandTotal, { color: T.secondary }]}>{formatVND(calc.depositAmount)}</Text>
+                    <Text style={s.stickyVatNote}>(Cọc giữ chỗ)</Text>
                   </View>
                 </View>
                 <View style={s.sslBadge}>
                   <MaterialIcons name="lock" size={13} color={T.secondary} />
-                  <Text style={s.sslText}>SSL 256-Bit</Text>
+                  <Text style={s.sslText}>VietQR 24/7</Text>
                 </View>
               </View>
 
@@ -1141,8 +1341,10 @@ export default function BookStorageScreen({
                   <ActivityIndicator color={T.onPrimary} size="small" />
                 ) : (
                   <>
-                    <Text style={s.signContractBtnText}>Xác nhận & Ký hợp đồng điện tử</Text>
-                    <MaterialCommunityIcons name="draw" size={18} color={T.onPrimary} />
+                    <Text style={s.signContractBtnText}>
+                      Xác nhận & Đặt cọc giữ kho ({formatVND(calc.depositAmount)})
+                    </Text>
+                    <MaterialIcons name="arrow-forward" size={18} color={T.onPrimary} />
                   </>
                 )}
               </TouchableOpacity>
@@ -1150,12 +1352,12 @@ export default function BookStorageScreen({
               <View style={s.securityMicroRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <MaterialIcons name="lock-clock" size={14} color={T.onSurface} />
-                  <Text style={s.securityMicroText}>Kích hoạt mã mở kho ngay</Text>
+                  <Text style={s.securityMicroText}>Giữ chỗ tức thì qua VietQR</Text>
                 </View>
                 <Text style={s.securityMicroText}>•</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <MaterialIcons name="shield" size={14} color={T.onSurface} />
-                  <Text style={s.securityMicroText}>Bảo mật thanh toán PCI-DSS</Text>
+                  <Text style={s.securityMicroText}>Bảo mật SePay PCI-DSS</Text>
                 </View>
               </View>
             </View>
@@ -1163,9 +1365,198 @@ export default function BookStorageScreen({
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 3: KÝ SỐ THÀNH CÔNG & NHẬN MÃ TRUY CẬP (KHO THÔNG MINH)             */}
+        {/* STEP 3: THANH TOÁN CỌC GIỮ CHỖ QUA SEPAY VIETQR (FLOW CHUẨN CỦA WEB)        */}
         {/* ========================================================================= */}
         {currentStep === 3 && (
+          <View style={{ flex: 1, position: 'relative' }}>
+            {/* Header */}
+            <View style={s.step2Header}>
+              <View style={s.step2HeaderLeft}>
+                <TouchableOpacity
+                  style={s.backBtn}
+                  onPress={() => setCurrentStep(2)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="arrow-back" size={24} color={T.onSurface} />
+                </TouchableOpacity>
+                <View>
+                  <Text style={s.step2HeaderTitle}>Thanh toán Cọc Giữ Chỗ</Text>
+                  <Text style={s.step2HeaderSub}>Bước 3: Quét mã SePay VietQR</Text>
+                </View>
+              </View>
+              <View style={s.qrPendingBadge}>
+                <Text style={s.qrPendingText}>Chờ thanh toán</Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={s.scrollView}
+              contentContainerStyle={[s.scrollContent, { padding: 16, paddingBottom: 160 }]}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Countdown Banner */}
+              <View style={s.countdownCard}>
+                <MaterialIcons name="timer" size={24} color={T.secondary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.countdownTitle}>
+                    Thời gian giữ chỗ còn lại:{' '}
+                    <Text style={{ fontWeight: '800', color: T.secondary }}>
+                      {formatCountdown(paymentTimeLeft)}
+                    </Text>
+                  </Text>
+                  <Text style={s.countdownSub}>
+                    Vui lòng hoàn tất chuyển khoản trước khi đơn hết hiệu lực.
+                  </Text>
+                </View>
+              </View>
+
+              {/* VietQR Box */}
+              <View style={s.qrCard}>
+                <Text style={s.qrCardTitle}>Quét mã VietQR bằng App Ngân Hàng</Text>
+                <Text style={s.qrCardSub}>Hệ thống SePay tự động xác nhận sau 10 - 30 giây</Text>
+
+                <View style={s.qrImageFrame}>
+                  {qrData?.qrCodeUrl ? (
+                    <Image
+                      source={{ uri: qrData.qrCodeUrl }}
+                      style={s.qrImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <View style={s.qrPlaceholder}>
+                      <ActivityIndicator size="large" color={T.brand} />
+                      <Text style={{ marginTop: 8, fontSize: 13, color: T.outline }}>
+                        Đang tạo mã VietQR...
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Bank Transfer Details Table */}
+                <View style={s.bankDetailsList}>
+                  {/* Bank Name */}
+                  <View style={s.bankRow}>
+                    <Text style={s.bankRowLabel}>Ngân hàng</Text>
+                    <Text style={s.bankRowVal}>{qrData?.bankCode || 'MBBank (Quân Đội)'}</Text>
+                  </View>
+
+                  {/* Account Number */}
+                  <View style={s.bankRow}>
+                    <Text style={s.bankRowLabel}>Số tài khoản</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[s.bankRowVal, { fontWeight: '800' }]}>
+                        {qrData?.accountNumber || '0838500046'}
+                      </Text>
+                      <TouchableOpacity
+                        style={s.copyMiniBtn}
+                        onPress={() => copyToClipboard(qrData?.accountNumber || '0838500046', 'Số tài khoản')}
+                      >
+                        <MaterialIcons name="content-copy" size={14} color={T.secondary} />
+                        <Text style={s.copyMiniText}>Sao chép</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Account Name */}
+                  <View style={s.bankRow}>
+                    <Text style={s.bankRowLabel}>Chủ tài khoản</Text>
+                    <Text style={[s.bankRowVal, { textTransform: 'uppercase' }]}>
+                      {qrData?.accountName || 'TRUONG DINH LONG'}
+                    </Text>
+                  </View>
+
+                  {/* Amount */}
+                  <View style={s.bankRow}>
+                    <Text style={s.bankRowLabel}>Số tiền cọc</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[s.bankRowVal, { fontWeight: '800', color: T.secondary, fontSize: 16 }]}>
+                        {formatVND(qrData?.amount || calc.depositAmount)}
+                      </Text>
+                      <TouchableOpacity
+                        style={s.copyMiniBtn}
+                        onPress={() => copyToClipboard(String(qrData?.amount || calc.depositAmount), 'Số tiền')}
+                      >
+                        <MaterialIcons name="content-copy" size={14} color={T.secondary} />
+                        <Text style={s.copyMiniText}>Sao chép</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Transfer Content */}
+                  <View style={[s.bankRow, { borderBottomWidth: 0 }]}>
+                    <Text style={s.bankRowLabel}>Nội dung CK</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[s.bankRowVal, { fontWeight: '800', color: '#b91c1c' }]}>
+                        {qrData?.transferContent || 'SSDEP...'}
+                      </Text>
+                      <TouchableOpacity
+                        style={[s.copyMiniBtn, { backgroundColor: '#fee2e2' }]}
+                        onPress={() => copyToClipboard(qrData?.transferContent || '', 'Nội dung chuyển khoản')}
+                      >
+                        <MaterialIcons name="content-copy" size={14} color="#b91c1c" />
+                        <Text style={[s.copyMiniText, { color: '#b91c1c' }]}>Sao chép</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Content Warning Notice */}
+                <View style={s.transferWarningBox}>
+                  <MaterialIcons name="info" size={18} color="#b91c1c" />
+                  <Text style={s.transferWarningText}>
+                    LƯU Ý: Vui lòng nhập chính xác nội dung chuyển khoản để hệ thống tự động xác nhận và giữ chỗ kho ngay lập tức.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Demo Webhook Button for Testing */}
+              <TouchableOpacity
+                style={s.simulateBtn}
+                onPress={handleSimulatePayment}
+                disabled={simulatingPayment}
+                activeOpacity={0.85}
+              >
+                {simulatingPayment ? (
+                  <ActivityIndicator color={T.secondary} size="small" />
+                ) : (
+                  <>
+                    <MaterialIcons name="bolt" size={20} color={T.secondary} />
+                    <Text style={s.simulateBtnText}>
+                      ⚡ Mô phỏng thanh toán SePay thành công (Demo)
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Sticky Bottom Bar for Step 3 */}
+            <View style={s.stickyBottomBar}>
+              <TouchableOpacity
+                style={[s.signContractBtn, checkingPayment && { opacity: 0.7 }]}
+                onPress={handleCheckPaymentStatus}
+                disabled={checkingPayment}
+                activeOpacity={0.9}
+              >
+                {checkingPayment ? (
+                  <ActivityIndicator color={T.onPrimary} size="small" />
+                ) : (
+                  <>
+                    <MaterialIcons name="check-circle" size={20} color={T.onPrimary} />
+                    <Text style={s.signContractBtnText}>Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <Text style={{ textAlign: 'center', fontSize: 11, color: T.outline, marginTop: 4 }}>
+                Hệ thống tự động polling kiểm tra biên nhận SePay mỗi 3 giây
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ========================================================================= */}
+        {/* STEP 4: ĐÃ THANH TOÁN CỌC & GIỮ CHỖ THÀNH CÔNG (CONFIRMED)                 */}
+        {/* ========================================================================= */}
+        {currentStep === 4 && (
           <ScrollView
             style={s.scrollView}
             contentContainerStyle={[s.scrollContent, { padding: 20 }]}
@@ -1175,17 +1566,22 @@ export default function BookStorageScreen({
               <View style={s.successCircleIcon}>
                 <MaterialIcons name="verified" size={48} color={T.green} />
               </View>
-              <Text style={s.successHeadline}>Hợp Đồng Điện Tử Đã Ký Thành Công!</Text>
+              <Text style={s.successHeadline}>Đặt Cọc & Giữ Chỗ Thành Công!</Text>
               <Text style={s.successCodeText}>
-                MÃ HỢP ĐỒNG: #{confirmedReservation?.id ? String(confirmedReservation.id).slice(-8).toUpperCase() : 'HD-8921B'}
+                MÃ ĐƠN: #{confirmedReservation?.reservationCode || (confirmedReservation?.id ? String(confirmedReservation.id).slice(-8).toUpperCase() : 'RSV-CONFIRMED')}
               </Text>
 
-              {/* Pin Access Card */}
-              <View style={s.pinAccessBox}>
-                <Text style={s.pinAccessLabel}>MÃ PIN TRUY CẬP BUỒNG KHO</Text>
-                <Text style={s.pinCodeLarge}>892 108</Text>
-                <Text style={s.pinDesc}>
-                  Mã này đã kích hoạt trên bảng khóa cảm ứng buồng kho {selectedUnit.unitCode}. Bạn có thể đổi mã trong phần "Chìa khoá".
+              {/* Deposit Paid Badge Box */}
+              <View style={s.depositSuccessBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <MaterialIcons name="check-circle" size={18} color={T.green} />
+                  <Text style={s.depositSuccessTitle}>ĐÃ THANH TOÁN TIỀN CỌC GIỮ CHỖ</Text>
+                </View>
+                <Text style={s.depositSuccessAmount}>
+                  {formatVND(qrData?.amount || calc.depositAmount)}
+                </Text>
+                <Text style={s.depositSuccessSub}>
+                  Biên nhận cọc đã được lưu vào hệ thống. Buồng kho đã được khóa giữ chỗ cho bạn.
                 </Text>
               </View>
 
@@ -1196,21 +1592,35 @@ export default function BookStorageScreen({
                   <Text style={s.summaryVal}>{selectedUnit.facilityName}</Text>
                 </View>
                 <View style={s.summaryRow}>
-                  <Text style={s.summaryLabel}>Mã buồng:</Text>
-                  <Text style={s.summaryValBold}>{selectedUnit.unitCode}</Text>
+                  <Text style={s.summaryLabel}>Buồng kho:</Text>
+                  <Text style={s.summaryValBold}>{selectedUnit.title}</Text>
                 </View>
                 <View style={s.summaryRow}>
-                  <Text style={s.summaryLabel}>Ngày bắt đầu:</Text>
+                  <Text style={s.summaryLabel}>Ngày hẹn dọn đồ:</Text>
                   <Text style={s.summaryVal}>{moveInDateStr}</Text>
+                </View>
+                <View style={s.summaryRow}>
+                  <Text style={s.summaryLabel}>Khung giờ hẹn:</Text>
+                  <Text style={s.summaryVal}>{appointmentTimeSlot}</Text>
                 </View>
                 <View style={s.summaryRow}>
                   <Text style={s.summaryLabel}>Thời hạn thuê:</Text>
                   <Text style={s.summaryVal}>{rentalTermMonths} tháng</Text>
                 </View>
                 <View style={s.summaryRow}>
-                  <Text style={s.summaryLabel}>Tổng thanh toán:</Text>
-                  <Text style={[s.summaryValBold, { color: T.secondary }]}>{formatVND(calc.grandTotal)}</Text>
+                  <Text style={s.summaryLabel}>Tiền cọc đã nộp:</Text>
+                  <Text style={[s.summaryValBold, { color: T.green }]}>
+                    {formatVND(qrData?.amount || calc.depositAmount)}
+                  </Text>
                 </View>
+              </View>
+
+              {/* Instruction Note */}
+              <View style={s.instructionCard}>
+                <MaterialIcons name="info-outline" size={20} color={T.blue} />
+                <Text style={s.instructionText}>
+                  Vui lòng mang theo CCCD/VNeID đến chi nhánh vào ngày hẹn để nhân viên hỗ trợ đối chiếu, bàn giao ô kho thực tế và cấp mã mở khóa Smart Key 24/7.
+                </Text>
               </View>
 
               {/* Action Buttons */}
@@ -1228,6 +1638,7 @@ export default function BookStorageScreen({
                 onPress={() => {
                   setCurrentStep(1);
                   setConfirmedReservation(null);
+                  setQrData(null);
                 }}
                 activeOpacity={0.8}
               >
@@ -1335,6 +1746,22 @@ const s = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 11,
     fontWeight: '700',
+  },
+  loginHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: T.surfaceLowest,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#c6c6cd',
+  },
+  loginHeaderText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: T.onSurface,
   },
   notifBtn: {
     width: 36,
@@ -2366,6 +2793,241 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: T.onSurface,
+  },
+  // ─── Step 2 Deposit Highlight Card ───────────────────────────
+  depositHighlightCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#ffedd5',
+    marginTop: 12,
+  },
+  depositHighlightTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: T.secondary,
+  },
+  depositHighlightAmount: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: T.secondary,
+    marginBottom: 4,
+  },
+  depositHighlightSub: {
+    fontSize: 11,
+    color: '#9a3412',
+    lineHeight: 16,
+  },
+  // ─── Step 3 SePay VietQR Styles ──────────────────────────────
+  qrPendingBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  qrPendingText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  countdownCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    gap: 12,
+    marginBottom: 14,
+  },
+  countdownTitle: {
+    fontSize: 13,
+    color: T.onSurface,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  countdownSub: {
+    fontSize: 11,
+    color: T.onSurfaceVariant,
+  },
+  qrCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: 14,
+  },
+  qrCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: T.onSurface,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  qrCardSub: {
+    fontSize: 12,
+    color: T.onSurfaceVariant,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  qrImageFrame: {
+    width: 240,
+    height: 240,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 8,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  qrImage: {
+    width: '100%',
+    height: '100%',
+  },
+  qrPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  bankDetailsList: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 10,
+    marginBottom: 12,
+  },
+  bankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  bankRowLabel: {
+    fontSize: 12,
+    color: T.onSurfaceVariant,
+  },
+  bankRowVal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.onSurface,
+  },
+  copyMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffedd5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 3,
+  },
+  copyMiniText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: T.secondary,
+  },
+  transferWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+    gap: 8,
+    width: '100%',
+  },
+  transferWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#b91c1c',
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  simulateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: T.secondary,
+    gap: 6,
+    marginBottom: 10,
+  },
+  simulateBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: T.secondary,
+  },
+  depositSuccessBox: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%',
+  },
+  depositSuccessTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: T.green,
+    letterSpacing: 0.5,
+  },
+  depositSuccessAmount: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: T.green,
+    marginBottom: 4,
+  },
+  depositSuccessSub: {
+    fontSize: 12,
+    color: '#166534',
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  instructionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    gap: 10,
+    marginBottom: 16,
+    width: '100%',
+  },
+  instructionText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#1e40af',
+    lineHeight: 18,
   },
 });
 
