@@ -9,10 +9,18 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  Image,
+  Clipboard,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, AvailableUnit } from '../../types/handover';
 import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
 import PrintReceiptModal from '../../components/staff/PrintReceiptModal';
+import {
+  takePhotoWithCamera,
+  pickPhotoFromGallery,
+  CapturedPhoto,
+} from '../../services/imageService';
 
 interface HandoverDetailScreenProps {
   appointment: CheckInAppointment;
@@ -27,6 +35,39 @@ interface HandoverDetailScreenProps {
   isSubmitting?: boolean;
 }
 
+// Design Tokens đồng bộ với User & Web
+const T = {
+  primary: '#004ac6',
+  primaryContainer: '#2563eb',
+  bg: '#F8FAFC',
+  surface: '#FFFFFF',
+  surfaceLow: '#F1F5F9',
+  border: '#E2E8F0',
+  textMain: '#0F172A',
+  textMuted: '#64748B',
+  emerald: '#10B981',
+  emeraldBg: '#ECFDF5',
+  emeraldBorder: '#A7F3D0',
+  emeraldText: '#047857',
+  amber: '#F59E0B',
+  amberBg: '#FFFBEB',
+  amberBorder: '#FDE68A',
+  amberText: '#B45309',
+};
+
+function parseCurrency(val?: string | number): number {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  const match = val.toString().match(/([\d.]+)\s*đ/);
+  if (match) return parseInt(match[1].replace(/\./g, ''), 10) || 0;
+  const digitsOnly = val.toString().replace(/[^\d]/g, '');
+  return digitsOnly ? parseInt(digitsOnly, 10) : 0;
+}
+
+function formatVND(amount: number): string {
+  return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
+}
+
 export default function HandoverDetailScreen({
   appointment,
   availableUnits,
@@ -34,976 +75,1232 @@ export default function HandoverDetailScreen({
   onCompleteHandover,
   isSubmitting = false,
 }: HandoverDetailScreenProps) {
-  // Active Tab trên điện thoại: 'verify' (Xác thực) hoặc 'actions' (Thao tác bàn giao)
-  const [activeSubTab, setActiveSubTab] = useState<'verify' | 'actions'>('actions');
+  // Stepper State 1 -> 5 (giống hệt luồng Web)
+  const [currentStep, setCurrentStep] = useState<number>(1);
 
-  // Trạng thái ô kho gán
+  // Bước 1: CCCD & Ô kho
+  const [isCccdVerified, setIsCccdVerified] = useState<boolean>(true);
   const [selectedUnitCode, setSelectedUnitCode] = useState<string>(
     appointment.assignedUnit || 'A-101'
   );
   const [showUnitPickerModal, setShowUnitPickerModal] = useState<boolean>(false);
 
-  // Tình trạng kho & ghi chú
+  // Bước 2: Hiện trạng ô kho & Chụp ảnh
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([
+    {
+      id: 'photo-1',
+      title: 'Cửa & Khóa',
+      uri: 'https://images.unsplash.com/photo-1595246140625-573b715d11dc?w=400&auto=format&fit=crop&q=80',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'photo-2',
+      title: 'Trong kho',
+      uri: 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=400&auto=format&fit=crop&q=80',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'photo-3',
+      title: 'Hành lang',
+      uri: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&auto=format&fit=crop&q=80',
+      createdAt: new Date().toISOString(),
+    },
+  ]);
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
+
+  const handleCapturePhoto = async () => {
+    setIsCapturing(true);
+    const photo = await takePhotoWithCamera();
+    if (photo) {
+      setPhotos((prev) => [photo, ...prev]);
+    }
+    setIsCapturing(false);
+  };
+
+  const handlePickPhoto = async () => {
+    setIsCapturing(true);
+    const photo = await pickPhotoFromGallery();
+    if (photo) {
+      setPhotos((prev) => [photo, ...prev]);
+    }
+    setIsCapturing(false);
+  };
+
+  const handleDeletePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const [condition, setCondition] = useState<string>(
     'Kho sạch sẽ, không mùi, đèn sáng, ổ khóa Smart Lock PIN hoạt động tốt'
   );
-  const [customNotes, setCustomNotes] = useState<string>(appointment.specialNotes || '');
+  const [checklist, setChecklist] = useState({
+    lockTested: true,
+    lightingChecked: true,
+    cleanlinessChecked: true,
+  });
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Trạng thái Modals
+  // Bước 3: Hợp đồng thuê
+  const [isContractSigned, setIsContractSigned] = useState<boolean>(false);
   const [showContractModal, setShowContractModal] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
 
-  // Lọc danh sách ô kho trống phù hợp
-  const compatibleUnits = availableUnits.filter(
-    (u) => u.status === 'vacant' || u.code === selectedUnitCode
+  // Bước 4: Thu tiền thuê kho
+  const [paymentMethod, setPaymentMethod] = useState<'vietqr' | 'cash'>('vietqr');
+  const [isPaid, setIsPaid] = useState<boolean>(appointment.rentalStatus === 'paid');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Bước 5: Cấp mã PIN Smart Lock
+  const [accessPin, setAccessPin] = useState<string>(
+    appointment.accessPin || Math.floor(100000 + Math.random() * 900000).toString()
   );
+  const [customRfid, setCustomRfid] = useState<string>(
+    appointment.rfidCard || `RFID-${Math.floor(1000 + Math.random() * 9000)}`
+  );
+  const [customNotes, setCustomNotes] = useState<string>(appointment.specialNotes || '');
 
-  const handleFinishHandover = () => {
-    // Mở modal xác nhận nội bộ (tương thích 100% cả Web, iOS và Android, không bị lỗi Alert.alert trên browser)
-    setShowConfirmModal(true);
+  // Tính toán tiền tệ
+  const durationMonths = appointment.durationMonths || 1;
+  const monthlyRentNum = parseCurrency(appointment.monthlyRent);
+  const depositNum = parseCurrency(appointment.depositAmount);
+  const discountPercent =
+    durationMonths >= 12 ? 15 : durationMonths >= 6 ? 10 : durationMonths >= 3 ? 5 : 0;
+  const rawTotal = monthlyRentNum * durationMonths;
+  const discountAmount = Math.round(rawTotal * (discountPercent / 100));
+  const totalRent = rawTotal - discountAmount;
+  const remainingAmount = Math.max(0, totalRent - depositNum);
+
+  // QR Code URL chuẩn hóa
+  const paymentContent = `THANH TOAN ${appointment.id}`;
+  const qrUrl = `https://img.vietqr.io/image/MB-0900000000-compact2.png?amount=${remainingAmount}&addInfo=${encodeURIComponent(
+    paymentContent
+  )}&accountName=${encodeURIComponent('SELFSTORAGE VN')}`;
+
+  const handleCopy = (text: string, label: string) => {
+    Clipboard.setString(text);
+    setCopiedField(label);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
+  const handleGenerateRandomPin = () => {
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    setAccessPin(pin);
+  };
+
+  const handleNext = () => {
+    if (currentStep === 1) {
+      if (!isCccdVerified) {
+        Alert.alert('Chưa đối chiếu CCCD', 'Vui lòng xác nhận đối chiếu CCCD gốc của khách hàng.');
+        return;
+      }
+      setCurrentStep(2);
+    } else if (currentStep === 2) {
+      setCurrentStep(3);
+    } else if (currentStep === 3) {
+      if (!isContractSigned) {
+        Alert.alert('Chưa ký hợp đồng', 'Vui lòng xác nhận khách hàng đã ký hợp đồng thuê kho.');
+        return;
+      }
+      setCurrentStep(4);
+    } else if (currentStep === 4) {
+      setCurrentStep(5);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    } else {
+      onBackToQueue();
+    }
+  };
+
+  const handleFinish = () => {
+    if (!isCccdVerified) {
+      Alert.alert('Lỗi', 'Vui lòng đối chiếu CCCD tại Bước 1.');
+      setCurrentStep(1);
+      return;
+    }
+    if (!isContractSigned) {
+      Alert.alert('Lỗi', 'Vui lòng ký hợp đồng tại Bước 3.');
+      setCurrentStep(3);
+      return;
+    }
+    onCompleteHandover({
+      appointmentId: appointment.id,
+      unitCode: selectedUnitCode,
+      condition,
+      notes: customNotes,
+    });
+  };
+
+  const steps = [
+    { num: 1, title: 'CCCD & Kho' },
+    { num: 2, title: 'Hiện trạng' },
+    { num: 3, title: 'Hợp đồng' },
+    { num: 4, title: 'Thu tiền' },
+    { num: 5, title: 'Cấp PIN' },
+  ];
+
   return (
-    <View style={styles.container}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBackToQueue}>
-          <Text style={styles.backBtnIcon}>←</Text>
+    <View style={s.container}>
+      {/* ─── Top Bar ─── */}
+      <View style={s.topBar}>
+        <TouchableOpacity style={s.backBtn} onPress={onBackToQueue}>
+          <MaterialIcons name="arrow-back" size={22} color={T.textMain} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>XÁC THỰC & BÀN GIAO KHO</Text>
-          <Text style={styles.headerSubtitle}>
-            Đơn #{appointment.id.slice(-6).toUpperCase()} • {appointment.customerName}
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={s.topTitle}>Bàn Giao: {appointment.customerName}</Text>
+          <Text style={s.topSub}>
+            Đơn #{appointment.id.slice(-6).toUpperCase()} • Ô #{selectedUnitCode}
           </Text>
         </View>
-
-        {/* Nút In Tài Liệu nhanh */}
-        <TouchableOpacity style={styles.quickPrintBtn} onPress={() => setShowPrintModal(true)}>
-          <Text style={styles.quickPrintText}>🖨️ In</Text>
+        <TouchableOpacity style={s.printQuickBtn} onPress={() => setShowPrintModal(true)}>
+          <MaterialIcons name="print" size={18} color={T.primary} />
+          <Text style={s.printQuickText}>In</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Segmented Control Tabs (Phù hợp cả Mobile & Tablet) */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeSubTab === 'verify' && styles.tabButtonActive]}
-          onPress={() => setActiveSubTab('verify')}
-        >
-          <Text style={[styles.tabButtonText, activeSubTab === 'verify' && styles.tabButtonTextActive]}>
-            👤 1. Xác thực & Đặt chỗ
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabButton, activeSubTab === 'actions' && styles.tabButtonActive]}
-          onPress={() => setActiveSubTab('actions')}
-        >
-          <Text style={[styles.tabButtonText, activeSubTab === 'actions' && styles.tabButtonTextActive]}>
-            🔑 2. Thao tác bàn giao
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Body Content */}
-      <ScrollView style={styles.contentScroll} contentContainerStyle={styles.scrollPadding}>
-        {activeSubTab === 'verify' ? (
-          /* ================= PHẦN BÊN TRÁI: XÁC THỰC KHÁCH HÀNG & CHI TIẾT ĐẶT CHỖ ================= */
-          <View style={styles.tabContent}>
-            {/* 1. Thông tin khách hàng */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>👤</Text>
-                <Text style={styles.cardTitle}>Thông Tin Định Danh Khách Hàng</Text>
+      {/* ─── Stepper Progress Bar (5 bước) ─── */}
+      <View style={s.stepperBar}>
+        {steps.map((st) => {
+          const isActive = currentStep === st.num;
+          const isDone = currentStep > st.num;
+          return (
+            <TouchableOpacity
+              key={st.num}
+              style={[
+                s.stepItem,
+                isActive && s.stepItemActive,
+                isDone && s.stepItemDone,
+              ]}
+              onPress={() => setCurrentStep(st.num)}
+            >
+              <View
+                style={[
+                  s.stepCircle,
+                  isActive && s.stepCircleActive,
+                  isDone && s.stepCircleDone,
+                ]}
+              >
+                {isDone ? (
+                  <MaterialIcons name="check" size={12} color="#fff" />
+                ) : (
+                  <Text
+                    style={[
+                      s.stepNumText,
+                      isActive && { color: '#fff' },
+                      isDone && { color: '#fff' },
+                    ]}
+                  >
+                    {st.num}
+                  </Text>
+                )}
               </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Họ và tên:</Text>
-                <Text style={styles.dataValueHighlight}>{appointment.customerName}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Số điện thoại:</Text>
-                <Text style={styles.dataValue}>📞 {appointment.phone}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>CCCD / Hộ chiếu:</Text>
-                <Text style={styles.dataValue}>🪪 {appointment.idCard || 'Đã đối chiếu thực tế'}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Email liên hệ:</Text>
-                <Text style={styles.dataValue}>✉️ {appointment.email}</Text>
-              </View>
-            </View>
-
-            {/* 2. Chi tiết đặt chỗ */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>📋</Text>
-                <Text style={styles.cardTitle}>Chi Tiết Đơn Đặt Chỗ</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Chi nhánh kho:</Text>
-                <Text style={styles.dataValue}>{appointment.facilityName || 'Trụ sở chính Thủ Đức'}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Loại ngăn kho:</Text>
-                <Text style={styles.dataValue}>{appointment.unitType} ({appointment.unitSize})</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Ngày bắt đầu:</Text>
-                <Text style={styles.dataValue}>📅 {appointment.startDate}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Thời hạn thuê:</Text>
-                <Text style={styles.dataValue}>⏱️ {appointment.durationMonths} Tháng</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Mục đích lưu trữ:</Text>
-                <Text style={styles.dataValue}>{appointment.purpose || 'Đồ gia dụng & nội thất'}</Text>
-              </View>
-            </View>
-
-            {/* 3. Trạng thái Đặt cọc & Tài chính */}
-            <View style={[styles.card, { borderColor: '#BBF7D0', backgroundColor: '#F0FDF4' }]}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>💵</Text>
-                <Text style={[styles.cardTitle, { color: '#166534' }]}>Trạng Thái Tiền Cọc & Thanh Toán</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Tiền cọc giữ chỗ:</Text>
-                <Text style={[styles.dataValueHighlight, { color: '#15803D' }]}>{appointment.depositAmount}</Text>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Trạng thái cọc:</Text>
-                <View style={styles.paidBadge}>
-                  <Text style={styles.paidBadgeText}>✓ ĐÃ THANH TOÁN 100%</Text>
-                </View>
-              </View>
-
-              <View style={styles.dataRow}>
-                <Text style={styles.dataLabel}>Đơn giá thuê:</Text>
-                <Text style={styles.dataValue}>{appointment.monthlyRent}</Text>
-              </View>
-              <Text style={styles.depositNote}>
-                * Khách hàng đã hoàn tất cọc qua cổng thanh toán SePay/VietQR. Không cần thu thêm tiền cọc tại quầy.
+              <Text
+                style={[
+                  s.stepLabel,
+                  isActive && s.stepLabelActive,
+                  isDone && s.stepLabelDone,
+                ]}
+                numberOfLines={1}
+              >
+                {st.title}
               </Text>
-            </View>
-
-            <TouchableOpacity style={styles.nextStepBtn} onPress={() => setActiveSubTab('actions')}>
-              <Text style={styles.nextStepBtnText}>Tiếp tục sang Thao Tác Bàn Giao →</Text>
             </TouchableOpacity>
-          </View>
-        ) : (
-          /* ================= PHẦN BÊN PHẢI: CÁC THAO TÁC BÀN GIAO ================= */
-          <View style={styles.tabContent}>
-            {/* 1. GÁN Ô KHO: Menu thả xuống (Dropdown) để xác nhận hoặc thay đổi ô kho */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>📦</Text>
-                <Text style={styles.cardTitle}>Gán Ô Kho Vật Lý</Text>
-              </View>
-              <Text style={styles.fieldGuide}>
-                Xác nhận ô kho đã gán hoặc chọn ô kho khác cùng loại còn trống nếu ô ban đầu không khả dụng:
-              </Text>
+          );
+        })}
+      </View>
 
+      {/* ─── Nội Dung Từng Bước ─── */}
+      <ScrollView contentContainerStyle={s.contentScroll} showsVerticalScrollIndicator={false}>
+        {/* ================= BƯỚC 1: CCCD & Ô KHO ================= */}
+        {currentStep === 1 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <MaterialIcons name="verified-user" size={20} color={T.primary} />
+              <Text style={s.cardTitle}>Bước 1: Đối Chiếu CCCD & Ô Kho</Text>
+            </View>
+
+            {/* Thông tin khách */}
+            <View style={s.infoBox}>
+              <View style={s.infoRow}>
+                <Text style={s.infoLabel}>Khách hàng:</Text>
+                <Text style={s.infoVal}>{appointment.customerName}</Text>
+              </View>
+              <View style={s.infoRow}>
+                <Text style={s.infoLabel}>Số CCCD/Hộ chiếu:</Text>
+                <Text style={[s.infoVal, { color: T.primary, fontWeight: '700' }]}>
+                  {appointment.idCard || '079095012345'}
+                </Text>
+              </View>
+              <View style={s.infoRow}>
+                <Text style={s.infoLabel}>Số điện thoại:</Text>
+                <Text style={s.infoVal}>{appointment.phone}</Text>
+              </View>
+            </View>
+
+            {/* Checkbox đối chiếu CCCD */}
+            <TouchableOpacity
+              style={[s.checkActionBox, isCccdVerified && s.checkActionBoxActive]}
+              onPress={() => setIsCccdVerified(!isCccdVerified)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons
+                name={isCccdVerified ? 'check-box' : 'check-box-outline-blank'}
+                size={22}
+                color={isCccdVerified ? T.primary : T.textMuted}
+              />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={s.checkActionTitle}>
+                  Đã đối chiếu thông tin với CCCD/Hộ chiếu gốc
+                </Text>
+                <Text style={s.checkActionSub}>Khách xuất trình giấy tờ trùng khớp thông tin</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Ô kho & Đổi ô */}
+            <View style={s.unitSelectBox}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.infoLabel}>Ô kho được gán:</Text>
+                <Text style={s.unitSelectVal}>
+                  Ô #{selectedUnitCode} • {appointment.unitType}
+                </Text>
+              </View>
               <TouchableOpacity
-                style={styles.dropdownSelector}
+                style={s.changeUnitBtn}
                 onPress={() => setShowUnitPickerModal(true)}
               >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.dropdownLabel}>Ô KHO BÀN GIAO CHÍNH THỨC</Text>
-                  <Text style={styles.dropdownSelectedValue}>{selectedUnitCode}</Text>
-                  <Text style={styles.dropdownSubValue}>
-                    {compatibleUnits.find((u) => u.code === selectedUnitCode)?.features ||
-                      'Khóa điện tử Smart Lock PIN 24/7'}
-                  </Text>
-                </View>
-                <View style={styles.changePill}>
-                  <Text style={styles.changePillText}>ĐỔI Ô ▾</Text>
-                </View>
+                <Text style={s.changeUnitBtnText}>Đổi ô</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ================= BƯỚC 2: HIỆN TRẠNG KHO ================= */}
+        {currentStep === 2 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <MaterialIcons name="camera-alt" size={20} color={T.primary} />
+              <Text style={s.cardTitle}>Bước 2: Hiện Trạng Ô Kho #{selectedUnitCode}</Text>
+            </View>
+
+            {/* Nút chụp ảnh Camera & Chọn Thư viện */}
+            <View style={s.photoActionRow}>
+              <TouchableOpacity
+                style={s.cameraBtn}
+                onPress={handleCapturePhoto}
+                disabled={isCapturing}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="photo-camera" size={18} color="#fff" />
+                <Text style={s.cameraBtnText}>Chụp Ảnh Kho Mới</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.galleryBtn}
+                onPress={handlePickPhoto}
+                disabled={isCapturing}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="photo-library" size={18} color={T.primary} />
+                <Text style={s.galleryBtnText}>Chọn Từ Thư Viện</Text>
               </TouchableOpacity>
             </View>
 
-            {/* 2. KIỂM TRA HIỆN TRẠNG KHO BÀN GIAO */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>🛡️</Text>
-                <Text style={styles.cardTitle}>Kiểm Tra Hiện Trạng & Biên Bản</Text>
-              </View>
-              <Text style={styles.fieldGuide}>Tình trạng ô kho lúc bàn giao (lưu vào HandoverRecord):</Text>
+            {/* Danh sách ảnh hiện trạng (Có thể cuộn ngang hoặc dạng lưới) */}
+            <Text style={s.sectionSubtitle}>
+              Ảnh kiểm tra trước bàn giao ({photos.length} ảnh):
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
+              <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4 }}>
+                {photos.map((p) => (
+                  <View key={p.id} style={s.photoCard}>
+                    <TouchableOpacity
+                      style={s.photoThumbWrap}
+                      onPress={() => setPreviewImage(p.uri)}
+                      activeOpacity={0.85}
+                    >
+                      <Image source={{ uri: p.uri }} style={s.photoImg} />
+                      <Text style={s.photoTag} numberOfLines={1}>{p.title}</Text>
+                    </TouchableOpacity>
 
-              <TextInput
-                style={styles.conditionInput}
-                value={condition}
-                onChangeText={setCondition}
-                multiline
-                placeholder="Nhập hiện trạng ngăn kho..."
-              />
-
-              <View style={styles.checklistQuickRow}>
-                {['Sạch sẽ & Khô ráo', 'Khóa Smart PIN tốt', 'Bóng đèn hoạt động'].map((tag) => (
-                  <View key={tag} style={styles.checkTag}>
-                    <Text style={styles.checkTagText}>✓ {tag}</Text>
+                    {/* Nút xóa ảnh */}
+                    <TouchableOpacity
+                      style={s.photoDeleteBtn}
+                      onPress={() => handleDeletePhoto(p.id)}
+                    >
+                      <MaterialIcons name="close" size={14} color="#fff" />
+                    </TouchableOpacity>
                   </View>
                 ))}
               </View>
+            </ScrollView>
 
-              <Text style={[styles.fieldGuide, { marginTop: 10, marginBottom: 4 }]}>
-                Ghi chú thêm của nhân viên khi bàn giao (tùy chọn):
+            {/* Checklist kiểm tra */}
+            <View style={s.checklistCard}>
+              {[
+                { key: 'lockTested', label: 'Khóa Smart PIN hoạt động tốt' },
+                { key: 'lightingChecked', label: 'Đèn chiếu sáng ổn định' },
+                { key: 'cleanlinessChecked', label: 'Kho sạch sẽ, không mùi' },
+              ].map((item) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={s.checklistItem}
+                  onPress={() =>
+                    setChecklist({
+                      ...checklist,
+                      [item.key]: !checklist[item.key as keyof typeof checklist],
+                    })
+                  }
+                >
+                  <MaterialIcons
+                    name={
+                      checklist[item.key as keyof typeof checklist]
+                        ? 'check-circle'
+                        : 'radio-button-unchecked'
+                    }
+                    size={20}
+                    color={checklist[item.key as keyof typeof checklist] ? T.primary : T.textMuted}
+                  />
+                  <Text style={s.checklistText}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Mô tả hiện trạng */}
+            <Text style={[s.sectionSubtitle, { marginTop: 12 }]}>Mô tả ghi vào biên bản:</Text>
+            <TextInput
+              style={s.inputBox}
+              value={condition}
+              onChangeText={setCondition}
+              placeholder="Tình trạng kho..."
+            />
+          </View>
+        )}
+
+        {/* ================= BƯỚC 3: HỢP ĐỒNG THUÊ ================= */}
+        {currentStep === 3 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <MaterialIcons name="description" size={20} color={T.primary} />
+              <Text style={s.cardTitle}>Bước 3: Hợp Đồng Thuê Kho</Text>
+            </View>
+
+            {/* Tóm tắt điều khoản */}
+            <View style={s.contractSummaryGrid}>
+              <View style={s.summaryCol}>
+                <Text style={s.infoLabel}>Kỳ hạn:</Text>
+                <Text style={s.infoVal}>{durationMonths} tháng</Text>
+              </View>
+              <View style={s.summaryCol}>
+                <Text style={s.infoLabel}>Ngày bắt đầu:</Text>
+                <Text style={s.infoVal}>{appointment.startDate || 'Hôm nay'}</Text>
+              </View>
+              <View style={s.summaryCol}>
+                <Text style={s.infoLabel}>Giá thuê:</Text>
+                <Text style={[s.infoVal, { color: T.primary }]}>{appointment.monthlyRent}</Text>
+              </View>
+              <View style={s.summaryCol}>
+                <Text style={s.infoLabel}>Tiền cọc:</Text>
+                <Text style={[s.infoVal, { color: T.emeraldText }]}>
+                  {appointment.depositAmount}
+                </Text>
+              </View>
+            </View>
+
+            {/* 2 nút Xem & In hợp đồng */}
+            <View style={s.actionRow}>
+              <TouchableOpacity
+                style={s.contractActionBtn}
+                onPress={() => setShowContractModal(true)}
+              >
+                <MaterialIcons name="visibility" size={18} color={T.primary} />
+                <Text style={s.contractActionText}>Xem Hợp Đồng Điện Tử</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.contractActionBtn, { backgroundColor: T.surfaceLow }]}
+                onPress={() => setShowPrintModal(true)}
+              >
+                <MaterialIcons name="print" size={18} color={T.textMain} />
+                <Text style={[s.contractActionText, { color: T.textMain }]}>In Hợp Đồng Giấy</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Checkbox xác nhận ký hợp đồng */}
+            <TouchableOpacity
+              style={[s.signedBox, isContractSigned && s.signedBoxActive]}
+              onPress={() => setIsContractSigned(!isContractSigned)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons
+                name={isContractSigned ? 'check-box' : 'check-box-outline-blank'}
+                size={24}
+                color={isContractSigned ? T.emeraldText : T.textMuted}
+              />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={[s.signedTitle, isContractSigned && { color: T.emeraldText }]}>
+                  Xác nhận khách hàng đã ký hợp đồng
+                </Text>
+                <Text style={s.signedSub}>Hợp đồng đã có đủ chữ ký và lưu trữ vào hồ sơ</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ================= BƯỚC 4: THU TIỀN THUÊ KHO (VIETQR) ================= */}
+        {currentStep === 4 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <MaterialIcons name="payment" size={20} color={T.primary} />
+              <Text style={s.cardTitle}>Bước 4: Quyết Toán Tiền Thuê Kho</Text>
+            </View>
+
+            {/* Bảng số tiền */}
+            <View style={s.priceBox}>
+              <View style={s.priceCol}>
+                <Text style={s.priceLabel}>Tiền thuê ({durationMonths}T)</Text>
+                <Text style={s.priceVal}>{formatVND(totalRent)}</Text>
+              </View>
+              <View style={s.priceCol}>
+                <Text style={s.priceLabel}>Đã cọc</Text>
+                <Text style={[s.priceVal, { color: T.emeraldText }]}>
+                  {appointment.depositAmount || formatVND(depositNum)}
+                </Text>
+              </View>
+              <View style={[s.priceCol, { borderRightWidth: 0, backgroundColor: T.amberBg }]}>
+                <Text style={[s.priceLabel, { color: T.amberText, fontWeight: '700' }]}>
+                  CẦN THU
+                </Text>
+                <Text style={[s.priceVal, { color: T.amberText, fontWeight: '800' }]}>
+                  {formatVND(remainingAmount)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Chọn hình thức */}
+            <View style={s.payMethodRow}>
+              <TouchableOpacity
+                style={[s.payMethodBtn, paymentMethod === 'vietqr' && s.payMethodBtnActive]}
+                onPress={() => setPaymentMethod('vietqr')}
+              >
+                <MaterialIcons
+                  name="qr-code-scanner"
+                  size={18}
+                  color={paymentMethod === 'vietqr' ? T.primary : T.textMuted}
+                />
+                <Text
+                  style={[
+                    s.payMethodText,
+                    paymentMethod === 'vietqr' && s.payMethodTextActive,
+                  ]}
+                >
+                  VietQR SePay
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.payMethodBtn, paymentMethod === 'cash' && s.payMethodBtnActive]}
+                onPress={() => setPaymentMethod('cash')}
+              >
+                <MaterialIcons
+                  name="attach-money"
+                  size={18}
+                  color={paymentMethod === 'cash' ? T.primary : T.textMuted}
+                />
+                <Text
+                  style={[
+                    s.payMethodText,
+                    paymentMethod === 'cash' && s.payMethodTextActive,
+                  ]}
+                >
+                  Tiền mặt tại quầy
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* HIỂN THỊ MÃ VIETQR TRỰC TIẾP */}
+            {paymentMethod === 'vietqr' && (
+              <View style={s.qrWrapper}>
+                <View style={s.qrBox}>
+                  <Image source={{ uri: qrUrl }} style={s.qrImage} resizeMode="contain" />
+                  <Text style={s.qrHint}>Đưa màn hình cho khách quét bằng App Ngân hàng</Text>
+                </View>
+
+                {/* Thông tin chuyển khoản */}
+                <View style={s.bankDetailList}>
+                  <View style={s.bankRow}>
+                    <Text style={s.bankLabel}>Ngân hàng:</Text>
+                    <Text style={s.bankVal}>MBBank (Quân Đội)</Text>
+                  </View>
+                  <View style={s.bankRow}>
+                    <Text style={s.bankLabel}>Số tài khoản:</Text>
+                    <Text style={[s.bankVal, { color: T.primary, fontWeight: '700' }]}>
+                      0900000000
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleCopy('0900000000', 'STK')}
+                      style={s.copyBtn}
+                    >
+                      <Text style={s.copyBtnText}>{copiedField === 'STK' ? 'Đã chép' : 'Chép'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={s.bankRow}>
+                    <Text style={s.bankLabel}>Nội dung:</Text>
+                    <Text style={[s.bankVal, { color: T.amberText, fontWeight: '700' }]}>
+                      {paymentContent}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleCopy(paymentContent, 'ND')}
+                      style={s.copyBtn}
+                    >
+                      <Text style={s.copyBtnText}>{copiedField === 'ND' ? 'Đã chép' : 'Chép'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Tab Tiền mặt */}
+            {paymentMethod === 'cash' && (
+              <View style={s.cashBox}>
+                <MaterialIcons name="monetization-on" size={32} color={T.emeraldText} />
+                <Text style={s.cashTitle}>Thu tiền mặt trực tiếp</Text>
+                <Text style={s.cashAmount}>{formatVND(remainingAmount)}</Text>
+              </View>
+            )}
+
+            {/* Nút xác nhận đã thu tiền */}
+            <TouchableOpacity
+              style={[s.paidToggleBtn, isPaid && s.paidToggleBtnDone]}
+              onPress={() => setIsPaid(!isPaid)}
+            >
+              <MaterialIcons
+                name={isPaid ? 'check-circle' : 'radio-button-unchecked'}
+                size={20}
+                color="#fff"
+              />
+              <Text style={s.paidToggleText}>
+                {isPaid
+                  ? `✓ ĐÃ THU ĐỦ ${formatVND(remainingAmount)}`
+                  : `XÁC NHẬN ĐÃ THU ${formatVND(remainingAmount)}`}
               </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ================= BƯỚC 5: CẤP MÃ PIN SMART LOCK ================= */}
+        {currentStep === 5 && (
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <MaterialIcons name="lock" size={20} color={T.primary} />
+              <Text style={s.cardTitle}>Bước 5: Cấp PIN & Kích Hoạt Kho #{selectedUnitCode}</Text>
+            </View>
+
+            {/* Mã PIN 6 số */}
+            <View style={s.pinSection}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={s.sectionSubtitle}>Mã PIN Smart Lock (6 số):</Text>
+                <TouchableOpacity onPress={handleGenerateRandomPin} style={s.genPinBtn}>
+                  <MaterialIcons name="refresh" size={14} color={T.primary} />
+                  <Text style={s.genPinText}>Sinh mã ngẫu nhiên</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
-                style={[styles.conditionInput, { minHeight: 45 }]}
-                value={customNotes}
-                onChangeText={setCustomNotes}
-                placeholder="Ví dụ: Đã cấp thẻ RFID phụ, hướng dẫn khách mở cửa..."
+                style={s.pinInput}
+                value={accessPin}
+                onChangeText={setAccessPin}
+                keyboardType="numeric"
+                maxLength={6}
+                placeholder="6 số PIN"
               />
             </View>
 
-            {/* 3. HỢP ĐỒNG KỸ THUẬT SỐ: Xem trước hợp đồng cho thuê */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>📑</Text>
-                <Text style={styles.cardTitle}>Hợp Đồng Kỹ Thuật Số</Text>
-              </View>
-              <Text style={styles.fieldGuide}>
-                Hợp đồng điện tử được sinh tự động theo mẫu chuẩn pháp lý với mã định danh duy nhất:
-              </Text>
-
-              <TouchableOpacity
-                style={styles.previewContractBtn}
-                onPress={() => setShowContractModal(true)}
-              >
-                <Text style={styles.previewContractBtnText}>👁️ Xem Trước Hợp Đồng Cho Thuê</Text>
-              </TouchableOpacity>
+            {/* Mã RFID phụ */}
+            <View style={{ marginTop: 12 }}>
+              <Text style={s.sectionSubtitle}>Mã thẻ từ RFID phụ (tùy chọn):</Text>
+              <TextInput
+                style={s.inputBox}
+                value={customRfid}
+                onChangeText={setCustomRfid}
+                placeholder="Quẹt thẻ hoặc nhập mã RFID..."
+              />
             </View>
 
-            {/* 4. CÁC NÚT BẤM & TƯƠNG TÁC CHÍNH (LUỒNG 2) */}
-            <View style={styles.actionButtonGroup}>
-              {/* [ In tài liệu ] */}
-              <TouchableOpacity
-                style={styles.printBtn}
-                onPress={() => setShowPrintModal(true)}
-              >
-                <Text style={styles.printBtnText}>🖨️ [ In Tài Liệu Tại Quầy ]</Text>
-              </TouchableOpacity>
+            {/* Ghi chú */}
+            <View style={{ marginTop: 12 }}>
+              <Text style={s.sectionSubtitle}>Ghi chú dặn dò:</Text>
+              <TextInput
+                style={s.inputBox}
+                value={customNotes}
+                onChangeText={setCustomNotes}
+                placeholder="VD: Đã hướng dẫn khách sử dụng ứng dụng mở khóa..."
+              />
+            </View>
 
-              {/* [ Hoàn tất bàn giao ] */}
-              <TouchableOpacity
-                style={styles.completeBtn}
-                onPress={handleFinishHandover}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.completeBtnText}>✓ [ Hoàn Tất Bàn Giao ]</Text>
-                )}
-              </TouchableOpacity>
+            {/* Tóm tắt hoàn tất */}
+            <View style={s.finishSummaryBox}>
+              <View style={s.finishRow}>
+                <MaterialIcons name="check" size={16} color={T.emeraldText} />
+                <Text style={s.finishText}>CCCD: Đã kiểm tra trùng khớp</Text>
+              </View>
+              <View style={s.finishRow}>
+                <MaterialIcons name="check" size={16} color={T.emeraldText} />
+                <Text style={s.finishText}>Hợp đồng: Đã ký kết hợp lệ</Text>
+              </View>
+              <View style={s.finishRow}>
+                <MaterialIcons
+                  name={isPaid ? 'check' : 'schedule'}
+                  size={16}
+                  color={isPaid ? T.emeraldText : T.amberText}
+                />
+                <Text style={[s.finishText, !isPaid && { color: T.amberText }]}>
+                  {isPaid ? 'Tiền thuê: Đã thu đủ' : 'Tiền thuê: Ghi nợ thu sau'}
+                </Text>
+              </View>
             </View>
           </View>
         )}
       </ScrollView>
 
-      {/* MODAL DROPDOWN CHỌN ĐỔI Ô KHO */}
-      <Modal visible={showUnitPickerModal} transparent animationType="fade" onRequestClose={() => setShowUnitPickerModal(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.pickerDialog}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>CHỌN Ô KHO THAY THẾ</Text>
-              <TouchableOpacity onPress={() => setShowUnitPickerModal(false)} style={styles.closePickerBtn}>
-                <Text style={styles.closePickerText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.pickerSubtitle}>
-              Danh sách ô kho thuộc loại <Text style={{ fontWeight: 'bold' }}>{appointment.unitType}</Text> đang sẵn sàng:
-            </Text>
+      {/* ─── Bottom Navigation Bar ─── */}
+      <View style={s.bottomBar}>
+        <TouchableOpacity style={s.navPrevBtn} onPress={handlePrev}>
+          <MaterialIcons name="arrow-back" size={16} color={T.textMain} />
+          <Text style={s.navPrevText}>{currentStep === 1 ? 'Hàng đợi' : 'Quay lại'}</Text>
+        </TouchableOpacity>
 
-            <ScrollView style={{ maxHeight: 320 }}>
-              {compatibleUnits.map((u) => {
-                const isSelected = u.code === selectedUnitCode;
-                return (
-                  <TouchableOpacity
-                    key={u.id}
-                    style={[styles.unitPickItem, isSelected && styles.unitPickItemActive]}
-                    onPress={() => {
-                      setSelectedUnitCode(u.code);
-                      setShowUnitPickerModal(false);
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.unitPickCode, isSelected && styles.unitPickCodeActive]}>
-                        Ô kho: {u.code}
-                      </Text>
-                      <Text style={styles.unitPickDetail}>{u.floor} • {u.zone} • {u.size}</Text>
-                      <Text style={styles.unitPickFeatures}>{u.features}</Text>
-                    </View>
-                    {isSelected && <Text style={styles.unitPickCheck}>✓ Đang chọn</Text>}
-                  </TouchableOpacity>
-                );
-              })}
+        <Text style={s.stepCountText}>Bước {currentStep} / 5</Text>
+
+        {currentStep < 5 ? (
+          <TouchableOpacity style={s.navNextBtn} onPress={handleNext}>
+            <Text style={s.navNextText}>Tiếp tục</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#fff" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[s.finishBtn, isSubmitting && { opacity: 0.7 }]}
+            onPress={handleFinish}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={s.finishBtnText}>Hoàn Tất & Cấp PIN</Text>
+                <MaterialIcons name="check-circle" size={18} color="#fff" />
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ─── Modal Đổi Ô Kho ─── */}
+      <Modal visible={showUnitPickerModal} transparent animationType="fade">
+        <View style={s.modalBackdrop}>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitle}>Chọn ô kho thay thế</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {availableUnits.map((u) => (
+                <TouchableOpacity
+                  key={u.id}
+                  style={[s.modalUnitItem, u.code === selectedUnitCode && s.modalUnitItemActive]}
+                  onPress={() => {
+                    setSelectedUnitCode(u.code);
+                    setShowUnitPickerModal(false);
+                  }}
+                >
+                  <Text style={s.modalUnitCode}>Ô #{u.code}</Text>
+                  <Text style={s.modalUnitType}>{u.type} (Tầng {u.floor})</Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
+            <TouchableOpacity
+              style={s.modalCloseBtn}
+              onPress={() => setShowUnitPickerModal(false)}
+            >
+              <Text style={s.modalCloseText}>Đóng</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL XEM TRƯỚC HỢP ĐỒNG */}
+      {/* ─── Modal Lightbox Xem Ảnh ─── */}
+      {previewImage && (
+        <Modal visible transparent animationType="fade">
+          <TouchableOpacity
+            style={s.lightboxBackdrop}
+            onPress={() => setPreviewImage(null)}
+            activeOpacity={1}
+          >
+            <Image source={{ uri: previewImage }} style={s.lightboxImg} resizeMode="contain" />
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Modals Hợp Đồng & In */}
       <ContractPreviewModal
         visible={showContractModal}
         onClose={() => setShowContractModal(false)}
         appointment={appointment}
         assignedUnitCode={selectedUnitCode}
-        onPrint={() => setShowPrintModal(true)}
       />
-
-      {/* MODAL IN TÀI LIỆU */}
       <PrintReceiptModal
         visible={showPrintModal}
         onClose={() => setShowPrintModal(false)}
         appointment={appointment}
         assignedUnitCode={selectedUnitCode}
       />
-
-      {/* MODAL XÁC NHẬN HOÀN TẤT BÀN GIAO (LUỒNG 2) */}
-      <Modal
-        visible={showConfirmModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!isSubmitting) setShowConfirmModal(false);
-        }}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.confirmDialog}>
-            <View style={styles.confirmHeader}>
-              <View style={styles.confirmIconBadge}>
-                <Text style={styles.confirmIconText}>🔐</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.confirmTitle}>XÁC NHẬN BÀN GIAO KHO</Text>
-                <Text style={styles.confirmSubtitle}>
-                  Kích hoạt hợp đồng và cấp khóa thông minh
-                </Text>
-              </View>
-              {!isSubmitting && (
-                <TouchableOpacity
-                  onPress={() => setShowConfirmModal(false)}
-                  style={styles.closePickerBtn}
-                >
-                  <Text style={styles.closePickerText}>✕</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={styles.confirmBody}>
-              {/* Thẻ tóm tắt thông tin */}
-              <View style={styles.confirmSummaryCard}>
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Khách hàng:</Text>
-                  <Text style={styles.confirmValBold}>{appointment.customerName}</Text>
-                </View>
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Số điện thoại:</Text>
-                  <Text style={styles.confirmVal}>{appointment.phone}</Text>
-                </View>
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Ô kho bàn giao:</Text>
-                  <View style={styles.confirmUnitBadge}>
-                    <Text style={styles.confirmUnitBadgeText}>{selectedUnitCode}</Text>
-                    <Text style={styles.confirmUnitType}>({appointment.unitType})</Text>
-                  </View>
-                </View>
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Hiện trạng:</Text>
-                  <Text style={styles.confirmVal} numberOfLines={2}>
-                    {condition || 'Kho sạch sẽ, không mùi, đèn sáng'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Danh sách hành động tự động */}
-              <View style={styles.confirmActionsList}>
-                <Text style={styles.confirmActionsListTitle}>Các tác vụ hệ thống sẽ thực thi ngay:</Text>
-                <View style={styles.confirmActionItem}>
-                  <Text style={styles.confirmActionCheck}>✓</Text>
-                  <Text style={styles.confirmActionText}>
-                    Kích hoạt Hợp đồng điện tử pháp lý chính thức
-                  </Text>
-                </View>
-                <View style={styles.confirmActionItem}>
-                  <Text style={styles.confirmActionCheck}>✓</Text>
-                  <Text style={styles.confirmActionText}>
-                    Chuyển ô kho <Text style={{ fontWeight: '700' }}>{selectedUnitCode}</Text> sang trạng thái{' '}
-                    <Text style={{ fontWeight: '700', color: '#DC2626' }}>ĐANG THUÊ (Occupied)</Text>
-                  </Text>
-                </View>
-                <View style={styles.confirmActionItem}>
-                  <Text style={styles.confirmActionCheck}>✓</Text>
-                  <Text style={styles.confirmActionText}>
-                    Sinh mã Smart PIN 6 số và bàn giao quyền mở cửa
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Nút hành động */}
-            <View style={styles.confirmFooter}>
-              <TouchableOpacity
-                style={styles.confirmCancelBtn}
-                onPress={() => setShowConfirmModal(false)}
-                disabled={isSubmitting}
-              >
-                <Text style={styles.confirmCancelText}>Kiểm tra lại</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.confirmSubmitBtn}
-                onPress={() => {
-                  onCompleteHandover({
-                    appointmentId: appointment.id,
-                    unitCode: selectedUnitCode,
-                    condition,
-                    notes: customNotes,
-                  });
-                }}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.confirmSubmitText}>✓ Đồng Ý Bàn Giao</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F1F5F9',
-  },
-  header: {
-    backgroundColor: '#0F172A',
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: T.bg },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: T.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  backBtn: { padding: 4 },
+  topTitle: { fontSize: 15, fontWeight: '800', color: T.textMain },
+  topSub: { fontSize: 12, color: T.textMuted },
+  printQuickBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1E293B',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backBtnIcon: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-  },
-  headerSubtitle: {
-    color: '#38BDF8',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  quickPrintBtn: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
+    gap: 4,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#BFDBFE',
   },
-  quickPrintText: {
-    color: '#F8FAFC',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tabsRow: {
+  printQuickText: { fontSize: 12, fontWeight: '700', color: T.primary },
+
+  stepperBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: T.border,
+    justifyContent: 'space-between',
   },
-  tabButton: {
+  stepItem: {
     flex: 1,
-    paddingVertical: 12,
     alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  tabButtonActive: {
-    borderBottomColor: '#2563EB',
+  stepItemActive: { backgroundColor: '#EFF6FF' },
+  stepItemDone: { backgroundColor: '#F0FDF4' },
+  stepCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: T.surfaceLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
   },
-  tabButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  tabButtonTextActive: {
-    color: '#2563EB',
-  },
-  contentScroll: {
-    flex: 1,
-  },
-  scrollPadding: {
-    padding: 14,
-    paddingBottom: 40,
-  },
-  tabContent: {
-    gap: 14,
-  },
+  stepCircleActive: { backgroundColor: T.primary },
+  stepCircleDone: { backgroundColor: T.emerald },
+  stepNumText: { fontSize: 10, fontWeight: '800', color: T.textMuted },
+  stepLabel: { fontSize: 10, color: T.textMuted, fontWeight: '600' },
+  stepLabelActive: { color: T.primary, fontWeight: '800' },
+  stepLabelDone: { color: T.emeraldText, fontWeight: '700' },
+
+  contentScroll: { padding: 14, paddingBottom: 24 },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
-    elevation: 2,
+    borderColor: T.border,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
     marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-    paddingBottom: 8,
   },
-  cardIcon: {
-    fontSize: 18,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  dataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-  },
-  dataLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  dataValue: {
-    fontSize: 12,
-    color: '#0F172A',
-    fontWeight: '700',
-  },
-  dataValueHighlight: {
-    fontSize: 13,
-    color: '#0F172A',
-    fontWeight: '900',
-  },
-  paidBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  paidBadgeText: {
-    color: '#15803D',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  depositNote: {
-    fontSize: 11,
-    color: '#166534',
-    fontStyle: 'italic',
-    marginTop: 8,
-    lineHeight: 16,
-  },
-  nextStepBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  nextStepBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  fieldGuide: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 10,
-    lineHeight: 18,
-  },
-  dropdownSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+  cardTitle: { fontSize: 15, fontWeight: '800', color: T.textMain },
+
+  infoBox: {
+    backgroundColor: T.surfaceLow,
     borderRadius: 12,
     padding: 12,
-    borderWidth: 1.5,
-    borderColor: '#2563EB',
-    gap: 10,
+    gap: 8,
   },
-  dropdownLabel: {
-    fontSize: 10,
-    color: '#2563EB',
-    fontWeight: '800',
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  infoLabel: { fontSize: 12, color: T.textMuted },
+  infoVal: { fontSize: 12, fontWeight: '600', color: T.textMain },
+
+  checkActionBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
   },
-  dropdownSelectedValue: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginTop: 2,
-  },
-  dropdownSubValue: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  changePill: {
+  checkActionBoxActive: {
     backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
+    borderColor: '#93C5FD',
+  },
+  checkActionTitle: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  checkActionSub: { fontSize: 11, color: T.textMuted, marginTop: 2 },
+
+  unitSelectBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  unitSelectVal: { fontSize: 13, fontWeight: '800', color: T.primary, marginTop: 2 },
+  changeUnitBtn: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
+    backgroundColor: '#EFF6FF',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
-  changePillText: {
-    color: '#2563EB',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  conditionInput: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    fontSize: 12,
-    color: '#0F172A',
-    minHeight: 65,
-    textAlignVertical: 'top',
-  },
-  checklistQuickRow: {
+  changeUnitBtnText: { fontSize: 12, fontWeight: '700', color: T.primary },
+
+  sectionSubtitle: { fontSize: 12, fontWeight: '700', color: T.textMain, marginBottom: 8 },
+  photoActionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginTop: 10,
+    marginBottom: 12,
   },
-  checkTag: {
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  cameraBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: T.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    shadowColor: T.primary,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cameraBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  galleryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: '#DCFCE7',
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    paddingVertical: 10,
   },
-  checkTagText: {
-    color: '#166534',
-    fontSize: 11,
-    fontWeight: '700',
+  galleryBtnText: { color: T.primary, fontSize: 12, fontWeight: '700' },
+  photoCard: {
+    width: 105,
+    height: 95,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
   },
-  previewContractBtn: {
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 12,
+  photoThumbWrap: { width: '100%', height: '100%' },
+  photoImg: { width: '100%', height: '100%' },
+  photoTag: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    color: '#fff',
+    fontSize: 9,
+    textAlign: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    fontWeight: '600',
+  },
+  photoDeleteBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  checklistCard: {
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 12,
+    gap: 8,
+  },
+  checklistItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checklistText: { fontSize: 12, color: T.textMain, fontWeight: '600' },
+  inputBox: {
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: T.textMain,
+  },
+
+  contractSummaryGrid: {
+    flexDirection: 'row',
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  summaryCol: { flex: 1, alignItems: 'center' },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  contractActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  contractActionText: { fontSize: 11, fontWeight: '700', color: T.primary },
+  signedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  signedBoxActive: {
+    backgroundColor: T.emeraldBg,
+    borderColor: T.emeraldBorder,
+  },
+  signedTitle: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  signedSub: { fontSize: 11, color: T.textMuted, marginTop: 2 },
+
+  priceBox: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surfaceLow,
+  },
+  priceCol: {
+    flex: 1,
+    padding: 8,
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: T.border,
+  },
+  priceLabel: { fontSize: 10, color: T.textMuted },
+  priceVal: { fontSize: 12, fontWeight: '700', color: T.textMain, marginTop: 2 },
+  payMethodRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  payMethodBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
+    borderColor: T.border,
+    backgroundColor: T.surfaceLow,
   },
-  previewContractBtnText: {
-    color: '#1E293B',
-    fontSize: 13,
-    fontWeight: '800',
+  payMethodBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: T.primary,
   },
-  actionButtonGroup: {
-    gap: 10,
-    marginTop: 10,
-  },
-  printBtn: {
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 13,
-    borderRadius: 12,
-    alignItems: 'center',
+  payMethodText: { fontSize: 11, fontWeight: '600', color: T.textMuted },
+  payMethodTextActive: { color: T.primary, fontWeight: '800' },
+
+  qrWrapper: { marginTop: 12, alignItems: 'center' },
+  qrBox: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  printBtnText: {
-    color: '#334155',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  completeBtn: {
-    backgroundColor: '#059669',
-    paddingVertical: 15,
-    borderRadius: 12,
+    borderColor: T.border,
     alignItems: 'center',
-    shadowColor: '#059669',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+    width: '100%',
   },
-  completeBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
+  qrImage: { width: 180, height: 180 },
+  qrHint: { fontSize: 10, color: T.textMuted, marginTop: 6 },
+  bankDetailList: {
+    width: '100%',
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 10,
+    gap: 6,
+  },
+  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bankLabel: { fontSize: 11, color: T.textMuted },
+  bankVal: { fontSize: 11, fontWeight: '600', color: T.textMain },
+  copyBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 4,
+  },
+  copyBtnText: { fontSize: 10, fontWeight: '700', color: T.primary },
+
+  cashBox: {
+    backgroundColor: T.emeraldBg,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  cashTitle: { fontSize: 12, color: T.emeraldText, fontWeight: '600', marginTop: 4 },
+  cashAmount: { fontSize: 18, fontWeight: '800', color: T.emeraldText, marginTop: 2 },
+  paidToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: T.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  paidToggleBtnDone: { backgroundColor: T.emerald },
+  paidToggleText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+
+  pinSection: { marginTop: 4 },
+  genPinBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  genPinText: { fontSize: 11, fontWeight: '700', color: T.primary },
+  pinInput: {
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    fontSize: 22,
     fontWeight: '900',
-    letterSpacing: 0.3,
+    fontFamily: 'monospace',
+    letterSpacing: 8,
+    textAlign: 'center',
+    paddingVertical: 10,
+    color: T.textMain,
   },
+  finishSummaryBox: {
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 14,
+    gap: 4,
+  },
+  finishRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  finishText: { fontSize: 11, color: T.textMain, fontWeight: '600' },
+
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: T.surface,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+  },
+  navPrevBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: T.surfaceLow,
+  },
+  navPrevText: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  stepCountText: { fontSize: 12, fontWeight: '700', color: T.textMuted },
+  navNextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: T.primary,
+  },
+  navNextText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  finishBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: T.primary,
+  },
+  finishBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16 },
+  modalTitle: { fontSize: 14, fontWeight: '800', marginBottom: 10, color: T.textMain },
+  modalUnitItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  modalUnitItemActive: { backgroundColor: '#EFF6FF' },
+  modalUnitCode: { fontSize: 13, fontWeight: '700', color: T.primary },
+  modalUnitType: { fontSize: 11, color: T.textMuted },
+  modalCloseBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    backgroundColor: T.surfaceLow,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalCloseText: { fontSize: 12, fontWeight: '700', color: T.textMain },
+
+  lightboxBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
-  pickerDialog: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    width: '100%',
-    maxWidth: 400,
-    padding: 18,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  pickerTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  closePickerBtn: {
-    padding: 4,
-  },
-  closePickerText: {
-    color: '#94A3B8',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  pickerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 12,
-  },
-  unitPickItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  unitPickItemActive: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
-  },
-  unitPickCode: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  unitPickCodeActive: {
-    color: '#1D4ED8',
-  },
-  unitPickDetail: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  unitPickFeatures: {
-    fontSize: 10,
-    color: '#059669',
-    marginTop: 2,
-  },
-  unitPickCheck: {
-    color: '#2563EB',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  confirmDialog: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    width: '100%',
-    maxWidth: 440,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  confirmHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  confirmIconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#DCFCE7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  confirmIconText: {
-    fontSize: 20,
-  },
-  confirmTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  confirmSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  confirmBody: {
-    gap: 12,
-  },
-  confirmSummaryCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  confirmRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  confirmLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  confirmVal: {
-    fontSize: 12,
-    color: '#1E293B',
-    fontWeight: '600',
-  },
-  confirmValBold: {
-    fontSize: 13,
-    color: '#0F172A',
-    fontWeight: '800',
-  },
-  confirmUnitBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  confirmUnitBadgeText: {
-    backgroundColor: '#DBEAFE',
-    color: '#1D4ED8',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  confirmUnitType: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  confirmActionsList: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    gap: 6,
-  },
-  confirmActionsListTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#15803D',
-    marginBottom: 2,
-    textTransform: 'uppercase',
-  },
-  confirmActionItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  confirmActionCheck: {
-    color: '#16A34A',
-    fontSize: 12,
-    fontWeight: '900',
-    marginTop: 1,
-  },
-  confirmActionText: {
-    fontSize: 12,
-    color: '#14532D',
-    flex: 1,
-    lineHeight: 16,
-  },
-  confirmFooter: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-  },
-  confirmCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  confirmCancelText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  confirmSubmitBtn: {
-    flex: 1.5,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmSubmitText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
+  lightboxImg: { width: '100%', height: '80%' },
 });

@@ -19,6 +19,7 @@ export interface CheckInAppointment {
   status: 'pending' | 'confirmed' | 'arrived' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
   depositStatus: 'paid' | 'unpaid';
   depositAmount: string;
+  rentalStatus?: 'paid' | 'unpaid';
   monthlyRent: string;
   startDate: string;
   durationMonths: number;

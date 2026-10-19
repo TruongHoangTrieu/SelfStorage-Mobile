@@ -458,14 +458,12 @@ interface CustomerProfileScreenProps {
   currentUser: CustomerUser;
   onBackToUnits: () => void;
   onOpenSidebar: () => void;
-  onSwitchToStaff: () => void;
 }
 
 export function CustomerProfileScreen({
   currentUser,
   onBackToUnits,
   onOpenSidebar,
-  onSwitchToStaff,
 }: CustomerProfileScreenProps) {
   return (
     <View style={styles.container}>
@@ -519,18 +517,6 @@ export function CustomerProfileScreen({
             <Text style={styles.fieldValue}>{currentUser.joinedDate}</Text>
           </View>
         </View>
-
-        {/* Switch Role Button */}
-        <TouchableOpacity style={styles.roleSwitchCard} onPress={onSwitchToStaff}>
-          <Text style={styles.roleSwitchIcon}>👔</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.roleSwitchTitle}>Chuyển Sang Cổng Nhân Viên Kho</Text>
-            <Text style={styles.roleSwitchDesc}>
-              Truy cập Luồng 2 (Check-in & Bàn giao kho) và sơ đồ mặt bằng cơ sở
-            </Text>
-          </View>
-          <Text style={styles.roleSwitchArrow}>→</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );

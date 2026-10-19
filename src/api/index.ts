@@ -70,6 +70,7 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
     ...(options.headers as Record<string, string>),
   };
 
@@ -111,7 +112,12 @@ export async function apiRequest<T>(
         throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
       }
       return fallbackData as T;
-    } catch {
+    } catch (fallbackErr: any) {
+      if (Platform.OS === 'web' && (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError')) {
+        throw new Error(
+          'Không thể kết nối Backend qua cổng 5000. Vui lòng mở terminal chạy "node proxy.js" (hoặc npm run proxy) để chuyển tiếp API không bị chặn CORS trên trình duyệt.'
+        );
+      }
       throw err;
     }
   }
@@ -140,9 +146,9 @@ export async function loginStaffApi(email = 'staff@selfstorage.vn', password = '
 /**
  * Lấy danh sách đơn đặt chỗ từ Backend cho hàng đợi nhận kho
  */
-export async function fetchStaffReservationsApi(facilityId?: number) {
+export async function fetchStaffReservationsApi(facilityId?: number | string) {
   let endpoint = '/reservations?limit=50';
-  if (facilityId) endpoint += `&facilityId=${facilityId}`;
+  if (facilityId) endpoint += `&facilityId=${encodeURIComponent(String(facilityId))}`;
   return apiRequest<any>(endpoint);
 }
 
@@ -156,8 +162,10 @@ export async function getReservationForCheckInApi(reservationId: number) {
 /**
  * Lấy danh sách ô kho vật lý (GET /storage-units)
  */
-export async function getAvailableUnitsApi(facilityId = 1) {
-  return apiRequest<any>(`/storage-units?facilityId=${facilityId}`);
+export async function getAvailableUnitsApi(facilityId?: number | string) {
+  let endpoint = '/storage-units';
+  if (facilityId) endpoint += `?facilityId=${encodeURIComponent(String(facilityId))}`;
+  return apiRequest<any>(endpoint);
 }
 
 /**
@@ -255,17 +263,38 @@ export async function changeSmartLockPinApi(contractId: number, unitId: number, 
  * Gửi yêu cầu hỗ trợ sự cố ô kho (POST /support/requests)
  */
 export async function createSupportRequestApi(payload: {
-  facilityId: number;
-  contractItemId?: number;
+  facilityId: string | number;
+  contractItemId?: string | number;
   category: string;
   subject: string;
   description: string;
   priority?: string;
   photos?: any[];
 }) {
+  let facilityIdStr = String(payload.facilityId || '');
+  if (!facilityIdStr || facilityIdStr === '1' || facilityIdStr.length < 10) {
+    facilityIdStr = '6ac4ea732f3017f8106ae7a6'; // Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp
+  }
+
+  const body: any = {
+    facilityId: facilityIdStr,
+    category: payload.category || 'OTHER',
+    subject: payload.subject,
+    description: payload.description,
+    priority: payload.priority || 'MEDIUM',
+    photos: payload.photos || [],
+  };
+
+  if (payload.contractItemId) {
+    const cid = String(payload.contractItemId);
+    if (cid.length === 24) {
+      body.contractItemId = cid;
+    }
+  }
+
   return apiRequest<any>('/support/requests', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
 }
 
@@ -274,6 +303,16 @@ export async function createSupportRequestApi(payload: {
  */
 export async function fetchMySupportRequestsApi() {
   return apiRequest<{ data: any[]; meta: any }>('/support/requests');
+}
+
+/**
+ * Thêm ghi chú/phản hồi vào phiếu hỗ trợ (POST /support/requests/:id/notes)
+ */
+export async function addTicketNoteApi(ticketId: string, note: string) {
+  return apiRequest<any>(`/support/requests/${ticketId}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  });
 }
 
 /**
@@ -307,5 +346,41 @@ export async function renewContractApi(
   return apiRequest<any>(`/contracts/${contractId}/renew`, {
     method: 'POST',
     body: JSON.stringify({ extendedMonths, paymentMethod }),
+  });
+}
+
+/**
+ * Lấy danh sách đồ đạc lưu trong ngăn kho (GET /contracts/:contractId/units/:unitId/items)
+ */
+export async function fetchStoredItemsApi(contractId: number | string, unitId: number | string) {
+  return apiRequest<any[]>(`/contracts/${contractId}/units/${unitId}/items`);
+}
+
+/**
+ * Thêm món đồ mới vào ngăn kho (POST /contracts/:contractId/units/:unitId/items)
+ */
+export async function createStoredItemApi(
+  contractId: number | string,
+  unitId: number | string,
+  payload: {
+    name: string;
+    quantity: number;
+    category?: string;
+    description?: string;
+    photoUrl?: string;
+  }
+) {
+  return apiRequest<any>(`/contracts/${contractId}/units/${unitId}/items`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Xóa món đồ khỏi kho khi đã mang ra (DELETE /contracts/items/:itemId)
+ */
+export async function deleteStoredItemApi(itemId: number | string) {
+  return apiRequest<any>(`/contracts/items/${itemId}`, {
+    method: 'DELETE',
   });
 }

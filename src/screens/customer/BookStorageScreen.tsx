@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,33 +10,40 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-} from 'react-native';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Facility, UnitType, Reservation } from '../../api';
+} from "react-native";
+import { MaterialIcons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Facility, UnitType, Reservation } from "../../api";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import CustomerBottomNavBar, {
+  CustomerTabType,
+} from "../../components/customer/CustomerBottomNavBar";
 
-// ─── Tailwind Color Palette verbatim from User's Design System ───────────────
+// ─── Tailwind Color Palette synced with Stitch Design System ────────────────
 const T = {
-  bg: '#f8f9ff',
-  onSurface: '#0b1c30',
-  onSurfaceVariant: '#45464d',
-  primary: '#000000',
-  primaryContainer: '#131b2e',
-  inverseSurface: '#213145',
-  onPrimary: '#ffffff',
-  secondary: '#a73a00',
-  secondaryBrand: '#EA580C',
-  secondaryContainer: '#fd651e',
-  secondaryFixed: '#ffdbce',
-  onSecondaryFixed: '#370e00',
-  surfaceLowest: '#ffffff',
-  surfaceLow: '#eff4ff',
-  surfaceContainer: '#e5eeff',
-  surfaceContainerHigh: '#dce9ff',
-  outline: '#76777d',
-  outlineVariant: '#c6c6cd',
-  green: '#22c55e',
-  amber: '#f59e0b',
-  blue: '#2563EB',
+  bg: "#f7f9fd",
+  onSurface: "#131b2e",
+  onSurfaceVariant: "#434655",
+  primary: "#1d4ed8",
+  primaryContainer: "#131b2e",
+  inverseSurface: "#283044",
+  onPrimary: "#ffffff",
+  secondary: "#1d4ed8",
+  secondaryBrand: "#2563eb",
+  secondaryContainer: "#2563eb",
+  secondaryFixed: "#dbe1ff",
+  onSecondaryFixed: "#00174b",
+  surfaceLowest: "#ffffff",
+  surfaceLow: "#f2f3ff",
+  surfaceContainerLow: "#f2f3ff",
+  surfaceContainer: "#eaedff",
+  surfaceContainerHigh: "#dae2fd",
+  outline: "#737686",
+  outlineVariant: "#c3c6d7",
+  green: "#22c55e",
+  amber: "#f59e0b",
+  blue: "#1d4ed8",
 };
 
 interface Props {
@@ -47,9 +54,10 @@ interface Props {
   onRefresh?: () => void;
   onReservationCreated: (reservation: Reservation) => void;
   onViewMyReservations: () => void;
-  onNavigateTab?: (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => void;
-  activeBottomTab?: 'search' | 'my-storage' | 'digital-key' | 'support';
-  onSwitchToStaff?: () => void;
+  onNavigateTab?: (
+    tab: CustomerTabType,
+  ) => void;
+  activeBottomTab?: CustomerTabType;
   onOpenLogin?: () => void;
   currentUser?: any;
 }
@@ -75,89 +83,34 @@ export interface StorageDisplayItem {
   originalPrice?: number;
   monthlyBasePrice: number;
   depositAmount: number;
-  category: 'personal' | 'family' | 'business';
+  category: "personal" | "family" | "business";
   amenities: string[];
 }
 
-const DEFAULT_ITEMS: StorageDisplayItem[] = [
-  {
-    id: 'card-1',
-    facilityId: 1,
-    unitTypeId: 1,
-    facilityName: 'Kho Lock & Go - Chi nhánh Nam Sài Gòn',
-    locationText: 'Tầng 2, Tòa nhà Logistics Tân Thuận, Quận 7',
-    title: 'Kho Lock & Go - Mã buồng #B2-108',
-    unitCode: '#B2-108',
-    floorText: 'Sơ đồ buồng kho Tầng 2',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDi7ffWEcZNkd9FUJVDq8FKYWhjOSmQblyG1Qj5TBeENSYs3J3O1s3QP4Fhed6n88cmTvHL3f4zr-hyHiqQM-2vTawgzuRvH2r1kfogAnBOeNDPErcFvdt6AnQ5le_X52cTvrRjrOuww6gKiByxYZ-uxN_y2YJObfnOV3QANbDKwbHQAxue3_NgpKVzVsocye92Ra5VoUuq7Nxtz80VPKv1uTtZGEbc_oMqBiQM2Itmz9ZmzfZNBqNT',
-    blueprintImage:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCVarykGbxjehyVgEQMfdT0pamniv6wuqvBh0pVJ4-0GWZqsDQRNfXXHkAR9T8WSox57jSXVc4O8lxNqjAXngk3jyZuiAHNgDN0sdFkbi9U-qP58EG1xhGzMgwurn-fFM_emDoPCTW6yDyagoIlegqwnDsfnSLq5pK6CdFQ4kLUDyb7r92f2zAcPf5xiwHxFNZzONCNVCb-vLdeyexhRp02zDqm2qUyqcjGtkPrVLRL_iuei9HuWxUk',
-    badgeStatus: 'Còn 2 kho trống',
-    badgeDiscount: '-15% Tháng đầu',
-    floorArea: '6.0 m²',
-    volume: '16.8 m³',
-    dimensions: '2 x 3 x 2.8m',
-    capacity: '~35 thùng, 1 xe máy, sofa',
-    features: ['Kiểm soát nhiệt độ 22-25°C', 'Camera CCTV riêng', 'Mở bằng App Bluetooth 24/7'],
-    originalPrice: 1500000,
-    monthlyBasePrice: 1450000,
-    depositAmount: 800000,
-    category: 'family',
-    amenities: ['ac', 'delivery', 'bluetooth'],
-  },
-  {
-    id: 'card-2',
-    facilityId: 2,
-    unitTypeId: 2,
-    facilityName: 'Kho Mini Box - Tự quản cá nhân',
-    locationText: 'Tầng 1, 123 Nguyễn Thị Thập, Quận 7',
-    title: 'Kho Mini Box - Mã buồng #M1-042',
-    unitCode: '#M1-042',
-    floorText: 'Sơ đồ buồng kho Tầng 1',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDxnmvNPLv63BiMwGIW-9lanBQwMIrgXxZRe5wEO4d4dSw4bROFK4ygtcnqN0WoSpnSFtfMbyQ9nPjp2xqG6K0qVIgazUz4NrG2e-bumqKV_7rZw3pKjrBTyw0LvOjf_rJfSBxHg6-rI7ecugYdTczs-Tlb-NZqE_C1Rc587_Kbyb2Ay0_oJSKqcJ5fn1ea1QdycUeE0mctFMyxWKdHMifzHcJT-_cqenMg9giBkW3UvdXtc8PVgNIV',
-    blueprintImage:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCVarykGbxjehyVgEQMfdT0pamniv6wuqvBh0pVJ4-0GWZqsDQRNfXXHkAR9T8WSox57jSXVc4O8lxNqjAXngk3jyZuiAHNgDN0sdFkbi9U-qP58EG1xhGzMgwurn-fFM_emDoPCTW6yDyagoIlegqwnDsfnSLq5pK6CdFQ4kLUDyb7r92f2zAcPf5xiwHxFNZzONCNVCb-vLdeyexhRp02zDqm2qUyqcjGtkPrVLRL_iuei9HuWxUk',
-    badgeStatus: 'Còn 5 kho trống',
-    floorArea: '2.25 m²',
-    volume: '5.6 m³',
-    dimensions: '1.5 x 1.5 x 2.5m',
-    capacity: '15 thùng đồ cá nhân, vali, hồ sơ',
-    features: ['An ninh vân tay & Khóa số', 'Hút ẩm tự động', 'Bảo hiểm hàng hóa'],
-    monthlyBasePrice: 650000,
-    depositAmount: 300000,
-    category: 'personal',
-    amenities: ['ac', 'fingerprint'],
-  },
-  {
-    id: 'card-3',
-    facilityId: 1,
-    unitTypeId: 3,
-    facilityName: 'Kho Khoang Lớn - Hàng hóa Thương mại',
-    locationText: 'Tầng trệt, 456 Huỳnh Tấn Phát, Quận 7',
-    title: 'Kho Khoang Lớn - Mã buồng #G0-015',
-    unitCode: '#G0-015',
-    floorText: 'Sơ đồ kho Khoang Lớn Tầng trệt',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCLA1Ke608Wa7nLTLWaO7p5t81LnSmwa940rFscZ6Z4L3f-Pp8middo2YZK1W6oVddxHmnNb1RDFtWJwwhT8e-zMm2hy8LR5MrhRWCZp_sg9HESH46dbxMEYVjEKQDHq-MfcWj-Mf-3jf3tnSwaudoviAjQpouNIYKZ67hlz5e54G8erVTVGaupzg42umtoi6St-GjqyazYGGlpb1HyXUD3PoNslnnEQbPHJM4UGQ7cyJPPjb3HrSTZ',
-    blueprintImage:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCVarykGbxjehyVgEQMfdT0pamniv6wuqvBh0pVJ4-0GWZqsDQRNfXXHkAR9T8WSox57jSXVc4O8lxNqjAXngk3jyZuiAHNgDN0sdFkbi9U-qP58EG1xhGzMgwurn-fFM_emDoPCTW6yDyagoIlegqwnDsfnSLq5pK6CdFQ4kLUDyb7r92f2zAcPf5xiwHxFNZzONCNVCb-vLdeyexhRp02zDqm2qUyqcjGtkPrVLRL_iuei9HuWxUk',
-    badgeStatus: 'Sắp hết - Còn 1 kho',
-    floorArea: '16.0 m²',
-    volume: '48.0 m³',
-    dimensions: '4 x 4 x 3.0m',
-    capacity: 'Xe nâng & Cửa cuốn tự động',
-    features: ['Xe tải đậu tận cửa', 'Bảo vệ tuần tra 24/7', 'Điện 3 pha riêng biệt'],
-    monthlyBasePrice: 3500000,
-    depositAmount: 1500000,
-    category: 'business',
-    amenities: ['delivery'],
-  },
+const FACILITY_PHOTOS = [
+  "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1595246140625-573b715d11dc?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1565118531796-763e5082d113?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1549194388-f61be84a6e9e?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
 ];
 
+function extractDistrict(address: string, name: string): string {
+  const text = `${name} ${address}`.toLowerCase();
+  if (text.includes("thủ đức") || text.includes("thu duc") || text.includes("an phú") || text.includes("võ nguyên giáp") || text.includes("thảo điền")) return "TP. Thủ Đức";
+  if (text.includes("quận 1") || text.includes("q. 1") || text.includes("q1") || text.includes("tân định") || text.includes("nguyễn huệ")) return "Quận 1";
+  if (text.includes("quận 7") || text.includes("q. 7") || text.includes("q7") || text.includes("trần trọng cung") || text.includes("tân phú") || text.includes("nam long")) return "Quận 7";
+  if (text.includes("bình thạnh") || text.includes("binh thanh") || text.includes("landmark")) return "Q. Bình Thạnh";
+  if (text.includes("quận 6") || text.includes("q. 6") || text.includes("q6") || text.includes("centre mall")) return "Quận 6";
+  if (text.includes("quận 9") || text.includes("q. 9") || text.includes("q9")) return "Quận 9";
+  return "Khu Vực Khác";
+}
+
 function formatVND(amount: number): string {
-  return amount.toLocaleString('vi-VN') + ' đ';
+  return amount.toLocaleString("vi-VN") + " đ";
 }
 
 export default function BookStorageScreen({
@@ -167,28 +120,70 @@ export default function BookStorageScreen({
   onReservationCreated,
   onViewMyReservations,
   onNavigateTab,
-  activeBottomTab = 'search',
-  onSwitchToStaff,
+  activeBottomTab = "search",
   onOpenLogin,
   currentUser,
 }: Props) {
   // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
+  // Selected Facility State (synced with Web flow: chọn cơ sở -> chọn loại kho)
+  const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
+  const [facilitySearchQuery, setFacilitySearchQuery] = useState("");
+  const [facilityDistrictFilter, setFacilityDistrictFilter] = useState("ALL");
+
+  // Dynamic Districts for Filter Chips
+  const availableDistricts = useMemo(() => {
+    const set = new Set<string>();
+    facilities.forEach((f) => {
+      const d = extractDistrict(f.address || "", f.name || "");
+      if (d) set.add(d);
+    });
+    return ["ALL", ...Array.from(set)];
+  }, [facilities]);
+
+  // Filtered Facilities List
+  const filteredFacilities = useMemo(() => {
+    return facilities.filter((fac) => {
+      const dist = extractDistrict(fac.address || "", fac.name || "");
+      if (facilityDistrictFilter !== "ALL" && dist !== facilityDistrictFilter) {
+        return false;
+      }
+      if (facilitySearchQuery.trim()) {
+        const q = facilitySearchQuery.toLowerCase().trim();
+        const matchName = fac.name?.toLowerCase().includes(q);
+        const matchAddr = fac.address?.toLowerCase().includes(q);
+        const matchDist = dist.toLowerCase().includes(q);
+        if (!matchName && !matchAddr && !matchDist) return false;
+      }
+      return true;
+    });
+  }, [facilities, facilityDistrictFilter, facilitySearchQuery]);
+
   // Search & Filter States
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'personal' | 'family' | 'business'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<
+    "all" | "personal" | "family" | "business"
+  >("all");
   const [selectedAmenity, setSelectedAmenity] = useState<string | null>(null);
 
   // Selected Unit for Contract Step 2
-  const [selectedUnit, setSelectedUnit] = useState<StorageDisplayItem>(DEFAULT_ITEMS[0]);
+  const [selectedUnit, setSelectedUnit] = useState<StorageDisplayItem | null>(
+    null,
+  );
 
   // Step 2 Form States
-  const [moveInDateStr, setMoveInDateStr] = useState('2026-10-18');
-  const [appointmentTimeSlot, setAppointmentTimeSlot] = useState('09:00 - 10:00');
+  const [moveInDateStr, setMoveInDateStr] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().split("T")[0];
+  });
+  const [appointmentTimeSlot, setAppointmentTimeSlot] =
+    useState("09:00 - 10:00");
   const [rentalTermMonths, setRentalTermMonths] = useState<1 | 3 | 6 | 12>(6);
-  const [contractNotes, setContractNotes] = useState('');
+  const [contractNotes, setContractNotes] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // SePay VietQR Deposit States (Step 3)
   const [qrData, setQrData] = useState<{
@@ -207,128 +202,109 @@ export default function BookStorageScreen({
 
   // Submitting & Reservation result
   const [submitting, setSubmitting] = useState(false);
-  const [confirmedReservation, setConfirmedReservation] = useState<Reservation | null>(null);
+  const [confirmedReservation, setConfirmedReservation] =
+    useState<Reservation | null>(null);
 
   // Active Bottom Tab
-  const [currentBottomTab, setCurrentBottomTab] = useState<'search' | 'my-storage' | 'digital-key' | 'support'>(
-    activeBottomTab
+  const [currentBottomTab, setCurrentBottomTab] = useState<CustomerTabType>(
+    activeBottomTab || "search"
   );
 
-  // Combined real & fallback data
+  // Category Pill & Favorites States for Stitch Explore UI
+  const [activeFilterPill, setActiveFilterPill] = useState<
+    "for-you" | "personal" | "family" | "business" | "ac"
+  >("for-you");
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
+    new Set(["feat-1"])
+  );
+
+  const toggleFavorite = (id: string) => {
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // ─── Map API data → display items (NO fallback mock) ────────────────────
   const storageItems: StorageDisplayItem[] = useMemo(() => {
-    if (unitTypes && unitTypes.length > 0) {
-      return unitTypes.map((ut, idx) => {
-        const fac =
-          facilities.find((f) => String(f.id) === String(ut.facilityId)) ||
-          (ut as any).facility ||
-          facilities[idx % (facilities.length || 1)] || {
-            id: ut.facilityId || 'fac-1',
-            name: 'Hệ thống Kho Tự Quản Thông Minh',
-            address: 'Hồ Chí Minh',
-            code: 'FAC',
-          };
+    if (!unitTypes || unitTypes.length === 0) return [];
 
-        const cat: 'personal' | 'family' | 'business' =
-          ut.size && ut.size <= 3 ? 'personal' : ut.size && ut.size <= 9 ? 'family' : 'business';
-        const mockRef = DEFAULT_ITEMS[idx % DEFAULT_ITEMS.length];
+    return unitTypes.map((ut) => {
+      const fac = facilities.find(
+        (f) => String(f.id) === String((ut as any).facilityId),
+      );
+      const size = Number(ut.size) || 0;
+      const category: StorageDisplayItem["category"] =
+        size <= 3 ? "personal" : size <= 9 ? "family" : "business";
 
-        const facImage =
-          Array.isArray((fac as any).images) && (fac as any).images.length > 0
-            ? (fac as any).images[0]
-            : fac.image || fac.imageUrl;
-        const utImage =
-          Array.isArray((ut as any).images) && (ut as any).images.length > 0
-            ? (ut as any).images[0]
-            : ut.image || ut.imageUrl;
+      const available =
+        (ut as any).availableUnits ?? (ut as any).availableCount;
 
-        const available = (ut as any).availableUnits ?? (ut as any).availableCount;
-        const badgeStatus =
-          available !== undefined
-            ? available > 0
-              ? `Còn ${available} kho trống`
-              : 'Tạm hết phòng'
-            : mockRef.badgeStatus;
+      const badgeStatus =
+        available === undefined
+          ? "Đang cập nhật"
+          : available > 0
+            ? `Còn ${available} kho trống`
+            : "Tạm hết phòng";
 
-        return {
-          id: `item-${ut.id}`,
-          facilityId: fac.id || ut.facilityId,
-          unitTypeId: ut.id,
-          facilityName: fac.name,
-          locationText: fac.address || mockRef.locationText,
-          title: ut.name,
-          unitCode: `#${fac.code || 'FAC'}-${ut.code || String(ut.id).slice(-4).toUpperCase()}`,
-          floorText: `Sơ đồ buồng kho ${fac.name}`,
-          image: utImage || facImage || mockRef.image,
-          blueprintImage: mockRef.blueprintImage,
-          badgeStatus,
-          badgeDiscount: idx === 0 ? '-15% Tháng đầu' : undefined,
-          floorArea: `${ut.size || 5} m²`,
-          volume: `${Math.round((ut.size || 5) * 2.8 * 10) / 10} m³`,
-          dimensions: (ut as any).dimensions || `${ut.size}m² (Tiêu chuẩn cao 2.8m)`,
-          capacity: ut.description || mockRef.capacity,
-          features: (ut.features as string[]) || mockRef.features,
-          originalPrice: idx === 0 ? Math.round(Number(ut.price) * 1.2) : undefined,
-          monthlyBasePrice: Number(ut.price) || mockRef.monthlyBasePrice,
-          depositAmount: Number(ut.depositAmount) || Number(ut.price) || mockRef.depositAmount,
-          category: cat,
-          amenities: mockRef.amenities,
-        };
-      });
-    }
+      const utImage =
+        Array.isArray((ut as any).images) && (ut as any).images.length > 0
+          ? (ut as any).images[0]
+          : ut.image || "";
 
-    if (facilities && facilities.length > 0) {
-      const generated: StorageDisplayItem[] = [];
-      facilities.forEach((fac, facIndex) => {
-        const nestedTypes = (fac as any).storageUnitTypes || [];
-        nestedTypes.forEach((ut: any, utIndex: number) => {
-          const cat: 'personal' | 'family' | 'business' =
-            ut.size && ut.size <= 3 ? 'personal' : ut.size && ut.size <= 9 ? 'family' : 'business';
-          const mockRef = DEFAULT_ITEMS[(facIndex + utIndex) % DEFAULT_ITEMS.length];
-          const facImage =
-            Array.isArray(fac.images) && fac.images.length > 0 ? fac.images[0] : fac.image;
+      const facImage =
+        Array.isArray((fac as any)?.images) && (fac as any).images.length > 0
+          ? (fac as any).images[0]
+          : (fac as any)?.image || "";
 
-          generated.push({
-            id: `item-${fac.id}-${ut.id}`,
-            facilityId: fac.id,
-            unitTypeId: ut.id,
-            facilityName: fac.name,
-            locationText: fac.address || mockRef.locationText,
-            title: ut.name,
-            unitCode: `#${fac.code || 'FAC'}-${ut.code || String(ut.id).slice(-4).toUpperCase()}`,
-            floorText: `Sơ đồ buồng kho ${fac.name}`,
-            image: facImage || mockRef.image,
-            blueprintImage: mockRef.blueprintImage,
-            badgeStatus: ut.status === 'ACTIVE' ? 'Còn kho trống' : 'Bảo trì',
-            floorArea: `${ut.size || 5} m²`,
-            volume: `${Math.round((ut.size || 5) * 2.8 * 10) / 10} m³`,
-            dimensions: `${ut.size}m² (Cao 2.8m)`,
-            capacity: ut.description || mockRef.capacity,
-            features: mockRef.features,
-            monthlyBasePrice: Number(ut.price || ut.depositAmount) || mockRef.monthlyBasePrice,
-            depositAmount: Number(ut.depositAmount) || mockRef.depositAmount,
-            category: cat,
-            amenities: mockRef.amenities,
-          });
-        });
-      });
-      if (generated.length > 0) return generated;
-    }
-
-    return DEFAULT_ITEMS;
+      return {
+        id: `item-${ut.id}`,
+        facilityId: fac?.id ?? (ut as any).facilityId,
+        unitTypeId: ut.id,
+        facilityName: fac?.name ?? "",
+        locationText: fac?.address ?? "",
+        title: ut.name,
+        unitCode: `#${fac?.code ?? "FAC"}-${(ut as any).code ?? String(ut.id).slice(-4).toUpperCase()}`,
+        floorText: `Sơ đồ buồng kho ${fac?.name ?? ""}`.trim(),
+        image: utImage || facImage,
+        blueprintImage: (ut as any).blueprintImage || "",
+        badgeStatus,
+        badgeDiscount: (ut as any).promotionLabel,
+        floorArea: `${size} m²`,
+        volume: `${Math.round(size * 2.8 * 10) / 10} m³`,
+        dimensions: (ut as any).dimensions || `${size}m² (Cao 2.8m)`,
+        capacity: ut.description ?? "",
+        features: ((ut as any).features as string[]) ?? [],
+        originalPrice: (ut as any).originalPrice,
+        monthlyBasePrice: Number(ut.price) || 0,
+        depositAmount: Number(ut.depositAmount) || Number(ut.price) || 0,
+        category,
+        amenities: ((ut as any).amenities as string[]) ?? [],
+      };
+    });
   }, [facilities, unitTypes]);
 
-  // Filtered items
+  // Filtered items (belonging to selectedFacility when chosen)
   const filteredItems = useMemo(() => {
     return storageItems.filter((item) => {
+      if (
+        selectedFacility &&
+        String(item.facilityId) !== String(selectedFacility.id)
+      ) {
+        return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesName = item.title.toLowerCase().includes(q);
         const matchesFac = item.facilityName.toLowerCase().includes(q);
         const matchesLoc = item.locationText.toLowerCase().includes(q);
         const matchesDim = item.dimensions.toLowerCase().includes(q);
-        if (!matchesName && !matchesFac && !matchesLoc && !matchesDim) return false;
+        if (!matchesName && !matchesFac && !matchesLoc && !matchesDim)
+          return false;
       }
-      if (selectedCategory !== 'all' && item.category !== selectedCategory) {
+      if (selectedCategory !== "all" && item.category !== selectedCategory) {
         return false;
       }
       if (selectedAmenity && !item.amenities.includes(selectedAmenity)) {
@@ -336,10 +312,54 @@ export default function BookStorageScreen({
       }
       return true;
     });
-  }, [storageItems, searchQuery, selectedCategory, selectedAmenity]);
+  }, [storageItems, selectedFacility, searchQuery, selectedCategory, selectedAmenity]);
+
+  //Date select
+  const minMoveInDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1); // sớm nhất là ngày mai
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    // Android: đóng picker sau khi chọn
+    if (Platform.OS === "android") setShowDatePicker(false);
+
+    if (event.type === "dismissed") {
+      setShowDatePicker(false);
+      return;
+    }
+
+    if (date) {
+      if (date < minMoveInDate) {
+        Alert.alert(
+          "Ngày không hợp lệ",
+          "Ngày dọn vào phải sau hôm nay ít nhất 1 ngày.",
+        );
+        return;
+      }
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const dd = String(date.getDate()).padStart(2, "0");
+      setMoveInDateStr(`${yyyy}-${mm}-${dd}`);
+    }
+
+    if (Platform.OS === "ios") setShowDatePicker(false);
+  };
 
   // Calculations for Step 2
   const calc = useMemo(() => {
+    if (!selectedUnit) {
+      return {
+        ratePerMonth: 0,
+        discountPct: 0,
+        grossRent: 0,
+        discountSavings: 0,
+        totalRent: 0,
+        depositAmount: 0,
+      };
+    }
     const baseRate = selectedUnit.monthlyBasePrice;
     let discountPct = 0;
     let ratePerMonth = baseRate;
@@ -374,23 +394,130 @@ export default function BookStorageScreen({
   }, [selectedUnit, rentalTermMonths]);
 
   // Handle Bottom Nav Press
-  const handleTabPress = (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => {
-    setCurrentBottomTab(tab);
-    if (tab === 'search') {
+  const handleTabPress = (tab: CustomerTabType) => {
+    if (tab === "search") {
+      setCurrentBottomTab("search");
       setCurrentStep(1);
+      setSelectedFacility(null);
+      if (onNavigateTab) onNavigateTab("search");
+      return;
     }
+    // Bắt buộc login khi nhấn qua Kho của tôi hoặc Hỗ trợ
+    if ((tab === "my-storage" || tab === "support") && !currentUser) {
+      if (onOpenLogin) {
+        onOpenLogin();
+      }
+      return;
+    }
+    setCurrentBottomTab(tab);
     if (onNavigateTab) {
       onNavigateTab(tab);
-    } else if (tab === 'my-storage') {
+    } else if (tab === "my-storage") {
       onViewMyReservations();
     }
   };
 
+  // ─── Dynamic Facilities mapping strictly from Backend API ─────────────────
+  const dynamicFacilities = useMemo(() => {
+    return facilities.map((fac, idx) => {
+      const facUnits = unitTypes.filter(
+        (ut) => String((ut as any).facilityId) === String(fac.id)
+      );
+      const validPrices = facUnits
+        .map((u) => Number(u.price) || 0)
+        .filter((p) => p > 0);
+      const minPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
+      const district = extractDistrict(fac.address || "", fac.name || "");
+      const facImg =
+        (Array.isArray((fac as any).images) && (fac as any).images[0]) ||
+        (fac as any).image ||
+        FACILITY_PHOTOS[idx % FACILITY_PHOTOS.length];
+      const availableCount =
+        (fac as any).availableUnits ??
+        (fac as any)._count?.storageUnits ??
+        facUnits.reduce(
+          (acc, u) => acc + (Number((u as any).availableUnits) || 0),
+          0
+        );
+
+      let badge = "Đang hoạt động";
+      let badgeType: "white" | "amber" = "white";
+      if (availableCount === 1) {
+        badge = "Sắp hết (Còn 1)";
+        badgeType = "amber";
+      } else if (availableCount > 0) {
+        badge = `Còn ${availableCount} buồng`;
+      }
+
+      const hasPersonal = facUnits.some((u) => Number(u.size) <= 3);
+      const hasFamily = facUnits.some((u) => Number(u.size) > 3 && Number(u.size) <= 9);
+      const hasBusiness = facUnits.some((u) => Number(u.size) > 9);
+      const hasAC =
+        facUnits.some((u) =>
+          ((u as any).features || []).some(
+            (f: string) =>
+              typeof f === "string" &&
+              (f.toLowerCase().includes("lạnh") || f.toLowerCase().includes("ac"))
+          )
+        ) || (fac.address || "").toLowerCase().includes("máy lạnh");
+
+      return {
+        id: `fac-${fac.id}`,
+        facility: fac,
+        title: fac.name,
+        price: minPrice > 0 ? formatVND(minPrice) : "Liên hệ",
+        priceUnit: minPrice > 0 ? "/tháng" : "",
+        location: fac.address || district || "TP. Hồ Chí Minh",
+        district,
+        badge,
+        badgeType,
+        image: facImg,
+        availableCount,
+        unitTypesCount: facUnits.length,
+        tag: facUnits.length > 0 ? `${facUnits.length} loại buồng` : "Cho thuê",
+        tagType: hasBusiness ? ("business" as const) : ("primary" as const),
+        hasPersonal,
+        hasFamily,
+        hasBusiness,
+        hasAC,
+      };
+    });
+  }, [facilities, unitTypes]);
+
+  // Filter dynamic facilities based on search query and category filter pill
+  const filteredDynamicFacilities = useMemo(() => {
+    return dynamicFacilities.filter((item) => {
+      if (activeFilterPill === "personal" && !item.hasPersonal && item.unitTypesCount > 0)
+        return false;
+      if (activeFilterPill === "family" && !item.hasFamily && item.unitTypesCount > 0)
+        return false;
+      if (activeFilterPill === "business" && !item.hasBusiness && item.unitTypesCount > 0)
+        return false;
+      if (activeFilterPill === "ac" && !item.hasAC && item.unitTypesCount > 0)
+        return false;
+
+      if (facilitySearchQuery.trim()) {
+        const q = facilitySearchQuery.toLowerCase().trim();
+        return (
+          item.title.toLowerCase().includes(q) ||
+          item.location.toLowerCase().includes(q) ||
+          item.district.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [dynamicFacilities, activeFilterPill, facilitySearchQuery]);
+
   // Step 2 -> Step 3: Tạo đơn hẹn và tạo mã VietQR thanh toán cọc giữ chỗ
   const handleSignContract = async () => {
+    if (!selectedUnit) {
+      Alert.alert("Lỗi", "Chưa chọn buồng kho.");
+      return;
+    }
     try {
       setSubmitting(true);
-      const { apiRequest, getAuthToken, loginCustomerApi } = await import('../../api');
+      const { apiRequest, getAuthToken, loginCustomerApi } =
+        await import("../../api");
       if (!getAuthToken()) {
         await loginCustomerApi().catch(() => null);
       }
@@ -401,13 +528,13 @@ export default function BookStorageScreen({
         unitTypeId: selectedUnit.unitTypeId,
         appointmentDate: isoDate,
         rentalPeriod: rentalTermMonths,
-        rentalPeriodUnit: 'MONTHS',
+        rentalPeriodUnit: "MONTHS",
         notes: contractNotes.trim() || undefined,
       };
 
       // 1. Tạo đơn đặt giữ chỗ
-      const resResult = await apiRequest<Reservation>('/reservations', {
-        method: 'POST',
+      const resResult = await apiRequest<Reservation>("/reservations", {
+        method: "POST",
         body: JSON.stringify(payload),
       });
 
@@ -415,49 +542,29 @@ export default function BookStorageScreen({
       setConfirmedReservation(resResult);
 
       // 2. Gọi API tạo mã cọc VietQR từ Backend (POST /payments/deposit)
-      try {
-        const payResult = await apiRequest<any>('/payments/deposit', {
-          method: 'POST',
-          body: JSON.stringify({
-            reservationId: resId,
-            paymentMethod: 'BANK_TRANSFER',
-          }),
-        });
+      const payResult = await apiRequest<any>("/payments/deposit", {
+        method: "POST",
+        body: JSON.stringify({
+          reservationId: resId,
+          paymentMethod: "BANK_TRANSFER",
+        }),
+      });
 
-        if (payResult?.qr) {
-          setQrData(payResult.qr);
-          setPaymentData(payResult.payment);
-        } else {
-          const depAmt = Number(selectedUnit.depositAmount) || 300000;
-          const transferCode = 'SSDEP' + String(resId).slice(-8).toUpperCase();
-          setQrData({
-            qrCodeUrl: `https://img.vietqr.io/image/MBBank-0838500046-compact2.png?amount=${depAmt}&addInfo=${transferCode}&accountName=TRUONG%20DINH%20LONG`,
-            bankCode: 'MBBank',
-            accountNumber: '0838500046',
-            accountName: 'TRUONG DINH LONG',
-            amount: depAmt,
-            transferContent: transferCode,
-          });
-          setPaymentData({ amount: depAmt, status: 'PENDING' });
-        }
-      } catch {
-        const depAmt = Number(selectedUnit.depositAmount) || 300000;
-        const transferCode = 'SSDEP' + String(resId).slice(-8).toUpperCase();
-        setQrData({
-          qrCodeUrl: `https://img.vietqr.io/image/MBBank-0838500046-compact2.png?amount=${depAmt}&addInfo=${transferCode}&accountName=TRUONG%20DINH%20LONG`,
-          bankCode: 'MBBank',
-          accountNumber: '0838500046',
-          accountName: 'TRUONG DINH LONG',
-          amount: depAmt,
-          transferContent: transferCode,
-        });
-        setPaymentData({ amount: depAmt, status: 'PENDING' });
+      if (!payResult?.qr?.qrCodeUrl) {
+        throw new Error(
+          "Backend không trả về mã QR thanh toán. Vui lòng liên hệ bộ phận hỗ trợ.",
+        );
       }
 
+      setQrData(payResult.qr);
+      setPaymentData(payResult.payment);
       setIsDepositPaid(false);
-      setCurrentStep(3); // Chuyển sang màn hình Thanh toán Cọc VietQR
+      setCurrentStep(3);
     } catch (err: any) {
-      Alert.alert('Đặt giữ chỗ thất bại', err.message || 'Vui lòng thử lại sau');
+      Alert.alert(
+        "Đặt giữ chỗ thất bại",
+        err.message || "Vui lòng thử lại sau",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -479,12 +586,15 @@ export default function BookStorageScreen({
     let isSubscribed = true;
     const interval = setInterval(async () => {
       try {
-        const { apiRequest } = await import('../../api');
+        const { apiRequest } = await import("../../api");
         const summary = await apiRequest<any>(
-          `/payments/reservations/${confirmedReservation.id}/summary`
+          `/payments/reservations/${confirmedReservation.id}/summary`,
         );
         if (!isSubscribed) return;
-        if (summary?.depositPaid || summary?.reservationStatus === 'CONFIRMED') {
+        if (
+          summary?.depositPaid ||
+          summary?.reservationStatus === "CONFIRMED"
+        ) {
           clearInterval(interval);
           setIsDepositPaid(true);
           setCurrentStep(4);
@@ -503,35 +613,42 @@ export default function BookStorageScreen({
   }, [currentStep, confirmedReservation?.id, isDepositPaid]);
 
   const copyToClipboard = (text: string, label: string) => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+    if (
+      Platform.OS === "web" &&
+      typeof navigator !== "undefined" &&
+      navigator.clipboard
+    ) {
       navigator.clipboard.writeText(text);
     }
-    Alert.alert('Đã sao chép', `Đã sao chép ${label}: ${text}`);
+    Alert.alert("Đã sao chép", `Đã sao chép ${label}: ${text}`);
   };
 
   const handleCheckPaymentStatus = async () => {
     if (!confirmedReservation?.id) return;
     try {
       setCheckingPayment(true);
-      const { apiRequest } = await import('../../api');
+      const { apiRequest } = await import("../../api");
       const summary = await apiRequest<any>(
-        `/payments/reservations/${confirmedReservation.id}/summary`
+        `/payments/reservations/${confirmedReservation.id}/summary`,
       );
-      if (summary?.depositPaid || summary?.reservationStatus === 'CONFIRMED') {
+      if (summary?.depositPaid || summary?.reservationStatus === "CONFIRMED") {
         setIsDepositPaid(true);
         setCurrentStep(4);
         if (confirmedReservation) {
           onReservationCreated(confirmedReservation);
         }
-        Alert.alert('Thành công', 'Hệ thống đã nhận được tiền cọc. Ô kho đã được giữ chỗ!');
+        Alert.alert(
+          "Thành công",
+          "Hệ thống đã nhận được tiền cọc. Ô kho đã được giữ chỗ!",
+        );
       } else {
         Alert.alert(
-          'Chờ xác nhận',
-          'Hệ thống đang chờ giao dịch chuyển khoản. Vui lòng chuyển khoản đúng nội dung và thử lại sau 30 giây.'
+          "Chờ xác nhận",
+          "Hệ thống đang chờ giao dịch chuyển khoản. Vui lòng chuyển khoản đúng nội dung và thử lại sau 30 giây.",
         );
       }
     } catch (err: any) {
-      Alert.alert('Thông báo', err.message || 'Đang kiểm tra giao dịch...');
+      Alert.alert("Thông báo", err.message || "Đang kiểm tra giao dịch...");
     } finally {
       setCheckingPayment(false);
     }
@@ -541,38 +658,38 @@ export default function BookStorageScreen({
     if (!qrData) return;
     try {
       setSimulatingPayment(true);
-      const { apiRequest } = await import('../../api');
+      const { apiRequest } = await import("../../api");
       const webhookPayload = {
         id: Math.floor(Math.random() * 1000000),
-        gateway: qrData.bankCode || 'MBBank',
-        transactionDate: new Date().toISOString().slice(0, 19).replace('T', ' '),
-        accountNumber: qrData.accountNumber || '0838500046',
+        gateway: qrData.bankCode,
+        transactionDate: new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace("T", " "),
+        accountNumber: qrData.accountNumber,
         code: qrData.transferContent,
         content: `${qrData.transferContent} CK coc`,
-        transferType: 'in',
+        transferType: "in",
         transferAmount: qrData.amount,
       };
 
-      const res = await apiRequest<any>('/payments/sepay/webhook', {
-        method: 'POST',
+      const res = await apiRequest<any>("/payments/sepay/webhook", {
+        method: "POST",
         body: JSON.stringify(webhookPayload),
       });
 
-      if (res?.success) {
-        setIsDepositPaid(true);
-        setCurrentStep(4);
-        if (confirmedReservation) {
-          onReservationCreated(confirmedReservation);
-        }
-        Alert.alert('Thành công', 'Thanh toán cọc giữ chỗ thành công!');
+      if (!res?.success) {
+        throw new Error("Webhook không xác nhận giao dịch.");
       }
-    } catch (err: any) {
-      Alert.alert('Thông báo', err.message || 'Mô phỏng thanh toán hoàn tất');
+
       setIsDepositPaid(true);
       setCurrentStep(4);
       if (confirmedReservation) {
         onReservationCreated(confirmedReservation);
       }
+      Alert.alert("Thành công", "Thanh toán cọc giữ chỗ thành công!");
+    } catch (err: any) {
+      Alert.alert("Mô phỏng thất bại", err.message || "Vui lòng thử lại.");
     } finally {
       setSimulatingPayment(false);
     }
@@ -581,7 +698,7 @@ export default function BookStorageScreen({
   const formatCountdown = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   if (loading) {
@@ -601,301 +718,891 @@ export default function BookStorageScreen({
         {/* ========================================================================= */}
         {currentStep === 1 && (
           <>
-            {/* Header Section */}
-            <View style={s.topAppBar}>
-              <View style={s.brandRow}>
-                <TouchableOpacity style={s.brandIconBtn} activeOpacity={0.85}>
-                  <MaterialCommunityIcons name="warehouse" size={24} color={T.primary} />
-                </TouchableOpacity>
-                <View>
-                  <Text style={s.brandTitle}>Kho Thông Minh</Text>
-                  <View style={s.brandLocationRow}>
-                    <MaterialIcons name="near-me" size={13} color={T.secondary} />
-                    <Text style={s.brandLocationText}>Quận 7, TP. Hồ Chí Minh</Text>
+            {selectedFacility && (
+              /* Header Section when a facility is selected */
+              <View style={s.topAppBar}>
+                <View style={s.brandRow}>
+                  <TouchableOpacity
+                    style={s.brandIconBtn}
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedFacility(null)}
+                  >
+                    <MaterialCommunityIcons
+                      name="arrow-left"
+                      size={24}
+                      color={T.primary}
+                    />
+                  </TouchableOpacity>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.brandTitle} numberOfLines={1}>
+                      Chọn Loại Kho
+                    </Text>
+                    <View style={s.brandLocationRow}>
+                      <MaterialIcons
+                        name="near-me"
+                        size={13}
+                        color={T.secondary}
+                      />
+                      <Text style={s.brandLocationText} numberOfLines={1}>
+                        {selectedFacility.name || "Cơ sở đã chọn"}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              <View style={s.topActionsRow}>
-                {onSwitchToStaff && (
-                  <TouchableOpacity style={s.switchPortalBtn} onPress={onSwitchToStaff} activeOpacity={0.8}>
-                    <Text style={s.switchPortalText}>👔 Nhân Viên</Text>
-                  </TouchableOpacity>
-                )}
-                {onOpenLogin && (
-                  <TouchableOpacity
-                    style={s.loginHeaderBtn}
-                    onPress={onOpenLogin}
-                    activeOpacity={0.8}
-                  >
-                    <MaterialIcons
-                      name={currentUser ? 'account-circle' : 'person-outline'}
-                      size={16}
-                      color={currentUser ? T.secondary : T.onSurface}
-                    />
-                    <Text
-                      style={[
-                        s.loginHeaderText,
-                        currentUser && { color: T.secondary, fontWeight: '700' },
-                      ]}
-                      numberOfLines={1}
+                <View style={s.topActionsRow}>
+                  {onOpenLogin && (
+                    <TouchableOpacity
+                      style={s.loginHeaderBtn}
+                      onPress={onOpenLogin}
+                      activeOpacity={0.8}
                     >
-                      {currentUser
-                        ? (currentUser.fullName
-                            ? currentUser.fullName.split(' ').slice(-1)[0]
-                            : 'Tài khoản')
-                        : 'Đăng nhập'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity style={s.notifBtn} activeOpacity={0.8}>
-                  <MaterialIcons name="notifications-none" size={22} color={T.onSurface} />
-                  <View style={s.notifBadgeDot} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Scrollable List */}
-            <ScrollView style={s.scrollView} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
-              {/* Search & Filter Bar */}
-              <View style={s.searchFilterSection}>
-                <View style={s.searchRow}>
-                  <View style={[s.searchInputWrap, isSearchFocused && s.searchInputWrapFocused]}>
-                    <MaterialIcons name="search" size={20} color={T.onSurfaceVariant} style={{ marginRight: 8 }} />
-                    <TextInput
-                      style={s.searchInput}
-                      placeholder="Tìm theo vị trí, tên kho hoặc kích thước..."
-                      placeholderTextColor="#76777d"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      onFocus={() => setIsSearchFocused(true)}
-                      onBlur={() => setIsSearchFocused(false)}
+                      <MaterialIcons
+                        name={currentUser ? "account-circle" : "person-outline"}
+                        size={16}
+                        color={currentUser ? T.secondary : T.onSurface}
+                      />
+                      <Text
+                        style={[
+                          s.loginHeaderText,
+                          currentUser && {
+                            color: T.secondary,
+                            fontWeight: "700",
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {currentUser
+                          ? currentUser.fullName
+                            ? currentUser.fullName.split(" ").slice(-1)[0]
+                            : "Tài khoản"
+                          : "Đăng nhập"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={s.notifBtn} activeOpacity={0.8} onPress={onViewMyReservations}>
+                    <MaterialIcons
+                      name="notifications-none"
+                      size={22}
+                      color={T.onSurface}
                     />
-                    {searchQuery ? (
-                      <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <MaterialIcons name="close" size={18} color={T.onSurfaceVariant} />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <MaterialIcons name="mic" size={18} color={T.onSurfaceVariant} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <TouchableOpacity
-                    style={s.filterToggleBtn}
-                    activeOpacity={0.9}
-                    onPress={() => {
-                      setSelectedCategory('all');
-                      setSelectedAmenity(null);
-                    }}
-                  >
-                    <MaterialIcons name="tune" size={20} color={T.onPrimary} />
+                    <View style={s.notifBadgeDot} />
                   </TouchableOpacity>
                 </View>
-
-                {/* Size Classification Row */}
-                <View style={s.sizeGuideRow}>
-                  <Text style={s.sizeGuideTitle}>Phân loại thể tích</Text>
-                  <TouchableOpacity style={s.sizeGuideLink} activeOpacity={0.7}>
-                    <MaterialIcons name="straighten" size={14} color={T.secondary} />
-                    <Text style={s.sizeGuideLinkText}>Hướng dẫn chọn size</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Size Chips */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.sizeChipsScroll}>
-                  <TouchableOpacity
-                    style={[s.sizeChip, selectedCategory === 'all' && s.sizeChipActive]}
-                    onPress={() => setSelectedCategory('all')}
-                  >
-                    <Text style={[s.sizeChipText, selectedCategory === 'all' && s.sizeChipTextActive]}>
-                      Tất cả ({storageItems.length})
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[s.sizeChip, selectedCategory === 'personal' && s.sizeChipActive]}
-                    onPress={() => setSelectedCategory('personal')}
-                  >
-                    <Text style={[s.sizeChipText, selectedCategory === 'personal' && s.sizeChipTextActive]}>
-                      Cá nhân (1-3m²)
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[s.sizeChip, selectedCategory === 'family' && s.sizeChipActive]}
-                    onPress={() => setSelectedCategory('family')}
-                  >
-                    <Text style={[s.sizeChipText, selectedCategory === 'family' && s.sizeChipTextActive]}>
-                      Gia đình (4-9m²)
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[s.sizeChip, selectedCategory === 'business' && s.sizeChipActive]}
-                    onPress={() => setSelectedCategory('business')}
-                  >
-                    <Text style={[s.sizeChipText, selectedCategory === 'business' && s.sizeChipTextActive]}>
-                      Doanh nghiệp (&gt;10m²)
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
-
-                {/* Amenity Tags */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.amenityTagsScroll}>
-                  <TouchableOpacity
-                    style={[s.amenityTag, selectedAmenity === 'ac' && s.amenityTagActive]}
-                    onPress={() => setSelectedAmenity(selectedAmenity === 'ac' ? null : 'ac')}
-                  >
-                    <MaterialIcons name="ac-unit" size={14} color={T.secondaryContainer} />
-                    <Text style={[s.amenityTagText, selectedAmenity === 'ac' && s.amenityTagTextActive]}>
-                      Có máy lạnh 24/24
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[s.amenityTag, selectedAmenity === 'delivery' && s.amenityTagActive]}
-                    onPress={() => setSelectedAmenity(selectedAmenity === 'delivery' ? null : 'delivery')}
-                  >
-                    <MaterialIcons name="local-shipping" size={14} color={T.primary} />
-                    <Text style={[s.amenityTagText, selectedAmenity === 'delivery' && s.amenityTagTextActive]}>
-                      Tầng trệt xe vào tận nơi
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[s.amenityTag, selectedAmenity === 'fingerprint' && s.amenityTagActive]}
-                    onPress={() => setSelectedAmenity(selectedAmenity === 'fingerprint' ? null : 'fingerprint')}
-                  >
-                    <MaterialIcons name="fingerprint" size={14} color={T.secondary} />
-                    <Text style={[s.amenityTagText, selectedAmenity === 'fingerprint' && s.amenityTagTextActive]}>
-                      An ninh FaceID/Mã số
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={s.amenityPromoTag}>
-                    <MaterialIcons name="whatshot" size={14} color={T.secondaryBrand} />
-                    <Text style={s.amenityPromoText}>Ưu đãi tháng đầu</Text>
-                  </View>
-                </ScrollView>
               </View>
+            )}
 
-              {/* Cards List */}
-              <View style={s.mainListSection}>
-                <View style={s.listHeaderRow}>
-                  <View style={s.listHeaderLeft}>
-                    <View style={s.livePulseDot} />
-                    <Text style={s.listHeaderTitle}>Kho nổi bật & gần bạn</Text>
-                  </View>
-                  <Text style={s.listHeaderSort}>
-                    Sắp xếp: <Text style={s.listHeaderSortBold}>Gần nhất</Text>
-                  </Text>
-                </View>
-
-                {filteredItems.map((item) => (
-                  <View key={item.id} style={ac.card}>
-                    {/* Media Header */}
-                    <View style={ac.mediaWrap}>
-                      <Image source={{ uri: item.image }} style={ac.mediaImg} resizeMode="cover" />
-                      <View style={ac.mediaGradient} />
-                      <View style={ac.liveBadge}>
-                        <View style={ac.liveDot} />
-                        <Text style={ac.liveBadgeText}>{item.badgeStatus}</Text>
-                      </View>
-                      {item.badgeDiscount && (
-                        <View style={ac.discountBadge}>
-                          <Text style={ac.discountBadgeText}>{item.badgeDiscount}</Text>
-                        </View>
-                      )}
-                      <View style={ac.mediaBottomOverlay}>
-                        <View style={ac.distanceRow}>
-                          <MaterialIcons name="location-on" size={14} color={T.secondaryFixed} />
-                          <Text style={ac.distanceText}>{item.locationText}</Text>
-                        </View>
-                        <Text style={ac.mediaTitle} numberOfLines={2}>
-                          {item.title}
+            {/* Scrollable Content */}
+            <ScrollView
+              style={s.scrollView}
+              contentContainerStyle={s.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {!selectedFacility ? (
+                /* ========================================================= */
+                /* GIAO DIỆN KHÁM PHÁ & TÌM KHO CHUẨN STITCH MOCKUP          */
+                /* ========================================================= */
+                <View style={s.stitchWrapper}>
+                  {/* USER GREETING & HEADER */}
+                  <View style={s.greetingHeader}>
+                    <View style={s.greetingLeft}>
+                      <TouchableOpacity
+                        style={s.avatarWrap}
+                        activeOpacity={0.8}
+                        onPress={onOpenLogin}
+                      >
+                        <MaterialIcons name="person" size={26} color={T.primary} />
+                      </TouchableOpacity>
+                      <View>
+                        <Text style={s.greetingSub}>
+                          {currentUser ? "Xin chào," : "Chào mừng bạn,"}
+                        </Text>
+                        <Text style={s.greetingName} numberOfLines={1}>
+                          {currentUser?.fullName || (currentUser?.email ? currentUser.email.split("@")[0] : "Khách hàng")}
                         </Text>
                       </View>
                     </View>
 
-                    {/* Body */}
-                    <View style={ac.body}>
-                      <View style={ac.metricGrid}>
-                        <View style={ac.metricCol}>
-                          <View style={ac.metricHeader}>
-                            <MaterialIcons name="aspect-ratio" size={18} color={T.primary} />
-                            <Text style={ac.metricLabel}>Kích thước (D x R x C)</Text>
-                          </View>
-                          <Text style={ac.metricValue}>{item.dimensions}</Text>
-                        </View>
-                        <View style={[ac.metricCol, ac.metricColBorder]}>
-                          <View style={ac.metricHeader}>
-                            <MaterialIcons name="inventory" size={18} color={T.secondary} />
-                            <Text style={ac.metricLabel}>Sức chứa ước lượng</Text>
-                          </View>
-                          <Text style={ac.metricValue}>{item.capacity}</Text>
-                        </View>
-                      </View>
+                    <View style={s.greetingRight}>
+                      <TouchableOpacity
+                        style={s.iconCircleBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (!currentUser && onOpenLogin) {
+                            onOpenLogin();
+                            return;
+                          }
+                          onNavigateTab?.('support');
+                        }}
+                        accessibilityLabel="Hỗ trợ kỹ thuật"
+                      >
+                        <MaterialIcons name="headset-mic" size={20} color={T.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={s.iconCircleBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (!currentUser && onOpenLogin) {
+                            onOpenLogin();
+                            return;
+                          }
+                          onViewMyReservations();
+                        }}
+                        accessibilityLabel="Thông báo"
+                      >
+                        <MaterialIcons name="notifications-none" size={20} color={T.onSurface} />
+                        <View style={s.iconNotifDot} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-                      <View style={ac.featureChipsRow}>
-                        {item.features.map((feat, idx) => (
-                          <View key={idx} style={ac.featureChip}>
-                            <MaterialIcons name="check" size={14} color={T.secondaryBrand} />
-                            <Text style={ac.featureChipText}>{feat}</Text>
-                          </View>
-                        ))}
-                      </View>
+                  {/* 3. SEARCH BAR */}
+                  <View style={s.searchSection}>
+                    <View style={s.searchBarPill}>
+                      <MaterialIcons name="search" size={22} color={T.outline} style={{ marginRight: 10 }} />
+                      <TextInput
+                        style={s.searchInputStitch}
+                        placeholder="Tìm kiếm kho, vị trí hoặc kích thước..."
+                        placeholderTextColor={T.outline}
+                        value={facilitySearchQuery}
+                        onChangeText={setFacilitySearchQuery}
+                      />
+                      <TouchableOpacity
+                        style={s.filterTuneBtn}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (facilitySearchQuery) setFacilitySearchQuery("");
+                        }}
+                      >
+                        <MaterialIcons
+                          name={facilitySearchQuery ? "close" : "tune"}
+                          size={21}
+                          color={T.onSurface}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-                      <View style={ac.footerRow}>
-                        <View>
-                          {item.originalPrice ? (
-                            <Text style={ac.originalPriceText}>{formatVND(item.originalPrice)}/tháng</Text>
-                          ) : (
-                            <Text style={ac.priceLabelText}>Chi phí thuê linh hoạt</Text>
-                          )}
-                          <View style={ac.priceRow}>
-                            <Text style={ac.priceAmount}>{formatVND(item.monthlyBasePrice)}</Text>
-                            <Text style={ac.pricePeriod}>/tháng</Text>
-                          </View>
-                        </View>
-
+                  {/* 4. PROMO / HERO BANNER */}
+                  <View style={s.heroBannerSection}>
+                    <View style={s.heroBannerCard}>
+                      <Image
+                        source={{
+                          uri: "https://lh3.googleusercontent.com/aida-public/AB6AXuDTmegbtRhqz8lqOMdrwB9WqdWFouB3hjvcrybHx_iTfCG8EFKEqm9fBq6v5AJtmpRTD3TghS-rBqNKFp59sv5QVCcmpueSQgPbSEHkafhmhigvRsQ-q7LHFtcQtdW6EQm32GFiX2BNYQBL2IdVwpe2Hlq8J9d2IUd310qvkhCw7jlsDO71-NB6Mu_YABD91adeEX2sNKkH6BkPTLgGkwlAIxJVrzaH_TnXHUIaWaTpdIUbcNGoCN-_",
+                        }}
+                        style={StyleSheet.absoluteFill}
+                        resizeMode="cover"
+                      />
+                      <View style={s.heroBannerOverlay} />
+                      <View style={s.heroBannerContent}>
+                        <Text style={s.heroTitle}>Tìm buồng kho lý tưởng</Text>
+                        <Text style={s.heroSubtitle}>
+                          Không gian an toàn, linh hoạt theo nhu cầu của bạn
+                        </Text>
                         <TouchableOpacity
-                          style={ac.ctaBtn}
+                          style={s.heroCtaBtn}
+                          activeOpacity={0.9}
                           onPress={() => {
-                            setSelectedUnit(item);
-                            setCurrentStep(2);
+                            if (facilities.length > 0) {
+                              setSelectedFacility(facilities[0]);
+                            }
                           }}
-                          activeOpacity={0.88}
                         >
-                          <Text style={ac.ctaBtnText}>Xem & Đặt ngay</Text>
-                          <MaterialIcons name="arrow-forward" size={18} color={T.onPrimary} />
+                          <Text style={s.heroCtaText}>Khám phá ngay</Text>
+                          <MaterialIcons name="arrow-forward" size={15} color={T.primary} />
                         </TouchableOpacity>
                       </View>
                     </View>
                   </View>
-                ))}
 
-                {/* Reassurance Banner */}
-                <View style={s.reassuranceBanner}>
-                  <View style={s.reassuranceIconWrap}>
-                    <MaterialIcons name="verified" size={24} color={T.secondaryFixed} />
+                  {/* 5. CATEGORY FILTER PILLS */}
+                  <View style={s.categoryPillsSection}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={s.categoryPillsScroll}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          s.categoryPill,
+                          activeFilterPill === "for-you" && s.categoryPillActive,
+                        ]}
+                        onPress={() => setActiveFilterPill("for-you")}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons
+                          name="assignment-turned-in"
+                          size={17}
+                          color={activeFilterPill === "for-you" ? "#ffffff" : T.primary}
+                        />
+                        <Text
+                          style={[
+                            s.categoryPillText,
+                            activeFilterPill === "for-you" && s.categoryPillTextActive,
+                          ]}
+                        >
+                          Dành cho bạn
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.categoryPill,
+                          activeFilterPill === "personal" && s.categoryPillActive,
+                        ]}
+                        onPress={() => setActiveFilterPill("personal")}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons
+                          name="inventory-2"
+                          size={17}
+                          color={activeFilterPill === "personal" ? "#ffffff" : T.primary}
+                        />
+                        <Text
+                          style={[
+                            s.categoryPillText,
+                            activeFilterPill === "personal" && s.categoryPillTextActive,
+                          ]}
+                        >
+                          Cá nhân (1-3m²)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.categoryPill,
+                          activeFilterPill === "family" && s.categoryPillActive,
+                        ]}
+                        onPress={() => setActiveFilterPill("family")}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons
+                          name="home-work"
+                          size={17}
+                          color={activeFilterPill === "family" ? "#ffffff" : T.primary}
+                        />
+                        <Text
+                          style={[
+                            s.categoryPillText,
+                            activeFilterPill === "family" && s.categoryPillTextActive,
+                          ]}
+                        >
+                          Gia đình (4-9m²)
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.categoryPill,
+                          activeFilterPill === "business" && s.categoryPillActive,
+                        ]}
+                        onPress={() => setActiveFilterPill("business")}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons
+                          name="storefront"
+                          size={17}
+                          color={activeFilterPill === "business" ? "#ffffff" : T.primary}
+                        />
+                        <Text
+                          style={[
+                            s.categoryPillText,
+                            activeFilterPill === "business" && s.categoryPillTextActive,
+                          ]}
+                        >
+                          Kho lớn / E-com
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          s.categoryPill,
+                          activeFilterPill === "ac" && s.categoryPillActive,
+                        ]}
+                        onPress={() => setActiveFilterPill("ac")}
+                        activeOpacity={0.8}
+                      >
+                        <MaterialIcons
+                          name="ac-unit"
+                          size={17}
+                          color={activeFilterPill === "ac" ? "#ffffff" : T.primary}
+                        />
+                        <Text
+                          style={[
+                            s.categoryPillText,
+                            activeFilterPill === "ac" && s.categoryPillTextActive,
+                          ]}
+                        >
+                          Máy lạnh 24/7
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
                   </View>
-                  <View style={s.reassuranceTextWrap}>
-                    <Text style={s.reassuranceTitle}>Cam kết an toàn tuyệt đối 100%</Text>
-                    <Text style={s.reassuranceSub}>Hợp đồng pháp lý số, bảo hiểm PCCC tiêu chuẩn quốc gia</Text>
+
+                  {/* 6. SECTION KHO NỔI BẬT & CAROUSEL (Dữ liệu động từ Backend) */}
+                  <View style={s.featuredSection}>
+                    <View style={s.sectionHeaderRow}>
+                      <Text style={s.sectionHeaderTitle}>Kho nổi bật</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setFacilitySearchQuery("");
+                          setActiveFilterPill("for-you");
+                        }}
+                      >
+                        <Text style={s.sectionHeaderAction}>Tất cả ({dynamicFacilities.length})</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {filteredDynamicFacilities.length === 0 ? (
+                      <View style={s.emptyFeaturedCard}>
+                        <MaterialCommunityIcons name="warehouse" size={36} color={T.outline} />
+                        <Text style={s.emptyFeaturedTitle}>Không tìm thấy cơ sở kho</Text>
+                        <Text style={s.emptyFeaturedSub}>Vui lòng thử tìm kiếm khác hoặc đổi bộ lọc.</Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={s.featuredCarouselScroll}
+                      >
+                        {filteredDynamicFacilities.map((card) => {
+                          const isFav = favoriteIds.has(card.id);
+                          return (
+                            <TouchableOpacity
+                              key={card.id}
+                              style={s.featuredCard}
+                              activeOpacity={0.92}
+                              onPress={() => setSelectedFacility(card.facility)}
+                            >
+                              <View style={s.featuredImageWrap}>
+                                <Image
+                                  source={{ uri: card.image }}
+                                  style={s.featuredImage}
+                                  resizeMode="cover"
+                                />
+                                <View
+                                  style={[
+                                    s.cardBadgeTopLeft,
+                                    card.badgeType === "amber" && s.cardBadgeAmber,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      s.cardBadgeText,
+                                      card.badgeType === "amber" && s.cardBadgeAmberText,
+                                    ]}
+                                  >
+                                    {card.badge}
+                                  </Text>
+                                </View>
+
+                                <TouchableOpacity
+                                  style={s.cardHeartBtn}
+                                  activeOpacity={0.8}
+                                  onPress={() => toggleFavorite(card.id)}
+                                >
+                                  <MaterialIcons
+                                    name={isFav ? "favorite" : "favorite-border"}
+                                    size={18}
+                                    color={isFav ? "#ef4444" : T.outline}
+                                  />
+                                </TouchableOpacity>
+
+                                <View style={s.cardDotsWrap}>
+                                  <View style={[s.cardDot, s.cardDotActive]} />
+                                  <View style={s.cardDot} />
+                                  <View style={s.cardDot} />
+                                </View>
+                              </View>
+
+                              <View style={s.featuredCardBody}>
+                                <Text style={s.featuredCardTitle} numberOfLines={1}>
+                                  {card.title}
+                                </Text>
+
+                                <View style={s.featuredPriceRow}>
+                                  <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                                    <Text style={s.featuredPriceVal}>{card.price}</Text>
+                                    {card.priceUnit ? (
+                                      <Text style={s.featuredPriceUnit}>{card.priceUnit}</Text>
+                                    ) : null}
+                                  </View>
+                                  <View
+                                    style={[
+                                      s.featuredTagPill,
+                                      card.tagType === "business" && s.featuredTagBusiness,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        s.featuredTagText,
+                                        card.tagType === "business" && s.featuredTagBusinessText,
+                                      ]}
+                                    >
+                                      {card.tag}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={s.featuredLocationRow}>
+                                  <MaterialIcons
+                                    name="location-on"
+                                    size={15}
+                                    color={T.primary}
+                                    style={{ marginRight: 4 }}
+                                  />
+                                  <Text style={s.featuredLocationText} numberOfLines={1}>
+                                    {card.location}
+                                  </Text>
+                                </View>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </View>
+
+                  {/* 7. RECOMMENDED / NEARBY LISTING (Dữ liệu động từ Backend) */}
+                  <View style={s.nearbySection}>
+                    <View style={s.sectionHeaderRow}>
+                      <Text style={s.sectionHeaderTitle}>Gợi ý gần bạn</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setFacilitySearchQuery("");
+                          setActiveFilterPill("for-you");
+                        }}
+                      >
+                        <Text style={s.sectionHeaderSort}>Xem tất cả ({dynamicFacilities.length})</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={s.nearbyListWrap}>
+                      {dynamicFacilities.length === 0 ? (
+                        <View style={s.emptyFeaturedCard}>
+                          <Text style={s.emptyFeaturedSub}>Đang tải dữ liệu cơ sở kho từ hệ thống...</Text>
+                        </View>
+                      ) : (
+                        dynamicFacilities.map((rec) => (
+                          <TouchableOpacity
+                            key={rec.id}
+                            style={s.nearbyItemCard}
+                            activeOpacity={0.9}
+                            onPress={() => setSelectedFacility(rec.facility)}
+                          >
+                            <View style={s.nearbyThumbnailWrap}>
+                              <Image
+                                source={{ uri: rec.image }}
+                                style={s.nearbyThumbnail}
+                                resizeMode="cover"
+                              />
+                              <View style={s.nearbyLiveDot} />
+                            </View>
+
+                            <View style={s.nearbyInfoWrap}>
+                              <Text style={s.nearbyTitle} numberOfLines={1}>
+                                {rec.title}
+                              </Text>
+                              <View style={s.nearbyDistanceRow}>
+                                <MaterialIcons
+                                  name="location-on"
+                                  size={13}
+                                  color={T.primary}
+                                  style={{ marginRight: 4 }}
+                                />
+                                <Text style={s.nearbyDistanceText} numberOfLines={1}>
+                                  {rec.location}
+                                </Text>
+                              </View>
+
+                              <View style={s.nearbyBottomRow}>
+                                <Text style={s.nearbyPriceText}>
+                                  {rec.price}
+                                  {rec.priceUnit ? (
+                                    <Text style={s.nearbyPriceUnit}>{rec.priceUnit}</Text>
+                                  ) : null}
+                                </Text>
+                                <TouchableOpacity
+                                  style={s.nearbyActionBtn}
+                                  activeOpacity={0.8}
+                                  onPress={() => setSelectedFacility(rec.facility)}
+                                >
+                                  <Text style={s.nearbyActionBtnText}>Xem ngay</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
                   </View>
                 </View>
-              </View>
-            </ScrollView>
+              ) : (
+                /* ========================================================= */
+                /* PHẦN 2: GIAO DIỆN CHỌN LOẠI KHO (UNIT TYPES CỦA CƠ SỞ)    */
+                /* ========================================================= */
+                <View>
+                  {/* Active Facility Header Bar */}
+                  <View style={s.activeFacilityBar}>
+                    <View style={s.activeFacilityInfo}>
+                      <View style={s.activeFacilityHeaderRow}>
+                        <MaterialIcons name="business" size={18} color={T.blue} />
+                        <Text style={s.activeFacilityName} numberOfLines={1}>
+                          {selectedFacility.name}
+                        </Text>
+                      </View>
+                      <Text style={s.activeFacilityAddress} numberOfLines={1}>
+                        {selectedFacility.address ||
+                          extractDistrict(
+                            selectedFacility.address || "",
+                            selectedFacility.name,
+                          )}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={s.changeFacilityBtn}
+                      onPress={() => setSelectedFacility(null)}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons name="swap-horiz" size={16} color={T.blue} />
+                      <Text style={s.changeFacilityBtnText}>Đổi cơ sở</Text>
+                    </TouchableOpacity>
+                  </View>
 
-            {/* Bottom Nav Bar */}
-            <BottomNavBar activeTab={currentBottomTab} onSelectTab={handleTabPress} />
+                  {/* Search & Filter Bar */}
+                  <View style={s.searchFilterSection}>
+                    <View style={s.searchRow}>
+                      <View
+                        style={[
+                          s.searchInputWrap,
+                          isSearchFocused && s.searchInputWrapFocused,
+                        ]}
+                      >
+                        <MaterialIcons
+                          name="search"
+                          size={20}
+                          color={T.onSurfaceVariant}
+                          style={{ marginRight: 8 }}
+                        />
+                        <TextInput
+                          style={s.searchInput}
+                          placeholder="Tìm buồng kho hoặc kích thước..."
+                          placeholderTextColor="#76777d"
+                          value={searchQuery}
+                          onChangeText={setSearchQuery}
+                          onFocus={() => setIsSearchFocused(true)}
+                          onBlur={() => setIsSearchFocused(false)}
+                        />
+                        {searchQuery ? (
+                          <TouchableOpacity
+                            onPress={() => setSearchQuery("")}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <MaterialIcons
+                              name="close"
+                              size={18}
+                              color={T.onSurfaceVariant}
+                            />
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+
+                      <TouchableOpacity
+                        style={s.filterToggleBtn}
+                        activeOpacity={0.9}
+                        onPress={() => {
+                          setSelectedCategory("all");
+                          setSelectedAmenity(null);
+                        }}
+                      >
+                        <MaterialIcons name="tune" size={20} color={T.onPrimary} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Size Chips */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={s.sizeChipsScroll}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          s.sizeChip,
+                          selectedCategory === "all" && s.sizeChipActive,
+                        ]}
+                        onPress={() => setSelectedCategory("all")}
+                      >
+                        <Text
+                          style={[
+                            s.sizeChipText,
+                            selectedCategory === "all" && s.sizeChipTextActive,
+                          ]}
+                        >
+                          Tất cả ({storageItems.filter(item => String(item.facilityId) === String(selectedFacility.id)).length})
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          s.sizeChip,
+                          selectedCategory === "personal" && s.sizeChipActive,
+                        ]}
+                        onPress={() => setSelectedCategory("personal")}
+                      >
+                        <Text
+                          style={[
+                            s.sizeChipText,
+                            selectedCategory === "personal" && s.sizeChipTextActive,
+                          ]}
+                        >
+                          Cá nhân (1-3m²)
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          s.sizeChip,
+                          selectedCategory === "family" && s.sizeChipActive,
+                        ]}
+                        onPress={() => setSelectedCategory("family")}
+                      >
+                        <Text
+                          style={[
+                            s.sizeChipText,
+                            selectedCategory === "family" && s.sizeChipTextActive,
+                          ]}
+                        >
+                          Gia đình (4-9m²)
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          s.sizeChip,
+                          selectedCategory === "business" && s.sizeChipActive,
+                        ]}
+                        onPress={() => setSelectedCategory("business")}
+                      >
+                        <Text
+                          style={[
+                            s.sizeChipText,
+                            selectedCategory === "business" && s.sizeChipTextActive,
+                          ]}
+                        >
+                          Doanh nghiệp (&gt;10m²)
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+                  </View>
+
+                  {/* Cards List */}
+                  <View style={s.mainListSection}>
+                    <View style={s.listHeaderRow}>
+                      <View style={s.listHeaderLeft}>
+                        <View style={s.livePulseDot} />
+                        <Text style={s.listHeaderTitle}>Các buồng kho tại chi nhánh</Text>
+                      </View>
+                      <Text style={s.listHeaderSort}>
+                        Cơ sở: <Text style={s.listHeaderSortBold}>{extractDistrict(selectedFacility.address || "", selectedFacility.name)}</Text>
+                      </Text>
+                    </View>
+
+                    {filteredItems.length === 0 ? (
+                      <View style={s.emptyStateWrap}>
+                        <MaterialIcons
+                          name="inventory-2"
+                          size={48}
+                          color={T.outline}
+                        />
+                        <Text style={s.emptyStateTitle}>
+                          Chưa có buồng kho khả dụng
+                        </Text>
+                        <Text style={s.emptyStateSub}>
+                          Cơ sở này hiện tại chưa có loại kho phù hợp với bộ lọc. Bạn có thể chọn chi nhánh khác hoặc đặt lại bộ lọc.
+                        </Text>
+                        <TouchableOpacity
+                          style={s.emptyStateBtn}
+                          onPress={() => setSelectedFacility(null)}
+                        >
+                          <Text style={s.emptyStateBtnText}>Chọn chi nhánh khác</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      filteredItems.map((item) => (
+                        <View key={item.id} style={ac.card}>
+                          {/* Media Header */}
+                          <View style={ac.mediaWrap}>
+                            {item.image ? (
+                              <Image
+                                source={{ uri: item.image }}
+                                style={ac.mediaImg}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View
+                                style={[
+                                  ac.mediaImg,
+                                  {
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  },
+                                ]}
+                              >
+                                <MaterialCommunityIcons
+                                  name="warehouse"
+                                  size={48}
+                                  color="#94a3b8"
+                                />
+                              </View>
+                            )}
+                            <View style={ac.mediaGradient} />
+                            <View style={ac.liveBadge}>
+                              <View style={ac.liveDot} />
+                              <Text style={ac.liveBadgeText}>
+                                {item.badgeStatus}
+                              </Text>
+                            </View>
+                            {item.badgeDiscount && (
+                              <View style={ac.discountBadge}>
+                                <Text style={ac.discountBadgeText}>
+                                  {item.badgeDiscount}
+                                </Text>
+                              </View>
+                            )}
+                            <View style={ac.mediaBottomOverlay}>
+                              <View style={ac.distanceRow}>
+                                <MaterialIcons
+                                  name="location-on"
+                                  size={14}
+                                  color={T.secondaryFixed}
+                                />
+                                <Text style={ac.distanceText} numberOfLines={1}>
+                                  {item.locationText}
+                                </Text>
+                              </View>
+                              <Text style={ac.mediaTitle} numberOfLines={2}>
+                                {item.title}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Body */}
+                          <View style={ac.body}>
+                            <View style={ac.metricGrid}>
+                              <View style={ac.metricCol}>
+                                <View style={ac.metricHeader}>
+                                  <MaterialIcons
+                                    name="aspect-ratio"
+                                    size={18}
+                                    color={T.primary}
+                                  />
+                                  <Text style={ac.metricLabel}>
+                                    Kích thước (D x R x C)
+                                  </Text>
+                                </View>
+                                <Text style={ac.metricValue}>
+                                  {item.dimensions}
+                                </Text>
+                              </View>
+                              <View style={[ac.metricCol, ac.metricColBorder]}>
+                                <View style={ac.metricHeader}>
+                                  <MaterialIcons
+                                    name="inventory"
+                                    size={18}
+                                    color={T.secondary}
+                                  />
+                                  <Text style={ac.metricLabel}>
+                                    Sức chứa ước lượng
+                                  </Text>
+                                </View>
+                                <Text style={ac.metricValue} numberOfLines={2}>
+                                  {item.capacity || "—"}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {item.features.length > 0 && (
+                              <View style={ac.featureChipsRow}>
+                                {item.features.map((feat, idx) => (
+                                  <View key={idx} style={ac.featureChip}>
+                                    <MaterialIcons
+                                      name="check"
+                                      size={14}
+                                      color={T.secondaryBrand}
+                                    />
+                                    <Text style={ac.featureChipText}>{feat}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                            <View style={ac.footerRow}>
+                              <View>
+                                {item.originalPrice ? (
+                                  <Text style={ac.originalPriceText}>
+                                    {formatVND(item.originalPrice)}/tháng
+                                  </Text>
+                                ) : (
+                                  <Text style={ac.priceLabelText}>
+                                    Chi phí thuê linh hoạt
+                                  </Text>
+                                )}
+                                <View style={ac.priceRow}>
+                                  <Text style={ac.priceAmount}>
+                                    {formatVND(item.monthlyBasePrice)}
+                                  </Text>
+                                  <Text style={ac.pricePeriod}>/tháng</Text>
+                                </View>
+                              </View>
+
+                              <TouchableOpacity
+                                style={ac.ctaBtn}
+                                onPress={() => {
+                                  setSelectedUnit(item);
+                                  setCurrentStep(2);
+                                }}
+                                activeOpacity={0.88}
+                              >
+                                <Text style={ac.ctaBtnText}>Xem & Đặt ngay</Text>
+                                <MaterialIcons
+                                  name="arrow-forward"
+                                  size={18}
+                                  color={T.onPrimary}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </View>
+                      ))
+                    )}
+
+                    {/* Reassurance Banner */}
+                    <View style={s.reassuranceBanner}>
+                      <View style={s.reassuranceIconWrap}>
+                        <MaterialIcons
+                          name="verified"
+                          size={24}
+                          color={T.secondaryFixed}
+                        />
+                      </View>
+                      <View style={s.reassuranceTextWrap}>
+                        <Text style={s.reassuranceTitle}>
+                          Cam kết an toàn tuyệt đối 100%
+                        </Text>
+                        <Text style={s.reassuranceSub}>
+                          Hợp đồng pháp lý số, bảo hiểm PCCC tiêu chuẩn quốc gia
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
           </>
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 2: ĐẶT KHO & XÁC NHẬN HỢP ĐỒNG (VERBATIM THEO MOCKUP HTML CỦA USER)  */}
+        {/* STEP 2: ĐẶT KHO & XÁC NHẬN HỢP ĐỒNG                                      */}
         {/* ========================================================================= */}
-        {currentStep === 2 && (
-          <View style={{ flex: 1, position: 'relative' }}>
+        {currentStep === 2 && selectedUnit && (
+          <View style={{ flex: 1, position: "relative" }}>
             {/* Header Task-Focused Mode */}
             <View style={s.step2Header}>
               <View style={s.step2HeaderLeft}>
@@ -904,16 +1611,26 @@ export default function BookStorageScreen({
                   onPress={() => setCurrentStep(1)}
                   activeOpacity={0.8}
                 >
-                  <MaterialIcons name="arrow-back" size={24} color={T.onSurface} />
+                  <MaterialIcons
+                    name="arrow-back"
+                    size={24}
+                    color={T.onSurface}
+                  />
                 </TouchableOpacity>
                 <View>
                   <Text style={s.step2HeaderTitle}>Đặt kho tự quản</Text>
-                  <Text style={s.step2HeaderSub}>Bước 2: Xác nhận hợp đồng</Text>
+                  <Text style={s.step2HeaderSub}>
+                    Bước 2: Xác nhận hợp đồng
+                  </Text>
                 </View>
               </View>
 
               <TouchableOpacity style={s.hotlineBtn} activeOpacity={0.85}>
-                <MaterialIcons name="support-agent" size={18} color={T.secondary} />
+                <MaterialIcons
+                  name="support-agent"
+                  size={18}
+                  color={T.secondary}
+                />
                 <Text style={s.hotlineText}>Hotline</Text>
               </TouchableOpacity>
             </View>
@@ -921,7 +1638,7 @@ export default function BookStorageScreen({
             {/* Scrollable Content */}
             <ScrollView
               style={s.scrollView}
-              contentContainerStyle={[s.scrollContent, { paddingBottom: 160 }]}
+              contentContainerStyle={[s.scrollContent, { paddingBottom: 200 }]}
               showsVerticalScrollIndicator={false}
             >
               <View style={{ padding: 16, gap: 16 }}>
@@ -933,28 +1650,42 @@ export default function BookStorageScreen({
                   </View>
                   <View style={s.progressItem}>
                     <View style={s.progressBarActive} />
-                    <Text style={[s.progressTextActive, { fontWeight: '700' }]}>2. Kỳ hạn & Dịch vụ</Text>
+                    <Text style={[s.progressTextActive, { fontWeight: "700" }]}>
+                      2. Kỳ hạn & Dịch vụ
+                    </Text>
                   </View>
                   <View style={s.progressItem}>
                     <View style={s.progressBarInactive} />
-                    <Text style={s.progressTextInactive}>3. Ký số & Nhận mã</Text>
+                    <Text style={s.progressTextInactive}>
+                      3. Ký số & Nhận mã
+                    </Text>
                   </View>
                 </View>
 
                 {/* 1. Selected Unit Card */}
                 <View style={s.step2Card}>
                   <View style={s.lockedBadge}>
-                    <MaterialIcons name="verified" size={14} color={T.onSecondaryFixed} />
-                    <Text style={s.lockedBadgeText}>Đã khóa giữ chỗ trong 15:00</Text>
+                    <MaterialIcons
+                      name="verified"
+                      size={14}
+                      color={T.onSecondaryFixed}
+                    />
+                    <Text style={s.lockedBadgeText}>
+                      Đã khóa giữ chỗ trong 15:00
+                    </Text>
                   </View>
                   <Text style={s.unitNameText}>{selectedUnit.title}</Text>
-                  <Text style={s.unitAddressText}>{selectedUnit.locationText}</Text>
+                  <Text style={s.unitAddressText}>
+                    {selectedUnit.locationText || "—"}
+                  </Text>
 
                   {/* 3-Col Metric Grid */}
                   <View style={s.spec3Grid}>
                     <View style={s.specCol}>
                       <Text style={s.specLabel}>Diện tích sàn</Text>
-                      <Text style={s.specValBold}>{selectedUnit.floorArea}</Text>
+                      <Text style={s.specValBold}>
+                        {selectedUnit.floorArea}
+                      </Text>
                     </View>
                     <View style={s.specCol}>
                       <Text style={s.specLabel}>Thể tích kho</Text>
@@ -962,97 +1693,118 @@ export default function BookStorageScreen({
                     </View>
                     <View style={s.specCol}>
                       <Text style={s.specLabel}>Quy cách (DxRxC)</Text>
-                      <Text style={s.specValMed}>{selectedUnit.dimensions}</Text>
+                      <Text style={s.specValMed}>
+                        {selectedUnit.dimensions}
+                      </Text>
                     </View>
                   </View>
 
-                  {/* Amenity Badges */}
-                  <View style={s.amenityBadgesRow}>
-                    <View style={s.blueAmenityBadge}>
-                      <MaterialIcons name="thermostat" size={14} color="#1D4ED8" />
-                      <Text style={s.blueAmenityText}>Kiểm soát nhiệt độ & độ ẩm</Text>
+                  {/* Amenity Badges — chỉ hiển thị nếu backend trả về features */}
+                  {selectedUnit.features.length > 0 && (
+                    <View style={s.amenityBadgesRow}>
+                      {selectedUnit.features.slice(0, 3).map((feat, idx) => (
+                        <View
+                          key={idx}
+                          style={
+                            idx === 0 ? s.blueAmenityBadge : s.grayAmenityBadge
+                          }
+                        >
+                          <MaterialIcons
+                            name={idx === 0 ? "thermostat" : "check"}
+                            size={14}
+                            color={idx === 0 ? "#1D4ED8" : T.onSurface}
+                          />
+                          <Text
+                            style={
+                              idx === 0 ? s.blueAmenityText : s.grayAmenityText
+                            }
+                          >
+                            {feat}
+                          </Text>
+                        </View>
+                      ))}
                     </View>
-                    <View style={s.grayAmenityBadge}>
-                      <MaterialIcons name="key" size={14} color={T.onSurface} />
-                      <Text style={s.grayAmenityText}>Truy cập thông minh 24/7</Text>
-                    </View>
-                    <View style={s.grayAmenityBadge}>
-                      <MaterialCommunityIcons name="elevator" size={14} color={T.onSurface} />
-                      <Text style={s.grayAmenityText}>Tầng thang máy tải</Text>
-                    </View>
-                  </View>
+                  )}
 
-                  {/* Floor Plan Blueprint Preview */}
-                  <View style={s.blueprintWrap}>
-                    <Image
-                      source={{ uri: selectedUnit.blueprintImage }}
-                      style={s.blueprintImg}
-                      resizeMode="cover"
-                    />
-                    <View style={s.blueprintOverlay} />
-                    <View style={s.blueprintTopPill}>
-                      <MaterialIcons name="map" size={14} color={T.surfaceLowest} />
-                      <Text style={s.blueprintTopPillText}>{selectedUnit.floorText}</Text>
+                  {/* Floor Plan Blueprint Preview — chỉ render nếu có ảnh */}
+                  {selectedUnit.blueprintImage ? (
+                    <View style={s.blueprintWrap}>
+                      <Image
+                        source={{ uri: selectedUnit.blueprintImage }}
+                        style={s.blueprintImg}
+                        resizeMode="cover"
+                      />
+                      <View style={s.blueprintOverlay} />
+                      <View style={s.blueprintTopPill}>
+                        <MaterialIcons
+                          name="map"
+                          size={14}
+                          color={T.surfaceLowest}
+                        />
+                        <Text style={s.blueprintTopPillText}>
+                          {selectedUnit.floorText}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={s.blueprintBottomPill}>
-                      <MaterialIcons name="near-me" size={14} color={T.secondary} />
-                      <Text style={s.blueprintBottomPillText}>Gần sảnh thang máy tải (8m)</Text>
-                    </View>
-                  </View>
+                  ) : null}
                 </View>
 
                 {/* 2. Move-in Date Picker */}
-                <View style={s.step2Card}>
-                  <View style={s.cardSectionHeader}>
-                    <View style={s.headerWithIcon}>
-                      <MaterialIcons name="calendar-today" size={20} color={T.secondary} />
-                      <Text style={s.sectionTitle}>Ngày bắt đầu dọn vào</Text>
+                <TouchableOpacity
+                  style={s.datePickerBox}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.85}
+                >
+                  <View style={s.dateLeftGroup}>
+                    <View style={s.dateCalBox}>
+                      <Text style={s.dateCalMonth}>
+                        T{new Date(moveInDateStr).getMonth() + 1}
+                      </Text>
+                      <Text style={s.dateCalDay}>
+                        {moveInDateStr.split("-")[2] || "18"}
+                      </Text>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const next = new Date();
-                        next.setDate(next.getDate() + 3);
-                        setMoveInDateStr(next.toISOString().split('T')[0]);
-                      }}
-                    >
-                      <Text style={s.changeLinkText}>Thay đổi</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={s.datePickerBox}>
-                    <View style={s.dateLeftGroup}>
-                      <View style={s.dateCalBox}>
-                        <Text style={s.dateCalMonth}>T10</Text>
-                        <Text style={s.dateCalDay}>{moveInDateStr.split('-')[2] || '18'}</Text>
-                      </View>
-                      <View>
-                        <Text style={s.dateMainText}>
-                          {new Date(moveInDateStr).toLocaleDateString('vi-VN', {
-                            weekday: 'long',
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                          })}
-                        </Text>
-                        <Text style={s.dateSubText}>Giờ nhận kho tự do: Từ 06:00 sáng</Text>
-                      </View>
+                    <View>
+                      <Text style={s.dateMainText}>
+                        {new Date(moveInDateStr).toLocaleDateString("vi-VN", {
+                          weekday: "long",
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
+                      </Text>
+                      <Text style={s.dateSubText}>
+                        Giờ nhận kho tự do: Từ 06:00 sáng
+                      </Text>
                     </View>
-                    <MaterialIcons name="check-circle" size={22} color={T.outline} />
                   </View>
+                  <MaterialIcons
+                    name="edit-calendar"
+                    size={22}
+                    color={T.secondary}
+                  />
+                </TouchableOpacity>
 
-                  <View style={s.infoNoticeRow}>
-                    <MaterialIcons name="info" size={16} color={T.secondary} />
-                    <Text style={s.infoNoticeText}>
-                      Miễn phí hủy hoặc đổi ngày trước 24 giờ kể từ thời điểm đặt.
-                    </Text>
-                  </View>
-                </View>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={new Date(moveInDateStr)}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "spinner" : "default"}
+                    minimumDate={minMoveInDate}
+                    onChange={handleDateChange}
+                    locale="vi-VN"
+                  />
+                )}
 
                 {/* 3. Rental Duration Selector */}
                 <View style={s.step2Card}>
                   <View style={s.cardSectionHeader}>
                     <View style={s.headerWithIcon}>
-                      <MaterialIcons name="timer" size={22} color={T.secondary} />
+                      <MaterialIcons
+                        name="timer"
+                        size={22}
+                        color={T.secondary}
+                      />
                       <Text style={s.sectionTitle}>Thời hạn thuê kho</Text>
                     </View>
                     <View style={s.savePill}>
@@ -1063,38 +1815,63 @@ export default function BookStorageScreen({
                   <View style={s.termGrid}>
                     {/* Option 1: 1 Month */}
                     <TouchableOpacity
-                      style={[s.termCard, rentalTermMonths === 1 && s.termCardSelected]}
+                      style={[
+                        s.termCard,
+                        rentalTermMonths === 1 && s.termCardSelected,
+                      ]}
                       onPress={() => setRentalTermMonths(1)}
                       activeOpacity={0.85}
                     >
                       <View style={s.termCardTop}>
                         <Text style={s.termMonths}>1 Tháng</Text>
-                        <View style={[s.radioCircle, rentalTermMonths === 1 && s.radioCircleSelected]} />
+                        <View
+                          style={[
+                            s.radioCircle,
+                            rentalTermMonths === 1 && s.radioCircleSelected,
+                          ]}
+                        />
                       </View>
-                      <Text style={s.termPrice}>{formatVND(selectedUnit.monthlyBasePrice)}</Text>
+                      <Text style={s.termPrice}>
+                        {formatVND(selectedUnit.monthlyBasePrice)}
+                      </Text>
                       <Text style={s.termSubtitle}>Giá chuẩn / tháng</Text>
                     </TouchableOpacity>
 
                     {/* Option 2: 3 Months */}
                     <TouchableOpacity
-                      style={[s.termCard, rentalTermMonths === 3 && s.termCardSelected]}
+                      style={[
+                        s.termCard,
+                        rentalTermMonths === 3 && s.termCardSelected,
+                      ]}
                       onPress={() => setRentalTermMonths(3)}
                       activeOpacity={0.85}
                     >
                       <View style={s.termCardTop}>
                         <Text style={s.termMonths}>3 Tháng</Text>
-                        <View style={[s.radioCircle, rentalTermMonths === 3 && s.radioCircleSelected]} />
+                        <View
+                          style={[
+                            s.radioCircle,
+                            rentalTermMonths === 3 && s.radioCircleSelected,
+                          ]}
+                        />
                       </View>
-                      <Text style={s.termPrice}>{formatVND(Math.round(selectedUnit.monthlyBasePrice * 0.9))}</Text>
+                      <Text style={s.termPrice}>
+                        {formatVND(
+                          Math.round(selectedUnit.monthlyBasePrice * 0.95),
+                        )}
+                      </Text>
                       <View style={s.discountRateRow}>
-                        <Text style={s.discountRateBadge}>Giảm 10%</Text>
+                        <Text style={s.discountRateBadge}>Giảm 5%</Text>
                         <Text style={s.termSubtitle}>/tháng</Text>
                       </View>
                     </TouchableOpacity>
 
                     {/* Option 3: 6 Months (Recommended) */}
                     <TouchableOpacity
-                      style={[s.termCard, rentalTermMonths === 6 && s.termCardSelected]}
+                      style={[
+                        s.termCard,
+                        rentalTermMonths === 6 && s.termCardSelected,
+                      ]}
                       onPress={() => setRentalTermMonths(6)}
                       activeOpacity={0.85}
                     >
@@ -1102,34 +1879,54 @@ export default function BookStorageScreen({
                         <Text style={s.recommendedBadgeText}>Khuyên dùng</Text>
                       </View>
                       <View style={s.termCardTop}>
-                        <Text style={[s.termMonths, { fontWeight: '700' }]}>6 Tháng</Text>
-                        <View style={[s.radioCircle, rentalTermMonths === 6 && s.radioCircleSelected]} />
+                        <Text style={[s.termMonths, { fontWeight: "700" }]}>
+                          6 Tháng
+                        </Text>
+                        <View
+                          style={[
+                            s.radioCircle,
+                            rentalTermMonths === 6 && s.radioCircleSelected,
+                          ]}
+                        />
                       </View>
                       <Text style={[s.termPrice, { color: T.secondary }]}>
-                        {formatVND(Math.round(selectedUnit.monthlyBasePrice * 0.8))}
+                        {formatVND(
+                          Math.round(selectedUnit.monthlyBasePrice * 0.9),
+                        )}
                       </Text>
                       <View style={s.discountRateRow}>
-                        <Text style={s.discountRateBadge}>Giảm 20%</Text>
+                        <Text style={s.discountRateBadge}>Giảm 10%</Text>
                         <Text style={s.termSubtitle}>/tháng</Text>
                       </View>
                     </TouchableOpacity>
 
                     {/* Option 4: 12 Months */}
                     <TouchableOpacity
-                      style={[s.termCard, rentalTermMonths === 12 && s.termCardSelected]}
+                      style={[
+                        s.termCard,
+                        rentalTermMonths === 12 && s.termCardSelected,
+                      ]}
                       onPress={() => setRentalTermMonths(12)}
                       activeOpacity={0.85}
                     >
                       <View style={s.termCardTop}>
                         <Text style={s.termMonths}>12 Tháng</Text>
-                        <View style={[s.radioCircle, rentalTermMonths === 12 && s.radioCircleSelected]} />
+                        <View
+                          style={[
+                            s.radioCircle,
+                            rentalTermMonths === 12 && s.radioCircleSelected,
+                          ]}
+                        />
                       </View>
-                      <Text style={s.termPrice}>{formatVND(Math.round(selectedUnit.monthlyBasePrice * 0.7))}</Text>
+                      <Text style={s.termPrice}>
+                        {formatVND(
+                          Math.round(selectedUnit.monthlyBasePrice * 0.85),
+                        )}
+                      </Text>
                       <View style={s.discountRateRow}>
-                        <Text style={s.discountRateBadge}>Giảm 30%</Text>
+                        <Text style={s.discountRateBadge}>Giảm 15%</Text>
                         <Text style={s.termSubtitle}>/tháng</Text>
                       </View>
-                      <Text style={s.giftText}>+ Tặng khóa cơ cao cấp</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1138,50 +1935,98 @@ export default function BookStorageScreen({
                 <View style={s.step2Card}>
                   <View style={s.costBreakdownHeader}>
                     <View style={s.headerWithIcon}>
-                      <MaterialIcons name="receipt-long" size={22} color={T.secondary} />
-                      <Text style={s.sectionTitle}>Bảng tính chi phí thuê & Tiền cọc</Text>
+                      <MaterialIcons
+                        name="receipt-long"
+                        size={22}
+                        color={T.secondary}
+                      />
+                      <Text style={s.sectionTitle}>
+                        Bảng tính chi phí thuê & Tiền cọc
+                      </Text>
                     </View>
-                    <Text style={s.sectionHeaderSub}>Kỳ hạn {rentalTermMonths} tháng</Text>
+                    <Text style={s.sectionHeaderSub}>
+                      Kỳ hạn {rentalTermMonths} tháng
+                    </Text>
                   </View>
 
                   <View style={s.costLinesList}>
                     <View style={s.costLine}>
                       <Text style={s.costLineLabel}>
-                        Tiền thuê kho niêm yết ({rentalTermMonths} tháng x {formatVND(selectedUnit.monthlyBasePrice)})
+                        Tiền thuê kho niêm yết ({rentalTermMonths} tháng x{" "}
+                        {formatVND(selectedUnit.monthlyBasePrice)})
                       </Text>
-                      <Text style={s.costLineValue}>{formatVND(calc.grossRent)}</Text>
+                      <Text style={s.costLineValue}>
+                        {formatVND(calc.grossRent)}
+                      </Text>
                     </View>
 
                     {calc.discountPct > 0 && (
                       <View style={s.costLine}>
                         <Text style={[s.costLineLabel, { color: T.secondary }]}>
-                          Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm {calc.discountPct}%)
+                          Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm{" "}
+                          {calc.discountPct}%)
                         </Text>
-                        <Text style={[s.costLineValue, { color: T.secondary, fontWeight: '700' }]}>
+                        <Text
+                          style={[
+                            s.costLineValue,
+                            { color: T.secondary, fontWeight: "700" },
+                          ]}
+                        >
                           -{formatVND(calc.discountSavings)}
                         </Text>
                       </View>
                     )}
 
-                    <View style={[s.costLine, { paddingTop: 6, borderTopWidth: 1, borderTopColor: '#f1f5f9' }]}>
-                      <Text style={[s.costLineLabel, { fontWeight: '700' }]}>
+                    <View
+                      style={[
+                        s.costLine,
+                        {
+                          paddingTop: 6,
+                          borderTopWidth: 1,
+                          borderTopColor: "#f1f5f9",
+                        },
+                      ]}
+                    >
+                      <Text style={[s.costLineLabel, { fontWeight: "700" }]}>
                         Tổng tiền thuê thực tế ({rentalTermMonths} tháng)
                       </Text>
-                      <Text style={[s.costLineValue, { fontWeight: '700' }]}>
+                      <Text style={[s.costLineValue, { fontWeight: "700" }]}>
                         {formatVND(calc.totalRent)}
                       </Text>
                     </View>
 
                     <View style={s.costLine}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[s.costLineLabel, { fontWeight: '700', color: T.onSurface }]}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                           flex: 1,           // ← THÊM
+                           flexShrink: 1, 
+                        }}
+                      >
+                        <Text
+                          style={[
+                            s.costLineLabel,
+                            { fontWeight: "700", color: T.onSurface },
+                          ]}
+                        >
                           Tiền cọc giữ chỗ (Hoàn lại 100%)
                         </Text>
                         <View style={s.refundPill}>
                           <Text style={s.refundPillText}>Cọc đảm bảo</Text>
                         </View>
                       </View>
-                      <Text style={[s.costLineValue, { fontWeight: '800', color: T.secondary, fontSize: 14 }]}>
+                      <Text
+                        style={[
+                          s.costLineValue,
+                          {
+                            fontWeight: "800",
+                            color: T.secondary,
+                            fontSize: 14,
+                          },
+                        ]}
+                      >
                         {formatVND(calc.depositAmount)}
                       </Text>
                     </View>
@@ -1189,22 +2034,44 @@ export default function BookStorageScreen({
 
                   {/* Upfront Deposit Highlight Box */}
                   <View style={s.depositHighlightCard}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <MaterialIcons name="security" size={20} color={T.secondary} />
-                      <Text style={s.depositHighlightTitle}>Tiền cọc cần thanh toán để giữ chỗ ngay</Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <MaterialIcons
+                        name="security"
+                        size={20}
+                        color={T.secondary}
+                      />
+                      <Text style={s.depositHighlightTitle}>
+                        Tiền cọc cần thanh toán để giữ chỗ ngay
+                      </Text>
                     </View>
-                    <Text style={s.depositHighlightAmount}>{formatVND(calc.depositAmount)}</Text>
+                    <Text style={s.depositHighlightAmount}>
+                      {formatVND(calc.depositAmount)}
+                    </Text>
                     <Text style={s.depositHighlightSub}>
-                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp đồng. Tiền thuê kho sẽ được thanh toán vào ngày nhận kho.
+                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp
+                      đồng. Tiền thuê kho sẽ được thanh toán vào ngày nhận kho.
                     </Text>
                   </View>
                 </View>
 
                 {/* Security Guarantee Banner */}
                 <View style={s.securityBanner}>
-                  <MaterialIcons name="verified-user" size={24} color={T.onSurface} />
+                  <MaterialIcons
+                    name="verified-user"
+                    size={24}
+                    color={T.onSurface}
+                  />
                   <Text style={s.securityBannerText}>
-                    Hợp đồng điện tử được định danh và ký kết số bảo mật theo Luật Giao dịch Điện tử Việt Nam. Có giá trị pháp lý tương đương văn bản giấy.
+                    Hợp đồng điện tử được định danh và ký kết số bảo mật theo
+                    Luật Giao dịch Điện tử Việt Nam. Có giá trị pháp lý tương
+                    đương văn bản giấy.
                   </Text>
                 </View>
               </View>
@@ -1215,8 +2082,16 @@ export default function BookStorageScreen({
               <View style={s.stickyTopRow}>
                 <View>
                   <Text style={s.stickyLabel}>Tiền cọc thanh toán ngay</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                    <Text style={[s.stickyGrandTotal, { color: T.secondary }]}>{formatVND(calc.depositAmount)}</Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "baseline",
+                      gap: 6,
+                    }}
+                  >
+                    <Text style={[s.stickyGrandTotal, { color: T.secondary }]}>
+                      {formatVND(calc.depositAmount)}
+                    </Text>
                     <Text style={s.stickyVatNote}>(Cọc giữ chỗ)</Text>
                   </View>
                 </View>
@@ -1238,20 +2113,31 @@ export default function BookStorageScreen({
                 ) : (
                   <>
                     <Text style={s.signContractBtnText}>
-                      Xác nhận & Đặt cọc giữ kho ({formatVND(calc.depositAmount)})
+                      Xác nhận & Đặt cọc giữ kho 
+                      
                     </Text>
-                    <MaterialIcons name="arrow-forward" size={18} color={T.onPrimary} />
+                    
                   </>
                 )}
               </TouchableOpacity>
 
               <View style={s.securityMicroRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <MaterialIcons name="lock-clock" size={14} color={T.onSurface} />
-                  <Text style={s.securityMicroText}>Giữ chỗ tức thì qua VietQR</Text>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <MaterialIcons
+                    name="lock-clock"
+                    size={14}
+                    color={T.onSurface}
+                  />
+                  <Text style={s.securityMicroText}>
+                    Giữ chỗ tức thì qua VietQR
+                  </Text>
                 </View>
                 <Text style={s.securityMicroText}>•</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
                   <MaterialIcons name="shield" size={14} color={T.onSurface} />
                   <Text style={s.securityMicroText}>Bảo mật SePay PCI-DSS</Text>
                 </View>
@@ -1261,10 +2147,10 @@ export default function BookStorageScreen({
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 3: THANH TOÁN CỌC GIỮ CHỖ QUA SEPAY VIETQR (FLOW CHUẨN CỦA WEB)        */}
+        {/* STEP 3: THANH TOÁN CỌC GIỮ CHỖ QUA SEPAY VIETQR                           */}
         {/* ========================================================================= */}
         {currentStep === 3 && (
-          <View style={{ flex: 1, position: 'relative' }}>
+          <View style={{ flex: 1, position: "relative" }}>
             {/* Header */}
             <View style={s.step2Header}>
               <View style={s.step2HeaderLeft}>
@@ -1273,11 +2159,17 @@ export default function BookStorageScreen({
                   onPress={() => setCurrentStep(2)}
                   activeOpacity={0.8}
                 >
-                  <MaterialIcons name="arrow-back" size={24} color={T.onSurface} />
+                  <MaterialIcons
+                    name="arrow-back"
+                    size={24}
+                    color={T.onSurface}
+                  />
                 </TouchableOpacity>
                 <View>
                   <Text style={s.step2HeaderTitle}>Thanh toán Cọc Giữ Chỗ</Text>
-                  <Text style={s.step2HeaderSub}>Bước 3: Quét mã SePay VietQR</Text>
+                  <Text style={s.step2HeaderSub}>
+                    Bước 3: Quét mã SePay VietQR
+                  </Text>
                 </View>
               </View>
               <View style={s.qrPendingBadge}>
@@ -1287,7 +2179,10 @@ export default function BookStorageScreen({
 
             <ScrollView
               style={s.scrollView}
-              contentContainerStyle={[s.scrollContent, { padding: 16, paddingBottom: 160 }]}
+              contentContainerStyle={[
+                s.scrollContent,
+                { padding: 16, paddingBottom: 160 },
+              ]}
               showsVerticalScrollIndicator={false}
             >
               {/* Countdown Banner */}
@@ -1295,8 +2190,8 @@ export default function BookStorageScreen({
                 <MaterialIcons name="timer" size={24} color={T.secondary} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.countdownTitle}>
-                    Thời gian giữ chỗ còn lại:{' '}
-                    <Text style={{ fontWeight: '800', color: T.secondary }}>
+                    Thời gian giữ chỗ còn lại:{" "}
+                    <Text style={{ fontWeight: "800", color: T.secondary }}>
                       {formatCountdown(paymentTimeLeft)}
                     </Text>
                   </Text>
@@ -1308,8 +2203,12 @@ export default function BookStorageScreen({
 
               {/* VietQR Box */}
               <View style={s.qrCard}>
-                <Text style={s.qrCardTitle}>Quét mã VietQR bằng App Ngân Hàng</Text>
-                <Text style={s.qrCardSub}>Hệ thống SePay tự động xác nhận sau 10 - 30 giây</Text>
+                <Text style={s.qrCardTitle}>
+                  Quét mã VietQR bằng App Ngân Hàng
+                </Text>
+                <Text style={s.qrCardSub}>
+                  Hệ thống SePay tự động xác nhận sau 10 - 30 giây
+                </Text>
 
                 <View style={s.qrImageFrame}>
                   {qrData?.qrCodeUrl ? (
@@ -1320,8 +2219,10 @@ export default function BookStorageScreen({
                     />
                   ) : (
                     <View style={s.qrPlaceholder}>
-                      <ActivityIndicator size="large" color={T.brand} />
-                      <Text style={{ marginTop: 8, fontSize: 13, color: T.outline }}>
+                      <ActivityIndicator size="large" color={T.secondary} />
+                      <Text
+                        style={{ marginTop: 8, fontSize: 13, color: T.outline }}
+                      >
                         Đang tạo mã VietQR...
                       </Text>
                     </View>
@@ -1329,100 +2230,167 @@ export default function BookStorageScreen({
                 </View>
 
                 {/* Bank Transfer Details Table */}
-                <View style={s.bankDetailsList}>
-                  {/* Bank Name */}
-                  <View style={s.bankRow}>
-                    <Text style={s.bankRowLabel}>Ngân hàng</Text>
-                    <Text style={s.bankRowVal}>{qrData?.bankCode || 'MBBank (Quân Đội)'}</Text>
-                  </View>
+                {qrData && (
+                  <View style={s.bankDetailsList}>
+                    <View style={s.bankRow}>
+                      <Text style={s.bankRowLabel}>Ngân hàng</Text>
+                      <Text style={s.bankRowVal}>{qrData.bankCode}</Text>
+                    </View>
 
-                  {/* Account Number */}
-                  <View style={s.bankRow}>
-                    <Text style={s.bankRowLabel}>Số tài khoản</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[s.bankRowVal, { fontWeight: '800' }]}>
-                        {qrData?.accountNumber || '0838500046'}
-                      </Text>
-                      <TouchableOpacity
-                        style={s.copyMiniBtn}
-                        onPress={() => copyToClipboard(qrData?.accountNumber || '0838500046', 'Số tài khoản')}
+                    <View style={s.bankRow}>
+                      <Text style={s.bankRowLabel}>Số tài khoản</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
                       >
-                        <MaterialIcons name="content-copy" size={14} color={T.secondary} />
-                        <Text style={s.copyMiniText}>Sao chép</Text>
-                      </TouchableOpacity>
+                        <Text style={[s.bankRowVal, { fontWeight: "800" }]}>
+                          {qrData.accountNumber}
+                        </Text>
+                        <TouchableOpacity
+                          style={s.copyMiniBtn}
+                          onPress={() =>
+                            copyToClipboard(
+                              qrData.accountNumber,
+                              "Số tài khoản",
+                            )
+                          }
+                        >
+                          <MaterialIcons
+                            name="content-copy"
+                            size={14}
+                            color={T.secondary}
+                          />
+                          <Text style={s.copyMiniText}>Sao chép</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={s.bankRow}>
+                      <Text style={s.bankRowLabel}>Chủ tài khoản</Text>
+                      <Text
+                        style={[s.bankRowVal, { textTransform: "uppercase" }]}
+                      >
+                        {qrData.accountName}
+                      </Text>
+                    </View>
+
+                    <View style={s.bankRow}>
+                      <Text style={s.bankRowLabel}>Số tiền cọc</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Text
+                          style={[
+                            s.bankRowVal,
+                            {
+                              fontWeight: "800",
+                              color: T.secondary,
+                              fontSize: 16,
+                            },
+                          ]}
+                        >
+                          {formatVND(qrData.amount)}
+                        </Text>
+                        <TouchableOpacity
+                          style={s.copyMiniBtn}
+                          onPress={() =>
+                            copyToClipboard(String(qrData.amount), "Số tiền")
+                          }
+                        >
+                          <MaterialIcons
+                            name="content-copy"
+                            size={14}
+                            color={T.secondary}
+                          />
+                          <Text style={s.copyMiniText}>Sao chép</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={[s.bankRow, { borderBottomWidth: 0 }]}>
+                      <Text style={s.bankRowLabel}>Nội dung CK</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Text
+                          style={[
+                            s.bankRowVal,
+                            { fontWeight: "800", color: "#b91c1c" },
+                          ]}
+                        >
+                          {qrData.transferContent}
+                        </Text>
+                        <TouchableOpacity
+                          style={[
+                            s.copyMiniBtn,
+                            { backgroundColor: "#fee2e2" },
+                          ]}
+                          onPress={() =>
+                            copyToClipboard(
+                              qrData.transferContent,
+                              "Nội dung chuyển khoản",
+                            )
+                          }
+                        >
+                          <MaterialIcons
+                            name="content-copy"
+                            size={14}
+                            color="#b91c1c"
+                          />
+                          <Text style={[s.copyMiniText, { color: "#b91c1c" }]}>
+                            Sao chép
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
-
-                  {/* Account Name */}
-                  <View style={s.bankRow}>
-                    <Text style={s.bankRowLabel}>Chủ tài khoản</Text>
-                    <Text style={[s.bankRowVal, { textTransform: 'uppercase' }]}>
-                      {qrData?.accountName || 'TRUONG DINH LONG'}
-                    </Text>
-                  </View>
-
-                  {/* Amount */}
-                  <View style={s.bankRow}>
-                    <Text style={s.bankRowLabel}>Số tiền cọc</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[s.bankRowVal, { fontWeight: '800', color: T.secondary, fontSize: 16 }]}>
-                        {formatVND(qrData?.amount || calc.depositAmount)}
-                      </Text>
-                      <TouchableOpacity
-                        style={s.copyMiniBtn}
-                        onPress={() => copyToClipboard(String(qrData?.amount || calc.depositAmount), 'Số tiền')}
-                      >
-                        <MaterialIcons name="content-copy" size={14} color={T.secondary} />
-                        <Text style={s.copyMiniText}>Sao chép</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Transfer Content */}
-                  <View style={[s.bankRow, { borderBottomWidth: 0 }]}>
-                    <Text style={s.bankRowLabel}>Nội dung CK</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[s.bankRowVal, { fontWeight: '800', color: '#b91c1c' }]}>
-                        {qrData?.transferContent || 'SSDEP...'}
-                      </Text>
-                      <TouchableOpacity
-                        style={[s.copyMiniBtn, { backgroundColor: '#fee2e2' }]}
-                        onPress={() => copyToClipboard(qrData?.transferContent || '', 'Nội dung chuyển khoản')}
-                      >
-                        <MaterialIcons name="content-copy" size={14} color="#b91c1c" />
-                        <Text style={[s.copyMiniText, { color: '#b91c1c' }]}>Sao chép</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
+                )}
 
                 {/* Content Warning Notice */}
                 <View style={s.transferWarningBox}>
                   <MaterialIcons name="info" size={18} color="#b91c1c" />
                   <Text style={s.transferWarningText}>
-                    LƯU Ý: Vui lòng nhập chính xác nội dung chuyển khoản để hệ thống tự động xác nhận và giữ chỗ kho ngay lập tức.
+                    LƯU Ý: Vui lòng nhập chính xác nội dung chuyển khoản để hệ
+                    thống tự động xác nhận và giữ chỗ kho ngay lập tức.
                   </Text>
                 </View>
               </View>
 
-              {/* Demo Webhook Button for Testing */}
-              <TouchableOpacity
-                style={s.simulateBtn}
-                onPress={handleSimulatePayment}
-                disabled={simulatingPayment}
-                activeOpacity={0.85}
-              >
-                {simulatingPayment ? (
-                  <ActivityIndicator color={T.secondary} size="small" />
-                ) : (
-                  <>
-                    <MaterialIcons name="bolt" size={20} color={T.secondary} />
-                    <Text style={s.simulateBtnText}>
-                      ⚡ Mô phỏng thanh toán SePay thành công (Demo)
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {/* Demo Webhook Button for Testing — chỉ hiện trong dev */}
+              {__DEV__ && (
+                <TouchableOpacity
+                  style={s.simulateBtn}
+                  onPress={handleSimulatePayment}
+                  disabled={simulatingPayment}
+                  activeOpacity={0.85}
+                >
+                  {simulatingPayment ? (
+                    <ActivityIndicator color={T.secondary} size="small" />
+                  ) : (
+                    <>
+                      <MaterialIcons
+                        name="bolt"
+                        size={20}
+                        color={T.secondary}
+                      />
+                      <Text style={s.simulateBtnText}>
+                        ⚡ Mô phỏng thanh toán SePay thành công (Dev only)
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </ScrollView>
 
             {/* Sticky Bottom Bar for Step 3 */}
@@ -1437,12 +2405,25 @@ export default function BookStorageScreen({
                   <ActivityIndicator color={T.onPrimary} size="small" />
                 ) : (
                   <>
-                    <MaterialIcons name="check-circle" size={20} color={T.onPrimary} />
-                    <Text style={s.signContractBtnText}>Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái</Text>
+                    <MaterialIcons
+                      name="check-circle"
+                      size={20}
+                      color={T.onPrimary}
+                    />
+                    <Text style={s.signContractBtnText}>
+                      Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
-              <Text style={{ textAlign: 'center', fontSize: 11, color: T.outline, marginTop: 4 }}>
+              <Text
+                style={{
+                  textAlign: "center",
+                  fontSize: 11,
+                  color: T.outline,
+                  marginTop: 4,
+                }}
+              >
                 Hệ thống tự động polling kiểm tra biên nhận SePay mỗi 3 giây
               </Text>
             </View>
@@ -1450,9 +2431,9 @@ export default function BookStorageScreen({
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 4: ĐÃ THANH TOÁN CỌC & GIỮ CHỖ THÀNH CÔNG (CONFIRMED)                 */}
+        {/* STEP 4: ĐÃ THANH TOÁN CỌC & GIỮ CHỖ THÀNH CÔNG                            */}
         {/* ========================================================================= */}
-        {currentStep === 4 && (
+        {currentStep === 4 && selectedUnit && (
           <ScrollView
             style={s.scrollView}
             contentContainerStyle={[s.scrollContent, { padding: 20 }]}
@@ -1462,22 +2443,42 @@ export default function BookStorageScreen({
               <View style={s.successCircleIcon}>
                 <MaterialIcons name="verified" size={48} color={T.green} />
               </View>
-              <Text style={s.successHeadline}>Đặt Cọc & Giữ Chỗ Thành Công!</Text>
+              <Text style={s.successHeadline}>
+                Đặt Cọc & Giữ Chỗ Thành Công!
+              </Text>
               <Text style={s.successCodeText}>
-                MÃ ĐƠN: #{confirmedReservation?.reservationCode || (confirmedReservation?.id ? String(confirmedReservation.id).slice(-8).toUpperCase() : 'RSV-CONFIRMED')}
+                MÃ ĐƠN: #
+                {(confirmedReservation as any)?.reservationCode ||
+                  (confirmedReservation?.id
+                    ? String(confirmedReservation.id).slice(-8).toUpperCase()
+                    : "RSV-CONFIRMED")}
               </Text>
 
               {/* Deposit Paid Badge Box */}
               <View style={s.depositSuccessBox}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <MaterialIcons name="check-circle" size={18} color={T.green} />
-                  <Text style={s.depositSuccessTitle}>ĐÃ THANH TOÁN TIỀN CỌC GIỮ CHỖ</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    marginBottom: 4,
+                  }}
+                >
+                  <MaterialIcons
+                    name="check-circle"
+                    size={18}
+                    color={T.green}
+                  />
+                  <Text style={s.depositSuccessTitle}>
+                    ĐÃ THANH TOÁN TIỀN CỌC GIỮ CHỖ
+                  </Text>
                 </View>
                 <Text style={s.depositSuccessAmount}>
                   {formatVND(qrData?.amount || calc.depositAmount)}
                 </Text>
                 <Text style={s.depositSuccessSub}>
-                  Biên nhận cọc đã được lưu vào hệ thống. Buồng kho đã được khóa giữ chỗ cho bạn.
+                  Biên nhận cọc đã được lưu vào hệ thống. Buồng kho đã được khóa
+                  giữ chỗ cho bạn.
                 </Text>
               </View>
 
@@ -1515,7 +2516,9 @@ export default function BookStorageScreen({
               <View style={s.instructionCard}>
                 <MaterialIcons name="info-outline" size={20} color={T.blue} />
                 <Text style={s.instructionText}>
-                  Vui lòng mang theo CCCD/VNeID đến chi nhánh vào ngày hẹn để nhân viên hỗ trợ đối chiếu, bàn giao ô kho thực tế và cấp mã mở khóa Smart Key 24/7.
+                  Vui lòng mang theo CCCD/VNeID đến chi nhánh vào ngày hẹn để
+                  nhân viên hỗ trợ đối chiếu, bàn giao ô kho thực tế và cấp mã
+                  mở khóa Smart Key 24/7.
                 </Text>
               </View>
 
@@ -1525,8 +2528,15 @@ export default function BookStorageScreen({
                 onPress={onViewMyReservations}
                 activeOpacity={0.88}
               >
-                <MaterialIcons name="inventory-2" size={18} color={T.surfaceLowest} style={{ marginRight: 6 }} />
-                <Text style={s.manageBookingBtnText}>Vào Quản Lý Ô Kho Của Tôi</Text>
+                <MaterialIcons
+                  name="inventory-2"
+                  size={18}
+                  color={T.surfaceLowest}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={s.manageBookingBtnText}>
+                  Vào Quản Lý Ô Kho Của Tôi
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1535,14 +2545,23 @@ export default function BookStorageScreen({
                   setCurrentStep(1);
                   setConfirmedReservation(null);
                   setQrData(null);
+                  setSelectedUnit(null);
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={s.bookAnotherBtnText}>Đặt Thêm Buồng Kho Khác</Text>
+                <Text style={s.bookAnotherBtnText}>
+                  Đặt Thêm Buồng Kho Khác
+                </Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
         )}
+
+        {/* Customer Bottom Navigation Bar (5 tabs matching Stitch mockup) */}
+        <CustomerBottomNavBar
+          activeTab={currentBottomTab}
+          onSelectTab={handleTabPress}
+        />
       </View>
     </View>
   );
@@ -1552,12 +2571,12 @@ export default function BookStorageScreen({
 const s = StyleSheet.create({
   outerWrapper: {
     flex: 1,
-    backgroundColor: '#0F172A',
-    alignItems: 'center',
+    backgroundColor: "#0F172A",
+    alignItems: "center",
   },
   mobileContainer: {
     flex: 1,
-    width: '100%',
+    width: "100%",
     maxWidth: 500,
     backgroundColor: T.bg,
   },
@@ -1565,33 +2584,541 @@ const s = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    paddingBottom: 24,
+  },
+
+  // ─── Stitch Explore UI Styles (Matching Web / Stitch Mockup) ──────────────
+  stitchWrapper: {
+    backgroundColor: "#f7f9fd",
+    paddingBottom: 16,
+    paddingTop: Platform.OS === "ios" ? 12 : 8,
+  },
+  emptyFeaturedCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+    gap: 6,
+  },
+  emptyFeaturedTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#131b2e",
+  },
+  emptyFeaturedSub: {
+    fontSize: 12,
+    color: "#737686",
+    textAlign: "center",
+  },
+
+  // Greeting & Header
+  greetingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  greetingLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  avatarWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#dae2fd",
+    borderWidth: 1,
+    borderColor: "rgba(29, 78, 216, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  greetingSub: {
+    fontSize: 12,
+    color: "#434655",
+    fontWeight: "500",
+    lineHeight: 14,
+  },
+  greetingName: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#131b2e",
+    letterSpacing: -0.3,
+  },
+  greetingRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  iconCircleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+    position: "relative",
+  },
+  iconNotifDot: {
+    position: "absolute",
+    top: 9,
+    right: 9,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#1d4ed8",
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+  },
+
+  // Search Bar
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  searchBarPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    paddingHorizontal: 16,
+    height: 48,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.6)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  searchInputStitch: {
+    flex: 1,
+    fontSize: 13,
+    color: "#131b2e",
+    paddingVertical: 0,
+  },
+  filterTuneBtn: {
+    paddingLeft: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Promo / Hero Banner
+  heroBannerSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  heroBannerCard: {
+    position: "relative",
+    borderRadius: 24,
+    overflow: "hidden",
+    backgroundColor: "#1d4ed8",
+    minHeight: 146,
+    padding: 18,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  heroBannerOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0, 23, 75, 0.72)",
+  },
+  heroBannerContent: {
+    position: "relative",
+    zIndex: 10,
+  },
+  heroTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.3,
+    lineHeight: 25,
+  },
+  heroSubtitle: {
+    fontSize: 12,
+    color: "rgba(219, 234, 254, 0.9)",
+    lineHeight: 16,
+    marginTop: 4,
+    marginBottom: 12,
+    maxWidth: 240,
+  },
+  heroCtaBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  heroCtaText: {
+    color: "#1d4ed8",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  // Category Filter Pills
+  categoryPillsSection: {
+    paddingBottom: 16,
+  },
+  categoryPillsScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  categoryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.6)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  categoryPillActive: {
+    backgroundColor: "#131b2e",
+    borderColor: "#131b2e",
+  },
+  categoryPillText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#131b2e",
+  },
+  categoryPillTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+
+  // Featured Section & Horizontal Carousel
+  featuredSection: {
     paddingBottom: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  sectionHeaderTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#131b2e",
+    letterSpacing: -0.3,
+  },
+  sectionHeaderAction: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#737686",
+  },
+  sectionHeaderSort: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1d4ed8",
+  },
+  featuredCarouselScroll: {
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+  featuredCard: {
+    width: 275,
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.5)",
+    padding: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  featuredImageWrap: {
+    position: "relative",
+    width: "100%",
+    height: 176,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#eff4ff",
+  },
+  featuredImage: {
+    width: "100%",
+    height: "100%",
+  },
+  cardBadgeTopLeft: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#131b2e",
+  },
+  cardBadgeAmber: {
+    backgroundColor: "#f59e0b",
+  },
+  cardBadgeAmberText: {
+    color: "#ffffff",
+  },
+  cardHeartBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  cardDotsWrap: {
+    position: "absolute",
+    bottom: 10,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  cardDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+  },
+  cardDotActive: {
+    width: 14,
+    borderRadius: 3,
+    backgroundColor: "#ffffff",
+  },
+  featuredCardBody: {
+    paddingTop: 12,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
+    gap: 4,
+  },
+  featuredCardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#131b2e",
+    lineHeight: 20,
+  },
+  featuredPriceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 2,
+  },
+  featuredPriceVal: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1d4ed8",
+  },
+  featuredPriceUnit: {
+    fontSize: 12,
+    color: "#434655",
+    fontWeight: "500",
+    marginLeft: 2,
+  },
+  featuredTagPill: {
+    backgroundColor: "rgba(29, 78, 216, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  featuredTagText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#1d4ed8",
+  },
+  featuredTagBusiness: {
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+  },
+  featuredTagBusinessText: {
+    color: "#1e40af",
+  },
+  featuredLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 2,
+  },
+  featuredLocationText: {
+    fontSize: 12,
+    color: "#737686",
+    flex: 1,
+  },
+
+  // Nearby Section
+  nearbySection: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  nearbyListWrap: {
+    gap: 12,
+  },
+  nearbyItemCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#ffffff",
+    padding: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  nearbyThumbnailWrap: {
+    position: "relative",
+    width: 80,
+    height: 80,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#eff4ff",
+  },
+  nearbyThumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  nearbyLiveDot: {
+    position: "absolute",
+    top: 5,
+    left: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#22c55e",
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+  },
+  nearbyInfoWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nearbyTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#131b2e",
+  },
+  nearbyDistanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  nearbyDistanceText: {
+    fontSize: 12,
+    color: "#737686",
+  },
+  nearbyBottomRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  nearbyPriceText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#1d4ed8",
+  },
+  nearbyPriceUnit: {
+    fontSize: 11,
+    color: "#737686",
+    fontWeight: "400",
+  },
+  nearbyActionBtn: {
+    backgroundColor: "rgba(29, 78, 216, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  nearbyActionBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#1d4ed8",
   },
   loadWrap: {
     flex: 1,
     backgroundColor: T.bg,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
     gap: 12,
   },
   loadText: {
     fontSize: 14,
     color: T.onSurfaceVariant,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 
   // Top App Bar
   topAppBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     height: 56,
     backgroundColor: T.surfaceLowest,
     borderBottomWidth: 1,
     borderBottomColor: T.surfaceContainerHigh,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -1599,77 +3126,73 @@ const s = StyleSheet.create({
     zIndex: 40,
   },
   brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    marginRight: 8,
+    minWidth: 0,
   },
   brandIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerLow,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   brandTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
     letterSpacing: -0.3,
   },
   brandLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 2,
   },
   brandLocationText: {
     fontSize: 11,
     color: T.onSurfaceVariant,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   topActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
-  },
-  switchPortalBtn: {
-    backgroundColor: T.primaryContainer,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  switchPortalText: {
-    color: '#38BDF8',
-    fontSize: 11,
-    fontWeight: '700',
+    flexShrink: 0,
   },
   loginHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     backgroundColor: T.surfaceLowest,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
+    maxWidth: 130,
+    flexShrink: 0,
   },
   loginHeaderText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
+    maxWidth: 85,
   },
   notifBtn: {
     width: 36,
     height: 36,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerLow,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
   },
   notifBadgeDot: {
-    position: 'absolute',
+    position: "absolute",
     top: 7,
     right: 7,
     width: 8,
@@ -1688,22 +3211,22 @@ const s = StyleSheet.create({
     backgroundColor: T.bg,
   },
   searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     marginBottom: 12,
   },
   searchInputWrap: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: T.surfaceLowest,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 44,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
-    shadowColor: '#000',
+    borderColor: "#c6c6cd",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -1724,37 +3247,37 @@ const s = StyleSheet.create({
     height: 44,
     borderRadius: 12,
     backgroundColor: T.primaryContainer,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
   sizeGuideRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 8,
   },
   sizeGuideTitle: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurfaceVariant,
   },
   sizeGuideLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
   },
   sizeGuideLinkText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
   sizeChipsScroll: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     paddingBottom: 10,
   },
@@ -1764,7 +3287,7 @@ const s = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: T.surfaceLowest,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   sizeChipActive: {
     backgroundColor: T.primaryContainer,
@@ -1772,28 +3295,28 @@ const s = StyleSheet.create({
   },
   sizeChipText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   sizeChipTextActive: {
     color: T.onPrimary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   amenityTagsScroll: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 6,
     paddingBottom: 4,
   },
   amenityTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 16,
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
-    borderColor: '#dce9ff',
+    borderColor: "#dce9ff",
   },
   amenityTagActive: {
     backgroundColor: T.surfaceContainerHigh,
@@ -1801,26 +3324,26 @@ const s = StyleSheet.create({
   },
   amenityTagText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.primaryContainer,
   },
   amenityTagTextActive: {
     color: T.secondaryBrand,
   },
   amenityPromoTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 16,
     backgroundColor: T.secondaryFixed,
     borderWidth: 1,
-    borderColor: '#ffb599',
+    borderColor: "#ffb599",
   },
   amenityPromoText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSecondaryFixed,
   },
 
@@ -1830,14 +3353,14 @@ const s = StyleSheet.create({
     paddingTop: 10,
   },
   listHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   listHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   livePulseDot: {
@@ -1848,7 +3371,7 @@ const s = StyleSheet.create({
   },
   listHeaderTitle: {
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
     letterSpacing: -0.3,
   },
@@ -1857,12 +3380,12 @@ const s = StyleSheet.create({
     color: T.onSurfaceVariant,
   },
   listHeaderSortBold: {
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
   reassuranceBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: T.primaryContainer,
     borderRadius: 12,
     padding: 14,
@@ -1873,36 +3396,36 @@ const s = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255,255,255,0.12)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   reassuranceTextWrap: {
     flex: 1,
   },
   reassuranceTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.surfaceLowest,
     marginBottom: 2,
   },
   reassuranceSub: {
     fontSize: 11,
-    color: '#cbd5e1',
+    color: "#cbd5e1",
     lineHeight: 15,
   },
 
   // ================= STEP 2 SPECIFIC STYLES =================
   step2Header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     height: 56,
     backgroundColor: T.surfaceLowest,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    shadowColor: '#000',
+    borderBottomColor: "#e2e8f0",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -1910,8 +3433,8 @@ const s = StyleSheet.create({
     zIndex: 40,
   },
   step2HeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
   backBtn: {
@@ -1921,7 +3444,7 @@ const s = StyleSheet.create({
   },
   step2HeaderTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
     letterSpacing: -0.2,
   },
@@ -1930,30 +3453,30 @@ const s = StyleSheet.create({
     color: T.onSurfaceVariant,
   },
   hotlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   hotlineText: {
     fontSize: 11,
     color: T.secondary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   // Progress Tracker
   progressTrackerRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
   },
   progressItem: {
     flex: 1,
-    flexDirection: 'column',
+    flexDirection: "column",
     gap: 4,
   },
   progressBarActive: {
@@ -1963,7 +3486,7 @@ const s = StyleSheet.create({
   },
   progressBarInactive: {
     height: 5,
-    backgroundColor: '#c6c6cd',
+    backgroundColor: "#c6c6cd",
     borderRadius: 3,
   },
   progressTextActive: {
@@ -1980,33 +3503,34 @@ const s = StyleSheet.create({
     backgroundColor: T.surfaceLowest,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
     padding: 16,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 1,
+    overflow: "hidden",
   },
   lockedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     backgroundColor: T.secondaryFixed,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
     marginBottom: 8,
   },
   lockedBadgeText: {
     fontSize: 11,
     color: T.onSecondaryFixed,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   unitNameText: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
     marginBottom: 4,
   },
@@ -2016,12 +3540,12 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   spec3Grid: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: T.surfaceLow,
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(198,198,205,0.5)',
+    borderColor: "rgba(198,198,205,0.5)",
     marginBottom: 10,
   },
   specCol: {
@@ -2034,79 +3558,79 @@ const s = StyleSheet.create({
   },
   specValBold: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
   },
   specValMed: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   amenityBadgesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
     marginBottom: 12,
   },
   blueAmenityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
   },
   blueAmenityText: {
     fontSize: 11,
-    color: '#1D4ED8',
-    fontWeight: '600',
+    color: "#1D4ED8",
+    fontWeight: "600",
   },
   grayAmenityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
     backgroundColor: T.surfaceContainer,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   grayAmenityText: {
     fontSize: 11,
     color: T.onSurface,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 
   // Blueprint Preview
   blueprintWrap: {
     height: 112,
     borderRadius: 8,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: '#c6c6cd',
-    position: 'relative',
+    borderColor: "#c6c6cd",
+    position: "relative",
     backgroundColor: T.primaryContainer,
   },
   blueprintImg: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   blueprintOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(19, 27, 46, 0.25)',
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(19, 27, 46, 0.25)",
   },
   blueprintTopPill: {
-    position: 'absolute',
+    position: "absolute",
     top: 8,
     left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
-    backgroundColor: 'rgba(19, 27, 46, 0.85)',
+    backgroundColor: "rgba(19, 27, 46, 0.85)",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
@@ -2114,71 +3638,75 @@ const s = StyleSheet.create({
   blueprintTopPillText: {
     fontSize: 10,
     color: T.surfaceLowest,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   blueprintBottomPill: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 8,
     right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     backgroundColor: T.surfaceLowest,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
-    shadowColor: '#000',
+    borderColor: "#c6c6cd",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
   blueprintBottomPillText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
 
   // Move-in Date Section
   cardSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
   },
   headerWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
+     flexShrink: 1,       // ← THÊM
+  flex: 1,     
   },
   sectionTitle: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
+     flexShrink: 1,       // ← THÊM
   },
   sectionHeaderSub: {
     fontSize: 11,
     color: T.onSurfaceVariant,
+    flexShrink: 0,       // ← THÊM
   },
   changeLinkText: {
     fontSize: 12,
     color: T.secondary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   datePickerBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: T.surfaceLow,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "white",
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   dateLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
   },
   dateCalBox: {
@@ -2187,34 +3715,34 @@ const s = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: T.surfaceLowest,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#c6c6cd",
+    alignItems: "center",
+    justifyContent: "center",
   },
   dateCalMonth: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.secondary,
   },
   dateCalDay: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.onSurface,
     lineHeight: 16,
   },
   dateMainText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: "700",
     color: T.onSurface,
   },
   dateSubText: {
-    fontSize: 11,
+    fontSize: 13,
     color: T.onSurfaceVariant,
     marginTop: 1,
   },
   infoNoticeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingTop: 8,
   },
@@ -2232,22 +3760,22 @@ const s = StyleSheet.create({
   },
   savePillText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   termGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
   termCard: {
-    width: '48%',
+    width: "48%",
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
     backgroundColor: T.surfaceLowest,
-    position: 'relative',
+    position: "relative",
   },
   termCardSelected: {
     borderColor: T.secondary,
@@ -2260,7 +3788,7 @@ const s = StyleSheet.create({
     elevation: 2,
   },
   recommendedBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: -9,
     right: 10,
     backgroundColor: T.secondary,
@@ -2270,19 +3798,19 @@ const s = StyleSheet.create({
   },
   recommendedBadgeText: {
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.surfaceLowest,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   termCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 4,
   },
   termMonths: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   radioCircle: {
@@ -2299,19 +3827,19 @@ const s = StyleSheet.create({
   },
   termPrice: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
     marginTop: 2,
   },
   discountRateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
     marginTop: 2,
   },
   discountRateBadge: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
   termSubtitle: {
@@ -2320,19 +3848,19 @@ const s = StyleSheet.create({
   },
   giftText: {
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
     marginTop: 4,
   },
 
   // Insurance Section
   insuranceCard: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
     backgroundColor: T.surfaceLowest,
     marginBottom: 8,
   },
@@ -2342,9 +3870,9 @@ const s = StyleSheet.create({
     backgroundColor: T.surfaceLow,
   },
   insuranceTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 2,
   },
   insuranceTitle: {
@@ -2360,11 +3888,11 @@ const s = StyleSheet.create({
   freePillText: {
     fontSize: 10,
     color: T.onSurface,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   insurancePriceTag: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
   insuranceDesc: {
@@ -2375,13 +3903,13 @@ const s = StyleSheet.create({
 
   // Addon Checklist
   addonItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
     backgroundColor: T.surfaceLowest,
   },
   checkbox: {
@@ -2390,8 +3918,8 @@ const s = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1.5,
     borderColor: T.outline,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   checkboxChecked: {
     backgroundColor: T.secondary,
@@ -2399,7 +3927,7 @@ const s = StyleSheet.create({
   },
   addonTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   addonSub: {
@@ -2409,36 +3937,43 @@ const s = StyleSheet.create({
   },
   addonPrice: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
 
   // Cost Breakdown Card
   costBreakdownHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(198,198,205,0.6)',
+    borderBottomColor: "rgba(198,198,205,0.6)",
     paddingBottom: 8,
     marginBottom: 8,
+    gap: 8,              // ← THÊM
+  flexWrap: "wrap",    // ← THÊM (cho phép xuống dòng khi hẹp)
   },
   costLinesList: {
     gap: 8,
   },
   costLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12, 
   },
   costLineLabel: {
     fontSize: 12,
     color: T.onSurface,
+    flex: 1,  
+    flexShrink: 1,      // ← cho phép co lại
+
   },
   costLineValue: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
+    flexShrink: 0,  
   },
   refundPill: {
     backgroundColor: T.secondaryFixed,
@@ -2448,21 +3983,21 @@ const s = StyleSheet.create({
   },
   refundPillText: {
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
   grandTotalSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
     borderTopWidth: 1,
-    borderTopColor: '#c6c6cd',
+    borderTopColor: "#c6c6cd",
     paddingTop: 10,
     marginTop: 8,
   },
   grandTotalTitle: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.onSurface,
   },
   grandTotalSub: {
@@ -2471,20 +4006,20 @@ const s = StyleSheet.create({
   },
   grandTotalNumber: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.secondary,
   },
 
   // Security Banner
   securityBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
     padding: 12,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerHigh,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   securityBannerText: {
     flex: 1,
@@ -2495,17 +4030,17 @@ const s = StyleSheet.create({
 
   // Sticky Bottom Bar
   stickyBottomBar: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     backgroundColor: T.surfaceLowest,
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+    paddingBottom: Platform.OS === "ios" ? 24 : 12,
     borderTopWidth: 1,
-    borderTopColor: '#c6c6cd',
-    shadowColor: '#000',
+    borderTopColor: "#c6c6cd",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.08,
     shadowRadius: 5,
@@ -2513,9 +4048,9 @@ const s = StyleSheet.create({
     gap: 6,
   },
   stickyTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   stickyLabel: {
     fontSize: 10,
@@ -2523,7 +4058,7 @@ const s = StyleSheet.create({
   },
   stickyGrandTotal: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.secondary,
     letterSpacing: -0.3,
   },
@@ -2532,8 +4067,8 @@ const s = StyleSheet.create({
     color: T.onSurfaceVariant,
   },
   sslBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
     backgroundColor: T.surfaceContainer,
     paddingHorizontal: 8,
@@ -2542,32 +4077,37 @@ const s = StyleSheet.create({
   },
   sslText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurfaceVariant,
   },
   signContractBtn: {
     height: 48,
+    minHeight: 48,
     backgroundColor: T.secondary,
     borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
     shadowColor: T.secondary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
+    paddingHorizontal: 16,   // ← THÊM: padding để text không sát mép
+
   },
   signContractBtnText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onPrimary,
+     flexShrink: 1,           // ← THÊM
+     textAlign: "center",     // ← THÊM
   },
   securityMicroRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 12,
     paddingTop: 2,
   },
@@ -2581,47 +4121,47 @@ const s = StyleSheet.create({
     backgroundColor: T.surfaceLowest,
     borderRadius: 16,
     padding: 20,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   successCircleIcon: {
     marginBottom: 10,
   },
   successHeadline: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 4,
   },
   successCodeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
     letterSpacing: 0.5,
     marginBottom: 16,
   },
   pinAccessBox: {
-    width: '100%',
+    width: "100%",
     backgroundColor: T.surfaceLow,
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1.5,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
     marginBottom: 16,
   },
   pinAccessLabel: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#1D4ED8',
+    fontWeight: "800",
+    color: "#1D4ED8",
     letterSpacing: 0.8,
     marginBottom: 4,
   },
   pinCodeLarge: {
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.onSurface,
     letterSpacing: 4,
     marginVertical: 4,
@@ -2629,23 +4169,23 @@ const s = StyleSheet.create({
   pinDesc: {
     fontSize: 11,
     color: T.onSurfaceVariant,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 16,
     marginTop: 4,
   },
   summarySpecsBox: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
+    width: "100%",
+    backgroundColor: "#f8fafc",
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     gap: 6,
     marginBottom: 16,
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   summaryLabel: {
     fontSize: 12,
@@ -2657,93 +4197,96 @@ const s = StyleSheet.create({
   },
   summaryValBold: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
   manageBookingBtn: {
-    width: '100%',
+    width: "100%",
     height: 46,
     backgroundColor: T.secondary,
     borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
   manageBookingBtnText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onPrimary,
   },
   bookAnotherBtn: {
-    width: '100%',
+    width: "100%",
     height: 44,
     backgroundColor: T.surfaceLowest,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
   },
   bookAnotherBtnText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
   // ─── Step 2 Deposit Highlight Card ───────────────────────────
   depositHighlightCard: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: "#eff6ff",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1.5,
-    borderColor: '#ffedd5',
+    borderColor: "#bfdbfe",
     marginTop: 12,
   },
   depositHighlightTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: T.secondary,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1d4ed8",
+    flexWrap:"wrap"
+    
   },
   depositHighlightAmount: {
     fontSize: 22,
-    fontWeight: '900',
-    color: T.secondary,
+    fontWeight: "900",
+    color: "#1d4ed8",
     marginBottom: 4,
   },
   depositHighlightSub: {
     fontSize: 11,
-    color: '#9a3412',
+    color: "#1e40af",
     lineHeight: 16,
+      flexShrink: 1,  
   },
   // ─── Step 3 SePay VietQR Styles ──────────────────────────────
   qrPendingBadge: {
-    backgroundColor: '#fef3c7',
+    backgroundColor: "#dbeafe",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#fde68a',
+    borderColor: "#bfdbfe",
   },
   qrPendingText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#b45309',
+    fontWeight: "700",
+    color: "#1d4ed8",
   },
   countdownCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff7ed',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: "#bfdbfe",
     gap: 12,
     marginBottom: 14,
   },
   countdownTitle: {
     fontSize: 13,
     color: T.onSurface,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 2,
   },
   countdownSub: {
@@ -2751,13 +4294,13 @@ const s = StyleSheet.create({
     color: T.onSurfaceVariant,
   },
   qrCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    shadowColor: '#000000',
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
@@ -2766,60 +4309,60 @@ const s = StyleSheet.create({
   },
   qrCardTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.onSurface,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 4,
   },
   qrCardSub: {
     fontSize: 12,
     color: T.onSurfaceVariant,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 16,
   },
   qrImageFrame: {
     width: 240,
     height: 240,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 16,
     padding: 8,
     borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
-    shadowColor: '#000000',
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
   },
   qrImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   qrPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: 20,
   },
   bankDetailsList: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
+    width: "100%",
+    backgroundColor: "#f8fafc",
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     gap: 10,
     marginBottom: 12,
   },
   bankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: "#f1f5f9",
   },
   bankRowLabel: {
     fontSize: 12,
@@ -2827,13 +4370,13 @@ const s = StyleSheet.create({
   },
   bankRowVal: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurface,
   },
   copyMiniBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffedd5',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -2841,32 +4384,32 @@ const s = StyleSheet.create({
   },
   copyMiniText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: T.secondary,
+    fontWeight: "700",
+    color: "#2563eb",
   },
   transferWarningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef2f2',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
     borderRadius: 10,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#fee2e2',
+    borderColor: "#fee2e2",
     gap: 8,
-    width: '100%',
+    width: "100%",
   },
   transferWarningText: {
     flex: 1,
     fontSize: 11,
-    color: '#b91c1c',
+    color: "#b91c1c",
     lineHeight: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   simulateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
     borderRadius: 14,
     height: 48,
     borderWidth: 1.5,
@@ -2876,54 +4419,181 @@ const s = StyleSheet.create({
   },
   simulateBtnText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.secondary,
   },
   depositSuccessBox: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: "#f0fdf4",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: '#bbf7d0',
-    alignItems: 'center',
+    borderColor: "#bbf7d0",
+    alignItems: "center",
     marginBottom: 16,
-    width: '100%',
+    width: "100%",
   },
   depositSuccessTitle: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.green,
     letterSpacing: 0.5,
   },
   depositSuccessAmount: {
     fontSize: 26,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.green,
     marginBottom: 4,
   },
   depositSuccessSub: {
     fontSize: 12,
-    color: '#166534',
-    textAlign: 'center',
+    color: "#166534",
+    textAlign: "center",
     lineHeight: 17,
   },
   instructionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: "#bfdbfe",
     gap: 10,
     marginBottom: 16,
-    width: '100%',
+    width: "100%",
   },
   instructionText: {
     flex: 1,
     fontSize: 12,
-    color: '#1e40af',
+    color: "#1e40af",
     lineHeight: 18,
+  },
+  emptyStateWrap: {
+    padding: 32,
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: T.surfaceLowest,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#c6c6cd",
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: T.onSurface,
+    textAlign: "center",
+  },
+  emptyStateSub: {
+    fontSize: 12,
+    color: T.onSurfaceVariant,
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  emptyStateBtn: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: T.secondary,
+  },
+  emptyStateBtnText: {
+    color: T.onPrimary,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+
+  // ─── Facility Selection Styles ───────────────────────────────────────────
+  facilitySection: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+  },
+  facilityHeroBanner: {
+    backgroundColor: "#1e293b",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  facilityHeroBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  facilityHeroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#f59e0b",
+  },
+  facilityHeroBadgeText: {
+    color: "#93c5fd",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  facilityHeroTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  facilityHeroSub: {
+    color: "#cbd5e1",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  facilityListWrap: {
+    marginTop: 4,
+  },
+  activeFacilityBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 14,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  activeFacilityInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  activeFacilityHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
+  activeFacilityName: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#1e3a8a",
+  },
+  activeFacilityAddress: {
+    fontSize: 12,
+    color: "#3b82f6",
+  },
+  changeFacilityBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#93c5fd",
+  },
+  changeFacilityBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#2563EB",
   },
 });
 
@@ -2932,58 +4602,74 @@ function BottomNavBar({
   activeTab,
   onSelectTab,
 }: {
-  activeTab: 'search' | 'my-storage' | 'digital-key' | 'support';
-  onSelectTab: (tab: 'search' | 'my-storage' | 'digital-key' | 'support') => void;
+  activeTab: "search" | "my-storage" | "support";
+  onSelectTab: (
+    tab: "search" | "my-storage" | "support",
+  ) => void;
 }) {
   return (
     <View style={bn.container}>
-      {/* Tab 1: Tìm kho */}
-      <TouchableOpacity style={bn.tab} onPress={() => onSelectTab('search')} activeOpacity={0.7}>
+      {/* Tab 1: Thuê kho */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab("search")}
+        activeOpacity={0.7}
+      >
         <MaterialIcons
           name="search"
           size={24}
-          color={activeTab === 'search' ? T.secondary : T.onSurfaceVariant}
+          color={activeTab === "search" ? T.secondary : T.onSurfaceVariant}
         />
-        <Text style={[bn.tabLabel, activeTab === 'search' ? bn.tabLabelActive : bn.tabLabelInactive]}>
-          Tìm kho
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === "search" ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
+          Thuê kho
         </Text>
       </TouchableOpacity>
 
       {/* Tab 2: Kho của tôi */}
-      <TouchableOpacity style={bn.tab} onPress={() => onSelectTab('my-storage')} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab("my-storage")}
+        activeOpacity={0.7}
+      >
         <MaterialIcons
           name="inventory-2"
           size={22}
-          color={activeTab === 'my-storage' ? T.secondary : T.onSurfaceVariant}
+          color={activeTab === "my-storage" ? T.secondary : T.onSurfaceVariant}
         />
-        <Text style={[bn.tabLabel, activeTab === 'my-storage' ? bn.tabLabelActive : bn.tabLabelInactive]}>
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === "my-storage"
+              ? bn.tabLabelActive
+              : bn.tabLabelInactive,
+          ]}
+        >
           Kho của tôi
         </Text>
       </TouchableOpacity>
 
-      {/* Tab 3: Chìa khoá */}
-      <TouchableOpacity style={bn.tab} onPress={() => onSelectTab('digital-key')} activeOpacity={0.7}>
-        <View style={{ position: 'relative' }}>
-          <MaterialIcons
-            name="vpn-key"
-            size={22}
-            color={activeTab === 'digital-key' ? T.secondary : T.onSurfaceVariant}
-          />
-          <View style={bn.keyBadgeDot} />
-        </View>
-        <Text style={[bn.tabLabel, activeTab === 'digital-key' ? bn.tabLabelActive : bn.tabLabelInactive]}>
-          Chìa khoá
-        </Text>
-      </TouchableOpacity>
-
-      {/* Tab 4: Hỗ trợ */}
-      <TouchableOpacity style={bn.tab} onPress={() => onSelectTab('support')} activeOpacity={0.7}>
+      {/* Tab 3: Hỗ trợ */}
+      <TouchableOpacity
+        style={bn.tab}
+        onPress={() => onSelectTab("support")}
+        activeOpacity={0.7}
+      >
         <MaterialIcons
           name="support-agent"
           size={24}
-          color={activeTab === 'support' ? T.secondary : T.onSurfaceVariant}
+          color={activeTab === "support" ? T.secondary : T.onSurfaceVariant}
         />
-        <Text style={[bn.tabLabel, activeTab === 'support' ? bn.tabLabelActive : bn.tabLabelInactive]}>
+        <Text
+          style={[
+            bn.tabLabel,
+            activeTab === "support" ? bn.tabLabelActive : bn.tabLabelInactive,
+          ]}
+        >
           Hỗ trợ
         </Text>
       </TouchableOpacity>
@@ -2993,16 +4679,16 @@ function BottomNavBar({
 
 const bn = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingBottom: Platform.OS === "ios" ? 24 : 10,
     backgroundColor: T.surfaceLowest,
     borderTopWidth: 1,
     borderTopColor: T.outlineVariant,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
@@ -3010,8 +4696,8 @@ const bn = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 2,
   },
   tabLabel: {
@@ -3021,14 +4707,14 @@ const bn = StyleSheet.create({
   },
   tabLabelActive: {
     color: T.secondary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   tabLabelInactive: {
     color: T.onSurfaceVariant,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   keyBadgeDot: {
-    position: 'absolute',
+    position: "absolute",
     top: -2,
     right: -4,
     width: 7,
@@ -3044,10 +4730,10 @@ const ac = StyleSheet.create({
     backgroundColor: T.surfaceLowest,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
     marginBottom: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -3055,31 +4741,31 @@ const ac = StyleSheet.create({
   },
   mediaWrap: {
     height: 176,
-    position: 'relative',
+    position: "relative",
     backgroundColor: T.primaryContainer,
   },
   mediaImg: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   mediaGradient: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
   },
   liveBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(198, 198, 205, 0.3)',
-    shadowColor: '#000',
+    borderColor: "rgba(198, 198, 205, 0.3)",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -3092,11 +4778,11 @@ const ac = StyleSheet.create({
   },
   liveBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
   discountBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     right: 10,
     backgroundColor: T.secondaryContainer,
@@ -3106,29 +4792,29 @@ const ac = StyleSheet.create({
   },
   discountBadgeText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.surfaceLowest,
   },
   mediaBottomOverlay: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 10,
     left: 12,
     right: 12,
   },
   distanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
     marginBottom: 2,
   },
   distanceText: {
     fontSize: 11,
-    color: '#ffdbce',
-    fontWeight: '600',
+    color: "#bfdbfe",
+    fontWeight: "600",
   },
   mediaTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.surfaceLowest,
     lineHeight: 20,
     letterSpacing: -0.2,
@@ -3139,12 +4825,12 @@ const ac = StyleSheet.create({
     padding: 14,
   },
   metricGrid: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: T.surfaceLow,
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
-    borderColor: '#dce9ff',
+    borderColor: "#dce9ff",
     marginBottom: 10,
   },
   metricCol: {
@@ -3152,87 +4838,87 @@ const ac = StyleSheet.create({
   },
   metricColBorder: {
     borderLeftWidth: 1,
-    borderLeftColor: '#c6c6cd',
+    borderLeftColor: "#c6c6cd",
     paddingLeft: 10,
   },
   metricHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     marginBottom: 2,
   },
   metricLabel: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurfaceVariant,
   },
   metricValue: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.onSurface,
   },
 
   // Feature Chips
   featureChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 5,
     marginBottom: 12,
   },
   featureChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
     backgroundColor: T.surfaceContainer,
     borderWidth: 1,
-    borderColor: '#c6c6cd',
+    borderColor: "#c6c6cd",
   },
   featureChipText: {
     fontSize: 11,
     color: T.onSurfaceVariant,
-    fontWeight: '500',
+    fontWeight: "500",
   },
 
   // Price & CTA Tier
   footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    borderTopColor: "#f1f5f9",
   },
   originalPriceText: {
     fontSize: 11,
     color: T.outline,
-    textDecorationLine: 'line-through',
+    textDecorationLine: "line-through",
   },
   priceLabelText: {
     fontSize: 10,
     color: T.onSurfaceVariant,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   priceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    flexDirection: "row",
+    alignItems: "baseline",
     gap: 2,
   },
   priceAmount: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: "900",
     color: T.secondaryBrand,
   },
   pricePeriod: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.onSurfaceVariant,
   },
   ctaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     backgroundColor: T.secondaryContainer,
     paddingHorizontal: 16,
@@ -3246,7 +4932,141 @@ const ac = StyleSheet.create({
   },
   ctaBtnText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: "800",
     color: T.surfaceLowest,
+  },
+});
+
+// ─── Facility Card Styles ─────────────────────────────────────────────────
+const fc = StyleSheet.create({
+  card: {
+    backgroundColor: T.surfaceLowest,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  imageWrap: {
+    position: "relative",
+    width: "100%",
+    height: 160,
+    backgroundColor: "#e2e8f0",
+  },
+  image: {
+    width: "100%",
+    height: "100%",
+  },
+  imageGradient: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(15, 23, 42, 0.15)",
+  },
+  districtBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  districtBadgeText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  availableBadge: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#16a34a",
+  },
+  availableBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  body: {
+    padding: 16,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  addressRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginBottom: 12,
+  },
+  addressText: {
+    fontSize: 13,
+    color: "#475569",
+    flex: 1,
+    lineHeight: 18,
+  },
+  featureRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  featurePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+  },
+  featurePillText: {
+    fontSize: 11,
+    color: "#1d4ed8",
+    fontWeight: "600",
+  },
+  selectBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  selectBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

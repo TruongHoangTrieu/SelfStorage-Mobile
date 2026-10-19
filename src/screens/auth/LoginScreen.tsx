@@ -10,23 +10,25 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { apiRequest, setAuthToken } from '../../api';
 
-// Design tokens matching current app theme
+// Design tokens matching Stitch design system
 const T = {
-  bg: '#f8f9ff',
+  bg: '#f7f9fd',
   surface: '#ffffff',
-  surfaceSubtle: '#eff4ff',
-  onSurface: '#0b1c30',
-  onSurfaceVariant: '#45464d',
-  primary: '#0b1c30',
-  brand: '#fd651e',
-  brandDark: '#a73a00',
-  brandLight: '#ffdbce',
+  surfaceSubtle: '#f1f5f9',
+  onSurface: '#131b2e',
+  onSurfaceVariant: '#434655',
+  primary: '#131b2e',
+  brand: '#2563eb',
+  brandDark: '#1d4ed8',
+  brandLight: '#dbeafe',
   border: '#e2e8f0',
-  outline: '#c6c6cd',
+  outline: '#737686',
+  outlineVariant: '#c3c6d7',
   green: '#16a34a',
   greenLight: '#dcfce7',
   blue: '#2563eb',
@@ -94,6 +96,7 @@ export default function LoginScreen({
 
       if (Platform.OS === 'web') {
         try {
+          if (token) localStorage.setItem('token', token);
           localStorage.setItem('user', JSON.stringify(userData));
         } catch {
           // ignore
@@ -203,6 +206,7 @@ export default function LoginScreen({
 
       if (Platform.OS === 'web') {
         try {
+          if (token) localStorage.setItem('token', token);
           localStorage.setItem('user', JSON.stringify(userData));
         } catch {
           // ignore
@@ -228,29 +232,31 @@ export default function LoginScreen({
         <View style={s.topNav}>
           {onClose ? (
             <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7}>
-              <MaterialIcons name="close" size={24} color={T.onSurface} />
+              <MaterialIcons name="close" size={22} color={T.onSurface} />
             </TouchableOpacity>
           ) : (
             <View style={{ width: 40 }} />
           )}
-          <View style={s.topBrand}>
-            <View style={s.logoIconWrap}>
-              <MaterialCommunityIcons name="cube-outline" size={20} color="#ffffff" />
-            </View>
-            <Text style={s.brandTitle}>Kho Thông Minh</Text>
-          </View>
-          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Prominent Logo */}
+        <View style={s.topBrand}>
+          <Image
+            source={require('../../../assets/logo.png')}
+            style={s.brandLogoImg}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Hero Banner */}
         <View style={s.heroSection}>
           <Text style={s.heroTitle}>
-            {mode === 'login' ? 'Chào Mừng Trở Lại!' : 'Tạo Tài Khoản Mới'}
+            {mode === 'login' ? 'Đăng Nhập Tài Khoản' : 'Tạo Tài Khoản Mới'}
           </Text>
           <Text style={s.heroSubtitle}>
             {mode === 'login'
-              ? 'Đăng nhập để quản lý ô kho tự quản, đặt buồng lưu trữ và mở khoá thông minh 24/7.'
-              : 'Đăng ký tài khoản khách hàng để bắt đầu trải nghiệm hệ thống kho tự quản thông minh.'}
+              ? 'Đăng nhập để quản lý buồng kho tự quản, mã PIN thông minh và ra vào 24/7.'
+              : 'Trải nghiệm hệ thống lưu trữ tự quản hiện đại, bảo mật và tiện lợi.'}
           </Text>
         </View>
 
@@ -476,13 +482,7 @@ export default function LoginScreen({
           </View>
         )}
 
-        {/* Security Note */}
-        <View style={s.securityFooter}>
-          <MaterialIcons name="verified-user" size={16} color={T.green} />
-          <Text style={s.securityText}>
-            Bảo mật SSL 256-bit • Mã khóa PIN & Hợp đồng số bảo vệ 24/7
-          </Text>
-        </View>
+        
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -515,23 +515,13 @@ const s = StyleSheet.create({
     borderColor: T.border,
   },
   topBrand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: T.brand,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 20,
   },
-  brandTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: T.onSurface,
-    letterSpacing: -0.3,
+  brandLogoImg: {
+    height: 72,
+    width: 260,
   },
   heroSection: {
     marginBottom: 24,

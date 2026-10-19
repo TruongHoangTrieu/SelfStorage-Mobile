@@ -17,7 +17,7 @@ interface CustomerSidebarProps {
   activeTab: CustomerTab;
   onSelectTab: (tab: CustomerTab) => void;
   rentedUnitsCount?: number;
-  onSwitchToStaff: () => void;
+  onSwitchToStaff?: () => void;
 }
 
 export default function CustomerSidebar({
@@ -29,9 +29,8 @@ export default function CustomerSidebar({
   onSwitchToStaff,
 }: CustomerSidebarProps) {
   const menuItems: { id: CustomerTab; icon: string; label: string; badge?: string }[] = [
-    { id: 'my_units', icon: '🏠', label: 'Ô kho của tôi', badge: `${rentedUnitsCount} ô` },
+    { id: 'my_units', icon: '🏠', label: 'Kho của tôi', badge: `${rentedUnitsCount} ô` },
     { id: 'payments', icon: '💳', label: 'Thanh toán & Hóa đơn' },
-    { id: 'access', icon: '🔑', label: 'Truy cập & Bảo mật' },
     { id: 'documents', icon: '📄', label: 'Tài liệu & Hợp đồng' },
     { id: 'support', icon: '🎧', label: 'Hỗ trợ & Trợ giúp' },
     { id: 'profile', icon: '👤', label: 'Hồ sơ & Cài đặt' },
@@ -45,6 +44,13 @@ export default function CustomerSidebar({
         <View style={styles.sidebarContainer}>
           {/* Header Customer Profile */}
           <View style={styles.profileHeader}>
+            <View style={{ marginBottom: 14, alignItems: 'flex-start' }}>
+              <Image
+                source={require('../../../assets/logo.png')}
+                style={{ height: 48, width: 180 }}
+                resizeMode="contain"
+              />
+            </View>
             <View style={styles.avatarRow}>
               <Image source={{ uri: CURRENT_CUSTOMER_USER.avatar }} style={styles.avatar} />
               <View style={{ flex: 1 }}>
@@ -95,23 +101,8 @@ export default function CustomerSidebar({
             })}
           </ScrollView>
 
-          {/* Chuyển Phân Hệ Nhanh & Footer */}
+          {/* Footer Info */}
           <View style={styles.footerSection}>
-            <TouchableOpacity
-              style={styles.switchRoleBtn}
-              onPress={() => {
-                onClose();
-                onSwitchToStaff();
-              }}
-            >
-              <Text style={styles.switchRoleIcon}>🔄</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchRoleTitle}>Chuyển sang Cổng Nhân Viên</Text>
-                <Text style={styles.switchRoleSubtitle}>Bàn giao kho & Quản lý cơ sở</Text>
-              </View>
-              <Text style={styles.switchRoleArrow}>→</Text>
-            </TouchableOpacity>
-
             <View style={styles.appVersionRow}>
               <Text style={styles.appVersionText}>SelfStorage Customer Portal v2.4</Text>
               <Text style={styles.appSupportPhone}>Hotline 24/7: 1900 8866</Text>

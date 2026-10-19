@@ -8,6 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { StaffUser } from '../../types/handover';
+import { useAuth } from '../../context/AuthContext';
 
 interface StaffSettingsScreenProps {
   currentUser: StaffUser;
@@ -20,6 +21,7 @@ export default function StaffSettingsScreen({
   onOpenSidebar,
   onSwitchToCustomer,
 }: StaffSettingsScreenProps) {
+  const { handleLogout } = useAuth();
   const handleAlert = (title: string, msg: string) => {
     Alert.alert(title, msg);
   };
@@ -91,10 +93,28 @@ export default function StaffSettingsScreen({
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingRow} onPress={() => handleAlert('Đăng xuất', 'Đã lưu ca trực của nhân viên.')}>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              Alert.alert(
+                'Đăng xuất',
+                'Bạn có chắc chắn muốn kết thúc ca trực và đăng xuất tài khoản?',
+                [
+                  { text: 'Hủy', style: 'cancel' },
+                  {
+                    text: 'Đăng xuất',
+                    style: 'destructive',
+                    onPress: () => {
+                      handleLogout();
+                    },
+                  },
+                ]
+              );
+            }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={[styles.settingName, { color: '#DC2626' }]}>🚪 Kết thúc ca trực / Đăng xuất</Text>
-              <Text style={styles.settingDesc}>Bàn giao ca trực cho nhân viên tiếp theo</Text>
+              <Text style={styles.settingDesc}>Đăng xuất tài khoản nhân viên và về trang chính</Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>

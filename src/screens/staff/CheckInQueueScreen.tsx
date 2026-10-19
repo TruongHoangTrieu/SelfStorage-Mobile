@@ -35,10 +35,11 @@ export default function CheckInQueueScreen({
   const stats = useMemo(() => {
     return {
       total: appointments.length,
-      pending: appointments.filter((a) => a.status === 'pending').length,
+      pending: appointments.filter((a) => a.status === 'pending' || a.status === 'confirmed').length,
       arrived: appointments.filter((a) => a.status === 'arrived').length,
       in_progress: appointments.filter((a) => a.status === 'in_progress').length,
       completed: appointments.filter((a) => a.status === 'completed').length,
+      cancelled: appointments.filter((a) => a.status === 'cancelled' || a.status === 'expired').length,
     };
   }, [appointments]);
 
@@ -53,7 +54,13 @@ export default function CheckInQueueScreen({
         app.id.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchStatus =
-        selectedStatus === 'all' || app.status === selectedStatus;
+        selectedStatus === 'all'
+          ? true
+          : selectedStatus === 'cancelled'
+          ? app.status === 'cancelled' || app.status === 'expired'
+          : selectedStatus === 'pending'
+          ? app.status === 'pending' || app.status === 'confirmed'
+          : app.status === selectedStatus;
 
       return matchSearch && matchStatus;
     });
@@ -79,6 +86,12 @@ export default function CheckInQueueScreen({
             <Text style={[styles.badgeText, { color: '#B45309' }]}>⏳ Chờ xử lý</Text>
           </View>
         );
+      case 'confirmed':
+        return (
+          <View style={[styles.badge, { backgroundColor: '#E0F2FE' }]}>
+            <Text style={[styles.badgeText, { color: '#0369A1' }]}>✔️ Đã xác nhận</Text>
+          </View>
+        );
       case 'arrived':
         return (
           <View style={[styles.badge, { backgroundColor: '#DBEAFE' }]}>
@@ -95,6 +108,18 @@ export default function CheckInQueueScreen({
         return (
           <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}>
             <Text style={[styles.badgeText, { color: '#15803D' }]}>✓ Hoàn tất</Text>
+          </View>
+        );
+      case 'cancelled':
+        return (
+          <View style={[styles.badge, { backgroundColor: '#FEE2E2' }]}>
+            <Text style={[styles.badgeText, { color: '#DC2626' }]}>❌ Đã hủy</Text>
+          </View>
+        );
+      case 'expired':
+        return (
+          <View style={[styles.badge, { backgroundColor: '#F1F5F9' }]}>
+            <Text style={[styles.badgeText, { color: '#64748B' }]}>⏱️ Hết hạn</Text>
           </View>
         );
       default:
@@ -178,6 +203,14 @@ export default function CheckInQueueScreen({
         >
           <Text style={[styles.statLabel, selectedStatus === 'completed' && styles.statLabelActive]}>Hoàn tất</Text>
           <Text style={[styles.statNumber, { color: '#059669' }]}>{stats.completed}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.statPill, selectedStatus === 'cancelled' && styles.statPillActive]}
+          onPress={() => setSelectedStatus('cancelled')}
+        >
+          <Text style={[styles.statLabel, selectedStatus === 'cancelled' && styles.statLabelActive]}>Đã hủy ({stats.cancelled})</Text>
+          <Text style={[styles.statNumber, { color: '#DC2626' }]}>{stats.cancelled}</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -272,13 +305,21 @@ export default function CheckInQueueScreen({
                     </View>
                   ) : null}
 
-                  {/* Action Button: BẮT ĐẦU NHẬN KHO */}
+                  {/* Action Button: BẮT ĐẦU NHẬN KHO HOẶC HUY / HOÀN TẤT */}
                   <View style={styles.cardActionRow}>
                     <Text style={styles.orderCodeText}>#{app.id.slice(-6).toUpperCase()}</Text>
 
                     {app.status === 'completed' ? (
                       <View style={styles.completedTag}>
-                        <Text style={styles.completedTagText}>✓ Đã Bàn Giao ({app.contractCode || 'HĐ Kích Hoạt'})</Text>
+                        <Text style={styles.completedTagText}>✓ Đã Bàn Giao</Text>
+                      </View>
+                    ) : app.status === 'cancelled' ? (
+                      <View style={styles.cancelledTag}>
+                        <Text style={styles.cancelledTagText}>❌ Đã Hủy Đơn</Text>
+                      </View>
+                    ) : app.status === 'expired' ? (
+                      <View style={styles.expiredTag}>
+                        <Text style={styles.expiredTagText}>⏱️ Quá Hạn Nhận</Text>
                       </View>
                     ) : (
                       <TouchableOpacity
@@ -289,7 +330,7 @@ export default function CheckInQueueScreen({
                         onPress={() => onStartHandover(app)}
                       >
                         <Text style={styles.startHandoverText}>
-                          {app.status === 'in_progress' ? 'Tiếp Tục Bàn Giao →' : '[ Bắt đầu nhận kho ] →'}
+                          {app.status === 'in_progress' ? 'Tiếp Tục Bàn Giao →' : 'Bắt đầu nhận kho'}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -302,7 +343,10 @@ export default function CheckInQueueScreen({
           // CHẾ ĐỘ KANBAN THEO CỘT
           <View style={styles.kanbanContainer}>
             {['pending', 'arrived', 'in_progress', 'completed'].map((colStatus) => {
-              const colItems = filteredAppointments.filter((a) => a.status === colStatus);
+              const colItems = filteredAppointments.filter((a) => {
+                if (colStatus === 'pending') return a.status === 'pending' || a.status === 'confirmed';
+                return a.status === colStatus;
+              });
               const colTitle =
                 colStatus === 'pending' ? 'Chờ xử lý' :
                 colStatus === 'arrived' ? 'Đã đến' :
@@ -344,7 +388,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   topBar: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#004ac6',
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -355,7 +399,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#1E40AF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -377,7 +421,7 @@ const styles = StyleSheet.create({
   },
   viewToggleGroup: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#1E40AF',
     borderRadius: 8,
     padding: 2,
   },
@@ -387,15 +431,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   viewToggleBtnActive: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
   },
   viewToggleText: {
-    color: '#94A3B8',
+    color: '#BFDBFE',
     fontSize: 11,
     fontWeight: '700',
   },
   viewToggleTextActive: {
-    color: '#FFFFFF',
+    color: '#004ac6',
   },
   statScroll: {
     backgroundColor: '#FFFFFF',
@@ -629,6 +673,32 @@ const styles = StyleSheet.create({
   },
   completedTagText: {
     color: '#15803D',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cancelledTag: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelledTagText: {
+    color: '#DC2626',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  expiredTag: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  expiredTagText: {
+    color: '#64748B',
     fontSize: 11,
     fontWeight: '800',
   },
