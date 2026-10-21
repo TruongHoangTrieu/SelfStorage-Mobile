@@ -170,6 +170,7 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     unitCode: string;
     condition: string;
     notes?: string;
+    photos?: string[];
   }) => {
     setIsSubmittingHandover(true);
     try {
@@ -195,7 +196,7 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             reservationId: app.rawId,
             condition: updatedData.condition,
             notes: updatedData.notes,
-            unitCode: updatedData.unitCode,
+            photos: updatedData.photos,
           });
 
           if (checkInResponse?.contract) {

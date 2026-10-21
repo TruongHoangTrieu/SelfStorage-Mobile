@@ -15,8 +15,8 @@ export interface CapturedPhoto {
  * Nếu để trống, hệ thống sẽ tự động dùng ảnh Base64 / Local URI mà không cần tài khoản thứ 3!
  */
 export const CLOUDINARY_CONFIG = {
-  cloudName: '', // VD: 'my-selfstorage-cloud'
-  uploadPreset: '', // VD: 'selfstorage_unsigned'
+  cloudName: process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'micb9okr',
+  uploadPreset: process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'selfstorage_uploads',
 };
 
 /**
@@ -112,17 +112,26 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
  * Upload ảnh lên Cloudinary (nếu có cấu hình), hoặc fallback sang Base64 / Local URI
  */
 export async function uploadImageToStorage(photo: CapturedPhoto): Promise<string> {
+  // Nếu ảnh đã là URL online (https://res.cloudinary.com... hoặc ảnh web), không cần upload lại
+  if (photo.uri && (photo.uri.startsWith('http://') || photo.uri.startsWith('https://')) && !photo.uri.startsWith('file://')) {
+    return photo.uri;
+  }
+
   // Nếu có cấu hình Cloudinary, upload lên CDN
   if (CLOUDINARY_CONFIG.cloudName && CLOUDINARY_CONFIG.uploadPreset) {
     try {
       const data = new FormData();
-      if (Platform.OS === 'web' && photo.base64) {
+      // Cloudinary API hỗ trợ Base64 Data URI trực tiếp trên cả Mobile (Android/iOS) và Web,
+      // giúp tránh hoàn toàn lỗi đọc file hệ thống của React Native.
+      if (photo.base64) {
         data.append('file', photo.base64);
       } else {
+        const uriParts = (photo.uri || '').split('.');
+        const fileType = uriParts[uriParts.length - 1] || 'jpg';
         data.append('file', {
           uri: photo.uri,
-          type: 'image/jpeg',
-          name: 'storage_unit.jpg',
+          name: `upload_${Date.now()}.${fileType}`,
+          type: `image/${fileType === 'png' ? 'png' : 'jpeg'}`,
         } as any);
       }
       data.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
@@ -139,11 +148,23 @@ export async function uploadImageToStorage(photo: CapturedPhoto): Promise<string
       if (json.secure_url) {
         return json.secure_url;
       }
+      if (json.error) {
+        console.warn('Cloudinary upload warning:', json.error.message);
+      }
     } catch (err) {
-      console.warn('Upload Cloudinary thất bại, tự động chuyển sang Data URI:', err);
+      console.warn('Upload Cloudinary thất bại, chuyển sang URI ảnh:', err);
     }
   }
 
-  // Fallback: Trả về Base64 Data URI hoặc URI ảnh cục bộ
-  return photo.base64 || photo.uri;
+  // Fallback: Ưu tiên trả về URI ảnh ngắn để KHÔNG gây lỗi HTTP 413 (Payload Too Large) ở Backend
+  return photo.uri || photo.base64 || '';
+}
+
+/**
+ * Upload danh sách nhiều ảnh cùng lúc lên Cloudinary / CDN
+ */
+export async function uploadMultipleImagesToStorage(photos: CapturedPhoto[]): Promise<string[]> {
+  if (!photos || photos.length === 0) return [];
+  const results = await Promise.all(photos.map((p) => uploadImageToStorage(p)));
+  return results.filter(Boolean);
 }

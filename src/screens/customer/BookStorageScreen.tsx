@@ -59,6 +59,7 @@ interface Props {
   ) => void;
   activeBottomTab?: CustomerTabType;
   onOpenLogin?: () => void;
+  onLogout?: () => void;
   currentUser?: any;
 }
 
@@ -122,6 +123,7 @@ export default function BookStorageScreen({
   onNavigateTab,
   activeBottomTab = "search",
   onOpenLogin,
+  onLogout,
   currentUser,
 }: Props) {
   // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
@@ -701,6 +703,30 @@ export default function BookStorageScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleAuthAction = () => {
+    if (currentUser) {
+      const confirmLogout = () => {
+        onLogout?.();
+      };
+      if (Platform.OS === 'web') {
+        if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+          confirmLogout();
+        }
+      } else {
+        Alert.alert(
+          'Đăng xuất',
+          `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
+          [
+            { text: 'Hủy', style: 'cancel' },
+            { text: 'Đăng xuất', style: 'destructive', onPress: confirmLogout },
+          ]
+        );
+      }
+    } else {
+      onOpenLogin?.();
+    }
+  };
+
   if (loading) {
     return (
       <View style={s.loadWrap}>
@@ -751,32 +777,28 @@ export default function BookStorageScreen({
                 </View>
 
                 <View style={s.topActionsRow}>
-                  {onOpenLogin && (
+                  {(onOpenLogin || onLogout) && (
                     <TouchableOpacity
-                      style={s.loginHeaderBtn}
-                      onPress={onOpenLogin}
+                      style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+                      onPress={handleAuthAction}
                       activeOpacity={0.8}
                     >
                       <MaterialIcons
-                        name={currentUser ? "account-circle" : "person-outline"}
+                        name={currentUser ? "logout" : "login"}
                         size={16}
-                        color={currentUser ? T.secondary : T.onSurface}
+                        color={currentUser ? "#DC2626" : T.onSurface}
                       />
                       <Text
                         style={[
                           s.loginHeaderText,
                           currentUser && {
-                            color: T.secondary,
+                            color: "#DC2626",
                             fontWeight: "700",
                           },
                         ]}
                         numberOfLines={1}
                       >
-                        {currentUser
-                          ? currentUser.fullName
-                            ? currentUser.fullName.split(" ").slice(-1)[0]
-                            : "Tài khoản"
-                          : "Đăng nhập"}
+                        {currentUser ? "Đăng xuất" : "Đăng nhập"}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -813,11 +835,11 @@ export default function BookStorageScreen({
                       >
                         <MaterialIcons name="person" size={26} color={T.primary} />
                       </TouchableOpacity>
-                      <View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={s.greetingSub}>
                           {currentUser ? "Xin chào," : "Chào mừng bạn,"}
                         </Text>
-                        <Text style={s.greetingName} numberOfLines={1}>
+                        <Text style={s.greetingName} numberOfLines={1} ellipsizeMode="tail">
                           {currentUser?.fullName || (currentUser?.email ? currentUser.email.split("@")[0] : "Khách hàng")}
                         </Text>
                       </View>
@@ -1080,33 +1102,7 @@ export default function BookStorageScreen({
                                   style={s.featuredImage}
                                   resizeMode="cover"
                                 />
-                                <View
-                                  style={[
-                                    s.cardBadgeTopLeft,
-                                    card.badgeType === "amber" && s.cardBadgeAmber,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      s.cardBadgeText,
-                                      card.badgeType === "amber" && s.cardBadgeAmberText,
-                                    ]}
-                                  >
-                                    {card.badge}
-                                  </Text>
-                                </View>
 
-                                <TouchableOpacity
-                                  style={s.cardHeartBtn}
-                                  activeOpacity={0.8}
-                                  onPress={() => toggleFavorite(card.id)}
-                                >
-                                  <MaterialIcons
-                                    name={isFav ? "favorite" : "favorite-border"}
-                                    size={18}
-                                    color={isFav ? "#ef4444" : T.outline}
-                                  />
-                                </TouchableOpacity>
 
                                 <View style={s.cardDotsWrap}>
                                   <View style={[s.cardDot, s.cardDotActive]} />
@@ -1453,12 +1449,7 @@ export default function BookStorageScreen({
                               </View>
                             )}
                             <View style={ac.mediaGradient} />
-                            <View style={ac.liveBadge}>
-                              <View style={ac.liveDot} />
-                              <Text style={ac.liveBadgeText}>
-                                {item.badgeStatus}
-                              </Text>
-                            </View>
+
                             {item.badgeDiscount && (
                               <View style={ac.discountBadge}>
                                 <Text style={ac.discountBadgeText}>
@@ -2657,11 +2648,13 @@ const s = StyleSheet.create({
     fontWeight: "800",
     color: "#131b2e",
     letterSpacing: -0.3,
+    flexShrink: 1,
   },
   greetingRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexShrink: 0,
   },
   iconCircleBtn: {
     width: 40,
@@ -3175,6 +3168,10 @@ const s = StyleSheet.create({
     borderColor: "#c6c6cd",
     maxWidth: 130,
     flexShrink: 0,
+  },
+  logoutHeaderBtn: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
   },
   loginHeaderText: {
     fontSize: 11,

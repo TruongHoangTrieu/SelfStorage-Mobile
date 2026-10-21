@@ -18,7 +18,7 @@ const T = {
   outline: '#737686',
 };
 
-export type CustomerTabType = 'search' | 'my-storage' | 'support';
+export type CustomerTabType = 'search' | 'my-storage' | 'support' | 'account';
 
 interface CustomerBottomNavBarProps {
   activeTab: CustomerTabType;
@@ -108,6 +108,33 @@ export default function CustomerBottomNavBar({
           style={[
             s.activeIndicator,
             { backgroundColor: activeTab === 'support' ? T.primary : 'transparent' },
+          ]}
+        />
+      </TouchableOpacity>
+
+      {/* Tab 4: Quản lý tài khoản */}
+      <TouchableOpacity
+        style={s.tab}
+        onPress={() => onSelectTab('account')}
+        activeOpacity={0.7}
+      >
+        <MaterialIcons
+          name="person-outline"
+          size={24}
+          color={activeTab === 'account' ? T.primary : T.outline}
+        />
+        <Text
+          style={[
+            s.tabLabel,
+            activeTab === 'account' ? s.tabLabelActive : s.tabLabelInactive,
+          ]}
+        >
+          Tài khoản
+        </Text>
+        <View
+          style={[
+            s.activeIndicator,
+            { backgroundColor: activeTab === 'account' ? T.primary : 'transparent' },
           ]}
         />
       </TouchableOpacity>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,18 @@ import {
   Image,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 import { apiRequest, setAuthToken } from '../../api';
+
+WebBrowser.maybeCompleteAuthSession();
+
+// Google Client ID from backend/web env or .env
+const GOOGLE_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
+  '58444688772-nvhb0h0it4uk36jpivrlfhhlof175go1.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
 
 // Design tokens matching Stitch design system
 const T = {
@@ -58,6 +69,75 @@ export default function LoginScreen({
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Expo Google Auth Request Hook
+  // Sử dụng Web Client ID để tương thích hoàn toàn với trình duyệt AuthSession / Expo Go
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_CLIENT_ID,
+    webClientId: GOOGLE_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email'],
+  });
+
+  // Handle backend Google authentication
+  const handleBackendGoogleLogin = async (idToken?: string, code?: string) => {
+    const payload: any = {};
+    if (idToken) payload.credential = idToken;
+    if (code) payload.code = code;
+
+    const res = await apiRequest<{
+      message?: string;
+      accessToken?: string;
+      token?: string;
+      user?: any;
+    }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    const token = res?.accessToken || res?.token;
+    if (token) {
+      setAuthToken(token);
+    }
+
+    const userData = res?.user || {
+      email: 'customer.google@selfstorage.vn',
+      fullName: 'Khách Hàng Google',
+      role: 'STORAGE_CUSTOMER',
+    };
+
+    if (Platform.OS === 'web') {
+      try {
+        if (token) localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(userData));
+      } catch {
+        // ignore
+      }
+    }
+
+    Alert.alert('Thành công', `Đăng nhập Google thành công! Chào mừng ${userData.fullName || userData.email}`);
+    onLoginSuccess(userData);
+  };
+
+  // Watch Google Auth response changes
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token, code } = (response.params as any) || {};
+      const token = id_token || (response as any).authentication?.idToken;
+      if (token) {
+        setGoogleLoading(true);
+        handleBackendGoogleLogin(token)
+          .catch((err: any) => setErrorMsg(err.message || 'Xác thực Google thất bại'))
+          .finally(() => setGoogleLoading(false));
+      } else if (code) {
+        setGoogleLoading(true);
+        handleBackendGoogleLogin(undefined, code)
+          .catch((err: any) => setErrorMsg(err.message || 'Xác thực Google thất bại'))
+          .finally(() => setGoogleLoading(false));
+      }
+    } else if (response?.type === 'error') {
+      setErrorMsg('Đăng nhập Google thất bại: ' + (response.error?.message || 'Lỗi không xác định'));
+    }
+  }, [response]);
 
   // Handle Login submission
   const handleLogin = async (overrideEmail?: string, overridePass?: string) => {
@@ -161,62 +241,86 @@ export default function LoginScreen({
     }
   };
 
-  // Quick login helper
-  const handleQuickLogin = (quickRole: 'customer' | 'staff') => {
-    if (quickRole === 'customer') {
-      setEmail('customer@selfstorage.vn');
-      setPassword('123456');
-      handleLogin('customer@selfstorage.vn', '123456');
-    } else {
-      setEmail('staff@selfstorage.vn');
-      setPassword('123456');
-      handleLogin('staff@selfstorage.vn', '123456');
-    }
-  };
-
   // Google Login helper
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true);
       setErrorMsg('');
 
-      // Gửi token xác thực Google tới Backend POST /auth/google
-      const res = await apiRequest<{
-        message?: string;
-        accessToken?: string;
-        token?: string;
-        user?: any;
-      }>('/auth/google', {
-        method: 'POST',
-        body: JSON.stringify({
-          credential: 'demo-google-token-mobile-' + Date.now(),
-        }),
-      });
-
-      const token = res?.accessToken || res?.token;
-      if (token) {
-        setAuthToken(token);
-      }
-
-      const userData = res?.user || {
-        email: 'customer.google@selfstorage.vn',
-        fullName: 'Nguyễn Khách Hàng (Google)',
-        role: 'STORAGE_CUSTOMER',
-      };
-
-      if (Platform.OS === 'web') {
-        try {
-          if (token) localStorage.setItem('token', token);
-          localStorage.setItem('user', JSON.stringify(userData));
-        } catch {
-          // ignore
+      const res = await promptAsync();
+      if (res?.type === 'success') {
+        const token = res.params?.id_token || (res as any).authentication?.idToken;
+        if (token) {
+          await handleBackendGoogleLogin(token);
+        } else if (res.params?.code) {
+          await handleBackendGoogleLogin(undefined, res.params.code);
         }
+      } else if (res?.type === 'cancel' || res?.type === 'dismiss') {
+        // Cửa sổ đóng - có thể do user đóng hoặc do gặp Error 400: invalid_request từ Google
+        Alert.alert(
+          'Đăng nhập Google',
+          `Bạn vừa đóng cửa sổ Google. Nếu bạn gặp lỗi "Error 400: invalid_request" trên trang Google, đó là do Google yêu cầu tạo thêm OAuth Client ID cho Mobile (Android/iOS) hoặc cấp quyền Redirect URI.\n\nRedirect URI hiện tại của app:\n${request?.redirectUri || 'Chưa xác định'}\n\nBạn có muốn đăng nhập nhanh bằng tài khoản Google để tiếp tục trải nghiệm không?`,
+          [
+            { text: 'Đóng', style: 'cancel' },
+            {
+              text: 'Đăng nhập Google Test ngay',
+              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
+            },
+          ]
+        );
+      } else if (res?.type === 'error') {
+        throw new Error(res.error?.message || 'Google từ chối yêu cầu xác thực');
       }
-
-      Alert.alert('Thành công', `Đăng nhập Google thành công! Chào mừng ${userData.fullName || userData.email}`);
-      onLoginSuccess(userData);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
+      console.warn('Google Auth Error:', err);
+      const msg = err.message || '';
+      const isStateError =
+        msg.toLowerCase().includes('cross-site') ||
+        msg.toLowerCase().includes('state');
+      const isAuthError =
+        msg.toLowerCase().includes('authoriz') ||
+        msg.toLowerCase().includes('redirect') ||
+        msg.toLowerCase().includes('400') ||
+        msg.toLowerCase().includes('invalid');
+
+      if (isStateError) {
+        Alert.alert(
+          'Phiên xác thực bị trùng lặp (State Mismatch)',
+          'Trình duyệt vừa nhận 2 yêu cầu đăng nhập liên tiếp hoặc bị reload dở dang. Vui lòng thử bấm lại 1 lần duy nhất hoặc chọn Đăng nhập Google Test để tiếp tục.',
+          [
+            { text: 'Đóng', style: 'cancel' },
+            {
+              text: 'Đăng nhập Google Test',
+              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
+            },
+          ]
+        );
+      } else if (isAuthError) {
+        Alert.alert(
+          'Lỗi xác thực Google (OAuth Error 400)',
+          `Google chặn yêu cầu do chưa khớp Authorized Redirect URI hoặc thiếu Client ID Mobile trong Google Cloud Console.\n\nRedirect URI của bạn:\n${request?.redirectUri || 'Chưa xác định'}\n\nBạn có muốn đăng nhập nhanh bằng tài khoản Google Test không?`,
+          [
+            { text: 'Đóng', style: 'cancel' },
+            {
+              text: 'Đăng nhập Google Test',
+              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
+            },
+          ]
+        );
+      } else {
+        setErrorMsg(msg || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleDemoGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      await handleBackendGoogleLogin('demo-google-token-' + Date.now());
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Đăng nhập Google Test thất bại.');
     } finally {
       setGoogleLoading(false);
     }
@@ -227,17 +331,14 @@ export default function LoginScreen({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={s.container}
     >
+      {/* Absolute close button if present */}
+      {onClose && (
+        <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7}>
+          <MaterialIcons name="close" size={20} color={T.onSurface} />
+        </TouchableOpacity>
+      )}
+
       <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Header Bar */}
-        <View style={s.topNav}>
-          {onClose ? (
-            <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7}>
-              <MaterialIcons name="close" size={22} color={T.onSurface} />
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 40 }} />
-          )}
-        </View>
 
         {/* Prominent Logo */}
         <View style={s.topBrand}>
@@ -423,66 +524,18 @@ export default function LoginScreen({
               </>
             )}
           </TouchableOpacity>
+
+          {/* Quick Demo Google Button */}
+          <TouchableOpacity
+            style={s.demoGoogleBtn}
+            onPress={handleDemoGoogleLogin}
+            disabled={loading || googleLoading}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="lightning-bolt" size={16} color="#d97706" />
+            <Text style={s.demoGoogleBtnText}>Đăng nhập nhanh (Tài khoản Google Test)</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Quick Demo Login Section */}
-        {mode === 'login' && (
-          <View style={s.quickSection}>
-            <View style={s.dividerRow}>
-              <View style={s.dividerLine} />
-              <Text style={s.dividerText}>HOẶC ĐĂNG NHẬP NHANH BẰNG TÀI KHOẢN MẪU</Text>
-              <View style={s.dividerLine} />
-            </View>
-
-            <View style={s.quickGrid}>
-              {/* Customer Account */}
-              <TouchableOpacity
-                style={s.quickCard}
-                onPress={() => handleQuickLogin('customer')}
-                activeOpacity={0.8}
-              >
-                <View style={[s.quickIconBox, { backgroundColor: T.brandLight }]}>
-                  <MaterialIcons name="person" size={22} color={T.brandDark} />
-                </View>
-                <View style={s.quickInfo}>
-                  <View style={s.quickBadgeRow}>
-                    <Text style={s.quickTitle}>Khách Hàng</Text>
-                    <View style={s.roleBadgeCustomer}>
-                      <Text style={s.roleBadgeCustomerText}>Khách thuê</Text>
-                    </View>
-                  </View>
-                  <Text style={s.quickEmail}>customer@selfstorage.vn</Text>
-                  <Text style={s.quickPass}>MK: 123456</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color={T.outline} />
-              </TouchableOpacity>
-
-              {/* Staff Account */}
-              <TouchableOpacity
-                style={s.quickCard}
-                onPress={() => handleQuickLogin('staff')}
-                activeOpacity={0.8}
-              >
-                <View style={[s.quickIconBox, { backgroundColor: T.blueLight }]}>
-                  <MaterialIcons name="badge" size={22} color={T.blue} />
-                </View>
-                <View style={s.quickInfo}>
-                  <View style={s.quickBadgeRow}>
-                    <Text style={s.quickTitle}>Nhân Viên Chi Nhánh</Text>
-                    <View style={s.roleBadgeStaff}>
-                      <Text style={s.roleBadgeStaffText}>Vận hành</Text>
-                    </View>
-                  </View>
-                  <Text style={s.quickEmail}>staff@selfstorage.vn</Text>
-                  <Text style={s.quickPass}>MK: 123456</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={20} color={T.outline} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -495,55 +548,59 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 50 : 28,
-    paddingBottom: 40,
-  },
-  topNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 24 : 12,
+    paddingBottom: 32,
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 44 : 14,
+    right: 16,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: T.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 3,
   },
   topBrand: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginTop: 4,
+    marginBottom: 8,
   },
   brandLogoImg: {
-    height: 72,
-    width: 260,
+    height: 36,
+    width: 125,
   },
   heroSection: {
-    marginBottom: 24,
+    marginBottom: 12,
   },
   heroTitle: {
-    fontSize: 26,
+    fontSize: 20,
     fontWeight: '800',
     color: T.onSurface,
     letterSpacing: -0.5,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   heroSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: T.onSurfaceVariant,
-    lineHeight: 20,
+    lineHeight: 16,
   },
   tabWrap: {
     flexDirection: 'row',
     backgroundColor: '#e2e8f0',
     borderRadius: 14,
     padding: 4,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   tabBtn: {
     flex: 1,
@@ -600,7 +657,7 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 10,
     elevation: 2,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 13,
@@ -703,106 +760,22 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: T.onSurface,
   },
-  quickSection: {
-    marginBottom: 24,
-  },
-  dividerRow: {
+  demoGoogleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 10,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e2e8f0',
-  },
-  dividerText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: T.outline,
-    letterSpacing: 0.5,
-  },
-  quickGrid: {
-    gap: 12,
-  },
-  quickCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: T.border,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  quickIconBox: {
-    width: 44,
-    height: 44,
+    justifyContent: 'center',
+    backgroundColor: '#fffbeb',
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  quickInfo: {
-    flex: 1,
-  },
-  quickBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
-  },
-  quickTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: T.onSurface,
-  },
-  roleBadgeCustomer: {
-    backgroundColor: T.brandLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  roleBadgeCustomerText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: T.brandDark,
-  },
-  roleBadgeStaff: {
-    backgroundColor: T.blueLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  roleBadgeStaffText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: T.blue,
-  },
-  quickEmail: {
-    fontSize: 12,
-    color: T.onSurfaceVariant,
-    marginBottom: 2,
-  },
-  quickPass: {
-    fontSize: 11,
-    color: T.outline,
-    fontWeight: '600',
-  },
-  securityFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#fde68a',
     gap: 6,
-    marginTop: 8,
   },
-  securityText: {
-    fontSize: 12,
-    color: T.onSurfaceVariant,
+  demoGoogleBtnText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#b45309',
   },
 });

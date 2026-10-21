@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
   Clipboard,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, AvailableUnit } from '../../types/handover';
@@ -19,6 +20,7 @@ import PrintReceiptModal from '../../components/staff/PrintReceiptModal';
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
+  uploadMultipleImagesToStorage,
   CapturedPhoto,
 } from '../../services/imageService';
 
@@ -31,6 +33,7 @@ interface HandoverDetailScreenProps {
     unitCode: string;
     condition: string;
     notes?: string;
+    photos?: string[];
   }) => void;
   isSubmitting?: boolean;
 }
@@ -107,6 +110,7 @@ export default function HandoverDetailScreen({
     },
   ]);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
 
   const handleCapturePhoto = async () => {
     setIsCapturing(true);
@@ -187,6 +191,32 @@ export default function HandoverDetailScreen({
     setAccessPin(pin);
   };
 
+  const handleSelectStep = (targetStep: number) => {
+    if (targetStep === currentStep) return;
+    if (targetStep < currentStep) {
+      setCurrentStep(targetStep);
+      return;
+    }
+    // Chuyển tới các bước sau: Bắt buộc phải hoàn thành tuần tự
+    if (!isCccdVerified) {
+      Alert.alert('Chưa hoàn tất Bước 1', 'Vui lòng xác nhận đối chiếu CCCD trước khi chuyển bước.');
+      return;
+    }
+    if (targetStep >= 3 && photos.length === 0) {
+      Alert.alert('Chưa có ảnh hiện trạng', 'Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho tại Bước 2.');
+      return;
+    }
+    if (targetStep >= 4 && !isContractSigned) {
+      Alert.alert('Chưa ký hợp đồng', 'Vui lòng xác nhận khách đã ký hợp đồng tại Bước 3.');
+      return;
+    }
+    if (targetStep >= 5 && !isPaid) {
+      Alert.alert('Chưa thanh toán', 'Vui lòng xác nhận đã thu tiền thuê kho tại Bước 4 trước khi cấp PIN.');
+      return;
+    }
+    setCurrentStep(targetStep);
+  };
+
   const handleNext = () => {
     if (currentStep === 1) {
       if (!isCccdVerified) {
@@ -195,6 +225,10 @@ export default function HandoverDetailScreen({
       }
       setCurrentStep(2);
     } else if (currentStep === 2) {
+      if (photos.length === 0) {
+        Alert.alert('Chưa có ảnh hiện trạng', 'Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho trước khi sang Bước 3.');
+        return;
+      }
       setCurrentStep(3);
     } else if (currentStep === 3) {
       if (!isContractSigned) {
@@ -203,6 +237,23 @@ export default function HandoverDetailScreen({
       }
       setCurrentStep(4);
     } else if (currentStep === 4) {
+      if (!isPaid) {
+        Alert.alert(
+          'Chưa xác nhận thanh toán',
+          'Vui lòng xác nhận khách hàng đã thanh toán tiền thuê còn lại trước khi cấp PIN bàn giao kho.',
+          [
+            { text: 'Kiểm tra lại', style: 'cancel' },
+            {
+              text: 'Xác nhận đã thu & Tiếp tục',
+              onPress: () => {
+                setIsPaid(true);
+                setCurrentStep(5);
+              },
+            },
+          ]
+        );
+        return;
+      }
       setCurrentStep(5);
     }
   };
@@ -215,7 +266,7 @@ export default function HandoverDetailScreen({
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (!isCccdVerified) {
       Alert.alert('Lỗi', 'Vui lòng đối chiếu CCCD tại Bước 1.');
       setCurrentStep(1);
@@ -226,11 +277,25 @@ export default function HandoverDetailScreen({
       setCurrentStep(3);
       return;
     }
+
+    let uploadedUrls: string[] = [];
+    try {
+      setIsUploadingPhotos(true);
+      // Upload ảnh lên Cloudinary CDN nếu có cấu hình (hoặc fallback Base64 / URI)
+      uploadedUrls = await uploadMultipleImagesToStorage(photos);
+    } catch (uploadErr) {
+      console.warn('Lỗi khi upload ảnh hiện trạng:', uploadErr);
+      uploadedUrls = photos.map((p) => p.base64 || p.uri);
+    } finally {
+      setIsUploadingPhotos(false);
+    }
+
     onCompleteHandover({
       appointmentId: appointment.id,
       unitCode: selectedUnitCode,
       condition,
       notes: customNotes,
+      photos: uploadedUrls,
     });
   };
 
@@ -274,7 +339,7 @@ export default function HandoverDetailScreen({
                 isActive && s.stepItemActive,
                 isDone && s.stepItemDone,
               ]}
-              onPress={() => setCurrentStep(st.num)}
+              onPress={() => handleSelectStep(st.num)}
             >
               <View
                 style={[
@@ -487,25 +552,43 @@ export default function HandoverDetailScreen({
               <Text style={s.cardTitle}>Bước 3: Hợp Đồng Thuê Kho</Text>
             </View>
 
-            {/* Tóm tắt điều khoản */}
-            <View style={s.contractSummaryGrid}>
-              <View style={s.summaryCol}>
-                <Text style={s.infoLabel}>Kỳ hạn:</Text>
-                <Text style={s.infoVal}>{durationMonths} tháng</Text>
-              </View>
-              <View style={s.summaryCol}>
-                <Text style={s.infoLabel}>Ngày bắt đầu:</Text>
-                <Text style={s.infoVal}>{appointment.startDate || 'Hôm nay'}</Text>
-              </View>
-              <View style={s.summaryCol}>
-                <Text style={s.infoLabel}>Giá thuê:</Text>
-                <Text style={[s.infoVal, { color: T.primary }]}>{appointment.monthlyRent}</Text>
-              </View>
-              <View style={s.summaryCol}>
-                <Text style={s.infoLabel}>Tiền cọc:</Text>
-                <Text style={[s.infoVal, { color: T.emeraldText }]}>
-                  {appointment.depositAmount}
+            {/* Bảng tóm tắt điều khoản hợp đồng dạng lưới 2x2 thông thoáng */}
+            <View style={s.contractCardBox}>
+              <View style={s.contractHeaderBadge}>
+                <MaterialIcons name="folder-shared" size={15} color={T.primary} />
+                <Text style={s.contractHeaderBadgeText}>
+                  Hồ sơ hợp đồng điện tử • Ô #{selectedUnitCode}
                 </Text>
+              </View>
+
+              {/* Hàng 1 */}
+              <View style={s.contractGridRow}>
+                <View style={s.contractGridItem}>
+                  <Text style={s.contractGridLabel}>THỜI HẠN THUÊ</Text>
+                  <Text style={s.contractGridVal}>{durationMonths} tháng</Text>
+                </View>
+                <View style={[s.contractGridItem, { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' }]}>
+                  <Text style={s.contractGridLabel}>NGÀY BẮT ĐẦU</Text>
+                  <Text style={s.contractGridVal}>{appointment.startDate || 'Hôm nay'}</Text>
+                </View>
+              </View>
+
+              <View style={s.contractGridDivider} />
+
+              {/* Hàng 2 */}
+              <View style={s.contractGridRow}>
+                <View style={s.contractGridItem}>
+                  <Text style={s.contractGridLabel}>GIÁ THUÊ THÁNG</Text>
+                  <Text style={[s.contractGridVal, { color: T.primary, fontWeight: '800' }]}>
+                    {appointment.monthlyRent}
+                  </Text>
+                </View>
+                <View style={[s.contractGridItem, { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' }]}>
+                  <Text style={s.contractGridLabel}>TIỀN ĐẶT CỌC</Text>
+                  <Text style={[s.contractGridVal, { color: T.emeraldText, fontWeight: '800' }]}>
+                    {appointment.depositAmount || formatVND(depositNum)}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -514,17 +597,19 @@ export default function HandoverDetailScreen({
               <TouchableOpacity
                 style={s.contractActionBtn}
                 onPress={() => setShowContractModal(true)}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="visibility" size={18} color={T.primary} />
-                <Text style={s.contractActionText}>Xem Hợp Đồng Điện Tử</Text>
+                <MaterialIcons name="article" size={17} color={T.primary} />
+                <Text style={s.contractActionText}>Xem Hợp Đồng</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[s.contractActionBtn, { backgroundColor: T.surfaceLow }]}
+                style={[s.contractActionBtn, s.contractActionBtnPrint]}
                 onPress={() => setShowPrintModal(true)}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="print" size={18} color={T.textMain} />
-                <Text style={[s.contractActionText, { color: T.textMain }]}>In Hợp Đồng Giấy</Text>
+                <MaterialIcons name="print" size={17} color="#334155" />
+                <Text style={[s.contractActionText, { color: '#334155' }]}>In Hợp Đồng Giấy</Text>
               </TouchableOpacity>
             </View>
 
@@ -532,16 +617,18 @@ export default function HandoverDetailScreen({
             <TouchableOpacity
               style={[s.signedBox, isContractSigned && s.signedBoxActive]}
               onPress={() => setIsContractSigned(!isContractSigned)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               <MaterialIcons
                 name={isContractSigned ? 'check-box' : 'check-box-outline-blank'}
                 size={24}
-                color={isContractSigned ? T.emeraldText : T.textMuted}
+                color={isContractSigned ? T.emeraldText : '#94A3B8'}
               />
-              <View style={{ flex: 1, marginLeft: 8 }}>
+              <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={[s.signedTitle, isContractSigned && { color: T.emeraldText }]}>
-                  Xác nhận khách hàng đã ký hợp đồng
+                  {isContractSigned
+                    ? '✓ Đã xác nhận ký hợp đồng'
+                    : 'Xác nhận khách hàng đã ký hợp đồng'}
                 </Text>
                 <Text style={s.signedSub}>Hợp đồng đã có đủ chữ ký và lưu trữ vào hồ sơ</Text>
               </View>
@@ -634,28 +721,51 @@ export default function HandoverDetailScreen({
                     <Text style={s.bankLabel}>Ngân hàng:</Text>
                     <Text style={s.bankVal}>MBBank (Quân Đội)</Text>
                   </View>
+
                   <View style={s.bankRow}>
-                    <Text style={s.bankLabel}>Số tài khoản:</Text>
-                    <Text style={[s.bankVal, { color: T.primary, fontWeight: '700' }]}>
-                      0900000000
-                    </Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={s.bankLabel}>Số tài khoản:</Text>
+                      <Text style={[s.bankVal, { color: T.primary, fontWeight: '700' }]}>
+                        0900000000
+                      </Text>
+                    </View>
                     <TouchableOpacity
                       onPress={() => handleCopy('0900000000', 'STK')}
                       style={s.copyBtn}
+                      activeOpacity={0.7}
                     >
-                      <Text style={s.copyBtnText}>{copiedField === 'STK' ? 'Đã chép' : 'Chép'}</Text>
+                      <MaterialIcons
+                        name={copiedField === 'STK' ? 'check' : 'content-copy'}
+                        size={12}
+                        color={T.primary}
+                      />
+                      <Text style={s.copyBtnText}>
+                        {copiedField === 'STK' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
-                  <View style={s.bankRow}>
-                    <Text style={s.bankLabel}>Nội dung:</Text>
-                    <Text style={[s.bankVal, { color: T.amberText, fontWeight: '700' }]}>
-                      {paymentContent}
-                    </Text>
+
+                  {/* Khung nội dung chuyển khoản riêng biệt, không bị lồi ra ngoài */}
+                  <View style={s.contentHighlightBox}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={s.contentBoxLabel}>Nội dung CK (bắt buộc):</Text>
+                      <Text style={s.contentBoxValue} numberOfLines={2}>
+                        {paymentContent}
+                      </Text>
+                    </View>
                     <TouchableOpacity
                       onPress={() => handleCopy(paymentContent, 'ND')}
-                      style={s.copyBtn}
+                      style={s.copyBtnLarge}
+                      activeOpacity={0.7}
                     >
-                      <Text style={s.copyBtnText}>{copiedField === 'ND' ? 'Đã chép' : 'Chép'}</Text>
+                      <MaterialIcons
+                        name={copiedField === 'ND' ? 'check' : 'content-copy'}
+                        size={13}
+                        color="#fff"
+                      />
+                      <Text style={s.copyBtnLargeText}>
+                        {copiedField === 'ND' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -665,9 +775,10 @@ export default function HandoverDetailScreen({
             {/* Tab Tiền mặt */}
             {paymentMethod === 'cash' && (
               <View style={s.cashBox}>
-                <MaterialIcons name="monetization-on" size={32} color={T.emeraldText} />
-                <Text style={s.cashTitle}>Thu tiền mặt trực tiếp</Text>
+                <MaterialIcons name="payments" size={36} color={T.emeraldText} />
+                <Text style={s.cashTitle}>Thu tiền mặt trực tiếp tại quầy</Text>
                 <Text style={s.cashAmount}>{formatVND(remainingAmount)}</Text>
+                <Text style={s.cashSub}>Kiểm đếm đủ tiền trước khi xác nhận bên dưới</Text>
               </View>
             )}
 
@@ -675,16 +786,17 @@ export default function HandoverDetailScreen({
             <TouchableOpacity
               style={[s.paidToggleBtn, isPaid && s.paidToggleBtnDone]}
               onPress={() => setIsPaid(!isPaid)}
+              activeOpacity={0.85}
             >
               <MaterialIcons
                 name={isPaid ? 'check-circle' : 'radio-button-unchecked'}
-                size={20}
+                size={22}
                 color="#fff"
               />
               <Text style={s.paidToggleText}>
                 {isPaid
-                  ? `✓ ĐÃ THU ĐỦ ${formatVND(remainingAmount)}`
-                  : `XÁC NHẬN ĐÃ THU ${formatVND(remainingAmount)}`}
+                  ? `✓ ĐÃ THU ĐỦ TIỀN THUÊ `
+                  : ` XÁC NHẬN ĐÃ THU TIỀN `}
               </Text>
             </TouchableOpacity>
           </View>
@@ -780,12 +892,17 @@ export default function HandoverDetailScreen({
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[s.finishBtn, isSubmitting && { opacity: 0.7 }]}
+            style={[s.finishBtn, (isSubmitting || isUploadingPhotos) && { opacity: 0.7 }]}
             onPress={handleFinish}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isUploadingPhotos}
           >
-            {isSubmitting ? (
-              <ActivityIndicator color="#fff" size="small" />
+            {isSubmitting || isUploadingPhotos ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={s.finishBtnText}>
+                  {isUploadingPhotos ? 'Đang tải ảnh...' : 'Đang xử lý...'}
+                </Text>
+              </View>
             ) : (
               <>
                 <Text style={s.finishBtnText}>Hoàn Tất & Cấp PIN</Text>
@@ -1073,15 +1190,55 @@ const s = StyleSheet.create({
     color: T.textMain,
   },
 
-  contractSummaryGrid: {
-    flexDirection: 'row',
-    backgroundColor: T.surfaceLow,
-    borderRadius: 12,
-    padding: 10,
-    justifyContent: 'space-between',
+  contractCardBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
   },
-  summaryCol: { flex: 1, alignItems: 'center' },
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  contractHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#DBEAFE',
+  },
+  contractHeaderBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: T.primary,
+  },
+  contractGridRow: {
+    flexDirection: 'row',
+  },
+  contractGridItem: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  contractGridLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  contractGridVal: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  contractGridDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   contractActionBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -1091,26 +1248,31 @@ const s = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 11,
+    borderRadius: 12,
   },
-  contractActionText: { fontSize: 11, fontWeight: '700', color: T.primary },
+  contractActionBtnPrint: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
+  contractActionText: { fontSize: 11.5, fontWeight: '700', color: T.primary },
+
   signedBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: T.surfaceLow,
-    borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
     marginTop: 12,
   },
   signedBoxActive: {
-    backgroundColor: T.emeraldBg,
-    borderColor: T.emeraldBorder,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
   },
-  signedTitle: { fontSize: 12, fontWeight: '700', color: T.textMain },
-  signedSub: { fontSize: 11, color: T.textMuted, marginTop: 2 },
+  signedTitle: { fontSize: 12.5, fontWeight: '700', color: '#0F172A' },
+  signedSub: { fontSize: 11, color: '#64748B', marginTop: 2 },
 
   priceBox: {
     flexDirection: 'row',
@@ -1163,44 +1325,115 @@ const s = StyleSheet.create({
   qrHint: { fontSize: 10, color: T.textMuted, marginTop: 6 },
   bankDetailList: {
     width: '100%',
-    backgroundColor: T.surfaceLow,
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
     marginTop: 10,
-    gap: 6,
+    gap: 10,
   },
-  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  bankLabel: { fontSize: 11, color: T.textMuted },
-  bankVal: { fontSize: 11, fontWeight: '600', color: T.textMain },
-  copyBtn: {
-    paddingHorizontal: 8,
+  bankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 2,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 4,
   },
-  copyBtnText: { fontSize: 10, fontWeight: '700', color: T.primary },
+  bankLabel: { fontSize: 11, color: T.textMuted, marginBottom: 2 },
+  bankVal: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    flexShrink: 0,
+  },
+  copyBtnText: { fontSize: 11, fontWeight: '700', color: T.primary },
+
+  contentHighlightBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    padding: 10,
+    marginTop: 2,
+  },
+  contentBoxLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom: 3,
+  },
+  contentBoxValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  copyBtnLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D97706',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexShrink: 0,
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  copyBtnLargeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
 
   cashBox: {
     backgroundColor: T.emeraldBg,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 18,
     alignItems: 'center',
     marginTop: 12,
+    borderWidth: 1,
+    borderColor: T.emeraldBorder,
   },
-  cashTitle: { fontSize: 12, color: T.emeraldText, fontWeight: '600', marginTop: 4 },
-  cashAmount: { fontSize: 18, fontWeight: '800', color: T.emeraldText, marginTop: 2 },
+  cashTitle: { fontSize: 13, color: T.emeraldText, fontWeight: '700', marginTop: 4 },
+  cashAmount: { fontSize: 20, fontWeight: '900', color: T.emeraldText, marginTop: 4 },
+  cashSub: { fontSize: 11, color: T.emeraldText, opacity: 0.85, marginTop: 4, textAlign: 'center' },
   paidToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: T.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginTop: 12,
+    gap: 8,
+    backgroundColor: '#475569',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  paidToggleBtnDone: { backgroundColor: T.emerald },
-  paidToggleText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  paidToggleBtnDone: {
+    backgroundColor: T.emerald,
+    shadowColor: T.emerald,
+    shadowOpacity: 0.25,
+  },
+  paidToggleText: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
 
   pinSection: { marginTop: 4 },
   genPinBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },

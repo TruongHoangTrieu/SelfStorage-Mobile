@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   Image,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import CustomerSidebar from '../components/customer/CustomerSidebar';
@@ -25,6 +26,7 @@ import {
   CustomerProfileScreen,
 } from '../screens/customer/CustomerPortalSubScreens';
 import CustomerSupportScreen from '../screens/customer/CustomerSupportScreen';
+import CustomerAccountScreen from '../screens/customer/CustomerAccountScreen';
 import CustomerBottomNavBar, { CustomerTabType } from '../components/customer/CustomerBottomNavBar';
 import BookStorageScreen from '../screens/customer/BookStorageScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -47,6 +49,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     showAuthModal,
     setShowAuthModal,
     handleLoginSuccess,
+    handleLogout,
+    setCurrentUser,
   } = useAuth();
 
   const customerContractsState = useCustomerContracts();
@@ -108,8 +112,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
       setCustomerTab('book');
       return;
     }
-    // Bắt buộc đăng nhập khi nhấn qua Kho của tôi hoặc Hỗ trợ
-    if ((tab === 'my-storage' || tab === 'support') && (!isLoggedIn || !currentUser)) {
+    // Bắt buộc đăng nhập khi nhấn qua Kho của tôi, Hỗ trợ hoặc Tài khoản
+    if ((tab === 'my-storage' || tab === 'support' || tab === 'account') && (!isLoggedIn || !currentUser)) {
       setShowAuthModal(true);
       return;
     }
@@ -120,6 +124,9 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     } else if (tab === 'support') {
       setCustomerTab('my_units');
       setCustomerNavTab('support');
+    } else if (tab === 'account') {
+      setCustomerTab('my_units');
+      setCustomerNavTab('profile');
     }
   };
 
@@ -166,7 +173,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           >
             <Image
               source={require('../../assets/logo.png')}
-              style={{ height: 48, width: 180 }}
+              style={{ height: 28, width: 95 }}
               resizeMode="contain"
             />
           </View>
@@ -248,7 +255,13 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
           {/* Bottom Nav Bar */}
           <CustomerBottomNavBar
-            activeTab={customerNavTab === 'support' ? 'support' : 'my-storage'}
+            activeTab={
+              customerNavTab === 'support'
+                ? 'support'
+                : customerNavTab === 'profile'
+                ? 'account'
+                : 'my-storage'
+            }
             onSelectTab={handleNavigateBottomTab}
           />
         </View>
@@ -284,6 +297,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               isRefreshing={isCustomerLoading}
               customerName={currentUser?.fullName || CURRENT_CUSTOMER_USER.fullName}
               onOpenLogin={() => setShowAuthModal(true)}
+              onLogout={handleLogout}
               currentUser={currentUser}
               onNavigateBottomTab={handleNavigateBottomTab}
             />
@@ -333,18 +347,23 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setShowReportIssueModal(true);
             }}
             onOpenLogin={() => setShowAuthModal(true)}
+            onLogout={handleLogout}
             currentUser={currentUser}
             onNavigateBottomTab={handleNavigateBottomTab}
           />
         ) : (
-          /* TAB 5: Hồ sơ & Cài đặt */
-          <CustomerProfileScreen
-            currentUser={CURRENT_CUSTOMER_USER}
-            onBackToUnits={() => {
-              setCustomerNavTab('my_units');
-              setCustomerFlowStep('dashboard');
+          /* TAB 5: Quản lý tài khoản & Đổi thông tin */
+          <CustomerAccountScreen
+            currentUser={currentUser || CURRENT_CUSTOMER_USER}
+            onUpdateUser={(updated) => {
+              setCurrentUser(updated);
+            }}
+            onLogout={() => {
+              handleLogout();
+              setCustomerTab('book');
             }}
             onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+            onNavigateBottomTab={handleNavigateBottomTab}
           />
         )
       ) : customerTab === 'book' ? (
@@ -362,6 +381,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           }}
           onViewMyReservations={() => setCustomerTab('my_reservations')}
           onOpenLogin={() => setShowAuthModal(true)}
+          onLogout={handleLogout}
           currentUser={currentUser}
           activeBottomTab="search"
           onNavigateTab={handleNavigateBottomTab}
@@ -399,28 +419,54 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <TouchableOpacity
-                onPress={() => setShowAuthModal(true)}
+                onPress={() => {
+                  if (currentUser) {
+                    if (Platform.OS === 'web') {
+                      if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+                        handleLogout();
+                      }
+                    } else {
+                      Alert.alert(
+                        'Đăng xuất',
+                        `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
+                        [
+                          { text: 'Hủy', style: 'cancel' },
+                          { text: 'Đăng xuất', style: 'destructive', onPress: handleLogout },
+                        ]
+                      );
+                    }
+                  } else {
+                    setShowAuthModal(true);
+                  }
+                }}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 4,
-                  backgroundColor: '#ffffff',
+                  backgroundColor: currentUser ? '#fef2f2' : '#ffffff',
                   paddingHorizontal: 10,
                   paddingVertical: 6,
                   borderRadius: 16,
                   borderWidth: 1,
-                  borderColor: '#c6c6cd',
+                  borderColor: currentUser ? '#fecaca' : '#c6c6cd',
                   maxWidth: 130,
                   flexShrink: 0,
                 }}
               >
+                <MaterialIcons
+                  name={currentUser ? 'logout' : 'login'}
+                  size={14}
+                  color={currentUser ? '#dc2626' : '#131b2e'}
+                />
                 <Text
-                  style={{ fontSize: 11, fontWeight: '600', color: '#131b2e', maxWidth: 85 }}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    color: currentUser ? '#dc2626' : '#131b2e',
+                  }}
                   numberOfLines={1}
                 >
-                  {currentUser?.fullName
-                    ? currentUser.fullName.split(' ').slice(-1)[0]
-                    : 'Đăng nhập'}
+                  {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -470,18 +516,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
           <CustomerBottomNavBar
             activeTab="my-storage"
-            onSelectTab={(tab) => {
-              if (tab === 'search') {
-                setCustomerTab('book');
-              } else if (tab === 'my-storage') {
-                setCustomerTab('my_units');
-                setCustomerNavTab('my_units');
-                setCustomerFlowStep('dashboard');
-              } else if (tab === 'support') {
-                setCustomerTab('my_units');
-                setCustomerNavTab('support');
-              }
-            }}
+            onSelectTab={handleNavigateBottomTab}
           />
         </View>
       )}

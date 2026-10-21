@@ -1,14 +1,12 @@
 import { Platform } from 'react-native';
 
+export const CLOUD_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || 'https://selfstorage-be-1.onrender.com/api';
 export const LOCAL_API_BASE_URL = 'http://localhost:5000/api';
-export const CLOUD_API_BASE_URL = 'https://selfstorage-be-1.onrender.com/api';
 
-// On Web (browser), prioritize local dev proxy on port 5000 to bypass browser CORS restrictions.
-// On Native iOS/Android, call the deployed Render backend directly.
-export const PRIMARY_API_BASE_URL =
-  Platform.OS === 'web' ? LOCAL_API_BASE_URL : CLOUD_API_BASE_URL;
-export const FALLBACK_API_BASE_URL =
-  Platform.OS === 'web' ? CLOUD_API_BASE_URL : LOCAL_API_BASE_URL;
+// Mặc định luôn sử dụng Backend Cloud đã deploy trên Render trên cả Mobile và Web
+export const PRIMARY_API_BASE_URL = CLOUD_API_BASE_URL;
+export const FALLBACK_API_BASE_URL = LOCAL_API_BASE_URL;
 
 export const API_BASE_URL = PRIMARY_API_BASE_URL;
 
@@ -172,12 +170,23 @@ export async function getAvailableUnitsApi(facilityId?: number | string) {
  * Kích hoạt bàn giao kho & hợp đồng (POST /handovers/check-in)
  */
 export async function performCheckInApi(payload: {
-  reservationId: number;
+  reservationId: string | number;
   condition: string;
   notes?: string;
   photos?: any[];
   unitCode?: string;
 }) {
+  // Chỉ gửi các trường thuộc CheckInDto hợp lệ (reservationId, condition, notes, photos)
+  // để tránh lỗi "property unitCode should not exist" của NestJS ValidationPipe
+  const cleanBody: any = {
+    reservationId: String(payload.reservationId),
+    condition: payload.condition,
+  };
+  if (payload.notes) cleanBody.notes = payload.notes;
+  if (payload.photos && Array.isArray(payload.photos) && payload.photos.length > 0) {
+    cleanBody.photos = payload.photos;
+  }
+
   return apiRequest<{
     message: string;
     contract: {
@@ -217,7 +226,7 @@ export async function performCheckInApi(payload: {
     }[];
   }>('/handovers/check-in', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(cleanBody),
   });
 }
 

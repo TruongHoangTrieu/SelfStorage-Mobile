@@ -60,6 +60,7 @@ interface MyUnitsDashboardScreenProps {
   customerName?: string;
   onNavigateBottomTab?: (tab: CustomerTabType) => void;
   onOpenLogin?: () => void;
+  onLogout?: () => void;
   currentUser?: any;
 }
 
@@ -77,6 +78,7 @@ export default function MyUnitsDashboardScreen({
   customerName = 'Nguyễn Văn Hải',
   onNavigateBottomTab,
   onOpenLogin,
+  onLogout,
   currentUser,
 }: MyUnitsDashboardScreenProps) {
   // Selected active unit
@@ -174,6 +176,30 @@ export default function MyUnitsDashboardScreen({
     );
   };
 
+  const handleAuthAction = () => {
+    if (currentUser) {
+      const confirmLogout = () => {
+        onLogout?.();
+      };
+      if (Platform.OS === 'web') {
+        if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+          confirmLogout();
+        }
+      } else {
+        Alert.alert(
+          'Đăng xuất',
+          `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
+          [
+            { text: 'Hủy', style: 'cancel' },
+            { text: 'Đăng xuất', style: 'destructive', onPress: confirmLogout },
+          ]
+        );
+      }
+    } else {
+      onOpenLogin?.();
+    }
+  };
+
   return (
     <View style={s.outerWrapper}>
       <View style={s.mobileContainer}>
@@ -193,32 +219,29 @@ export default function MyUnitsDashboardScreen({
           </View>
 
           <View style={s.topActionsRow}>
-            {onOpenLogin && (
+            {(onOpenLogin || onLogout) && (
               <TouchableOpacity
-                style={s.loginHeaderBtn}
-                onPress={onOpenLogin}
+                style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+                onPress={handleAuthAction}
                 activeOpacity={0.8}
               >
                 <MaterialIcons
-                  name={currentUser ? 'account-circle' : 'person-outline'}
+                  name={currentUser ? 'logout' : 'login'}
                   size={16}
-                  color={currentUser ? T.secondary : T.onSurface}
+                  color={currentUser ? '#DC2626' : T.onSurface}
                 />
                 <Text
                   style={[
                     s.loginHeaderText,
                     currentUser && {
-                      color: T.secondary,
+                      color: '#DC2626',
                       fontWeight: '700',
                     },
                   ]}
                   numberOfLines={1}
+                  ellipsizeMode="tail"
                 >
-                  {currentUser
-                    ? currentUser.fullName
-                      ? currentUser.fullName.split(' ').slice(-1)[0]
-                      : 'Tài khoản'
-                    : 'Đăng nhập'}
+                  {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -226,18 +249,10 @@ export default function MyUnitsDashboardScreen({
             <TouchableOpacity
               style={s.notifBtn}
               activeOpacity={0.8}
-              onPress={() => onNavigateBottomTab?.('support')}
-            >
-              <MaterialIcons name="headset-mic" size={18} color={T.primary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={s.notifBtn}
-              activeOpacity={0.8}
               onPress={() =>
                 Alert.alert(
-                  'Thông báo an ninh',
-                  'Hệ thống an ninh và điều hòa phòng kho hoạt động ổn định 24/7.'
+                  'Thông báo hệ thống',
+                  'Hệ thống an ninh và điều hòa phòng kho đang hoạt động ổn định 24/7.'
                 )
               }
             >
@@ -266,9 +281,9 @@ export default function MyUnitsDashboardScreen({
               <View style={s.avatarWrap}>
                 <MaterialIcons name="person" size={24} color={T.primary} />
               </View>
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.greetingSub}>Xin chào,</Text>
-                <Text style={s.greetingName} numberOfLines={1}>
+                <Text style={s.greetingName} numberOfLines={1} ellipsizeMode="tail">
                   {currentUser?.fullName || customerName || 'Khách hàng'}
                 </Text>
               </View>
@@ -368,15 +383,9 @@ export default function MyUnitsDashboardScreen({
                     {activeUnit?.facilityAddress || 'Tầng 2 - Lô B, Tòa Tân Thuận, Q.7'}
                   </Text>
                 </View>
-                <Text style={s.protocolText}>
-                  Khóa thông minh PIN • Quản lý qua ứng dụng
-                </Text>
+                
               </View>
-
-              <View style={s.securityTag}>
-                <MaterialIcons name="verified-user" size={14} color={T.primary} />
-                <Text style={s.securityTagText}>ĐANG KHÓA AN TOÀN</Text>
-              </View>
+              
             </View>
 
             {/* 3 SHORTCUT BUTTONS */}
@@ -575,20 +584,18 @@ const s = StyleSheet.create({
     zIndex: 40,
   },
   brandRow: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginRight: 8,
-    minWidth: 0,
+    gap: 6,
+    flexShrink: 1,
   },
   topLogoImg: {
-    height: 48,
-    width: 180,
+    height: 26,
+    width: 88,
   },
   brandIconBtn: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 8,
     backgroundColor: T.surfaceContainerLow,
     justifyContent: 'center',
@@ -614,6 +621,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 8,
   },
   avatarWrap: {
     width: 42,
@@ -634,6 +642,7 @@ const s = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: T.onSurface,
+    flexShrink: 1,
   },
   greetingBadge: {
     flexDirection: 'row',
@@ -645,6 +654,7 @@ const s = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#a7f3d0',
+    flexShrink: 0,
   },
   greetingBadgeText: {
     fontSize: 11,
@@ -670,7 +680,7 @@ const s = StyleSheet.create({
   topActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     flexShrink: 0,
   },
   loginHeaderBtn: {
@@ -678,19 +688,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: T.surfaceContainerLowest,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#c6c6cd',
-    maxWidth: 130,
+    maxWidth: 105,
     flexShrink: 0,
+  },
+  logoutHeaderBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   loginHeaderText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: T.onSurface,
-    maxWidth: 85,
   },
   notifBtn: {
     width: 36,

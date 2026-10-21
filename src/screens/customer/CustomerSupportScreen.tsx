@@ -25,6 +25,7 @@ import {
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
+  uploadMultipleImagesToStorage,
   CapturedPhoto,
 } from '../../services/imageService';
 
@@ -53,6 +54,7 @@ interface CustomerSupportScreenProps {
   onOpenSidebar?: () => void;
   onOpenReportIssue?: (unit: CustomerRentedUnit) => void;
   onOpenLogin?: () => void;
+  onLogout?: () => void;
   currentUser?: any;
   onNavigateBottomTab?: (tab: CustomerTabType) => void;
 }
@@ -63,6 +65,7 @@ export default function CustomerSupportScreen({
   onOpenSidebar,
   onOpenReportIssue,
   onOpenLogin,
+  onLogout,
   currentUser,
   onNavigateBottomTab,
 }: CustomerSupportScreenProps) {
@@ -136,6 +139,16 @@ export default function CustomerSupportScreen({
     setIsSubmitting(true);
     try {
       const matchedUnit = units.find((u) => u.unitCode === selectedUnitCode) || units[0];
+
+      // Upload ảnh lên Cloudinary nếu có cấu hình (hoặc fallback Base64 / URI)
+      let uploadedPhotoUrls: string[] = [];
+      try {
+        uploadedPhotoUrls = await uploadMultipleImagesToStorage(supportPhotos);
+      } catch (uploadErr) {
+        console.warn('Lỗi tải ảnh hỗ trợ:', uploadErr);
+        uploadedPhotoUrls = supportPhotos.map((p) => p.base64 || p.uri);
+      }
+
       await createSupportRequestApi({
         facilityId: matchedUnit?.facilityId || '6ac4ea732f3017f8106ae7a6',
         contractItemId: matchedUnit?.contractItemId,
@@ -143,7 +156,7 @@ export default function CustomerSupportScreen({
         subject: subject.trim() || `Sự cố ô kho #${selectedUnitCode || 'Chung'}`,
         description: description.trim(),
         priority,
-        photos: supportPhotos.map((p) => p.base64 || p.uri),
+        photos: uploadedPhotoUrls,
       });
 
       setShowCreateModal(false);
@@ -223,14 +236,38 @@ export default function CustomerSupportScreen({
     },
   ];
 
+  const handleAuthAction = () => {
+    if (currentUser) {
+      const confirmLogout = () => {
+        onLogout?.();
+      };
+      if (Platform.OS === 'web') {
+        if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+          confirmLogout();
+        }
+      } else {
+        Alert.alert(
+          'Đăng xuất',
+          `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
+          [
+            { text: 'Hủy', style: 'cancel' },
+            { text: 'Đăng xuất', style: 'destructive', onPress: confirmLogout },
+          ]
+        );
+      }
+    } else {
+      onOpenLogin?.();
+    }
+  };
+
   return (
     <View style={s.container}>
       {/* ─── Top Header Đồng bộ Logo Web ─── */}
       <View style={s.topBar}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={s.topBarLeft}>
           {onOpenSidebar && (
             <TouchableOpacity onPress={onOpenSidebar} style={s.iconBtn}>
-              <MaterialIcons name="menu" size={24} color={T.textMain} />
+              <MaterialIcons name="menu" size={22} color={T.textMain} />
             </TouchableOpacity>
           )}
           <Image
@@ -240,27 +277,29 @@ export default function CustomerSupportScreen({
           />
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={s.topBarRight}>
           <TouchableOpacity onPress={loadTickets} style={s.iconBtn}>
-            <MaterialIcons name="refresh" size={22} color={isLoading ? T.primary : T.textMuted} />
+            <MaterialIcons name="refresh" size={20} color={isLoading ? T.primary : T.textMuted} />
           </TouchableOpacity>
-          {onOpenLogin && (
+          {(onOpenLogin || onLogout) && (
             <TouchableOpacity
-              style={s.loginHeaderBtn}
-              onPress={onOpenLogin}
+              style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+              onPress={handleAuthAction}
               activeOpacity={0.8}
             >
               <MaterialIcons
-                name={currentUser ? 'account-circle' : 'person-outline'}
-                size={16}
-                color={currentUser ? T.primary : T.textMain}
+                name={currentUser ? 'logout' : 'login'}
+                size={15}
+                color={currentUser ? '#DC2626' : T.textMain}
               />
-              <Text style={s.loginHeaderText} numberOfLines={1}>
-                {currentUser
-                  ? currentUser.fullName
-                    ? currentUser.fullName.split(' ').slice(-1)[0]
-                    : 'Tài khoản'
-                  : 'Đăng nhập'}
+              <Text
+                style={[
+                  s.loginHeaderText,
+                  currentUser && { color: '#DC2626', fontWeight: '700' },
+                ]}
+                numberOfLines={1}
+              >
+                {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
               </Text>
             </TouchableOpacity>
           )}
@@ -294,7 +333,7 @@ export default function CustomerSupportScreen({
           </View>
         </View>
 
-        {/* ─── 2 Kênh Liên Hệ Nhanh ─── */}
+        {/* ─── Kênh Hotline Khẩn Cấp 24/7 ─── */}
         <View style={s.contactRow}>
           <TouchableOpacity
             style={s.contactBtn}
@@ -302,27 +341,16 @@ export default function CustomerSupportScreen({
             activeOpacity={0.8}
           >
             <View style={s.contactIconWrapPhone}>
-              <MaterialIcons name="phone" size={20} color="#16a34a" />
+              <MaterialIcons name="phone" size={22} color="#16a34a" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.contactLabel}>Hotline Khẩn Cấp</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={s.contactLabel}>Hotline Khẩn Cấp 24/7</Text>
               <Text style={s.contactVal}>1900 6868</Text>
-              <Text style={s.contactSub}>Miễn phí 24/7</Text>
+              <Text style={s.contactSub}>Hỗ trợ mở khóa PIN & điều hòa buồng kho</Text>
             </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={s.contactBtn}
-            onPress={() => Linking.openURL('https://zalo.me')}
-            activeOpacity={0.8}
-          >
-            <View style={s.contactIconWrapChat}>
-              <MaterialIcons name="chat" size={20} color={T.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.contactLabel}>Kỹ Thuật Viên</Text>
-              <Text style={s.contactVal}>Chat Zalo Trực Tuyến</Text>
-              <Text style={s.contactSub}>Phản hồi tức thì</Text>
+            <View style={s.callNowBadge}>
+              <Text style={s.callNowText}>Gọi ngay</Text>
+              <MaterialIcons name="chevron-right" size={16} color="#16a34a" />
             </View>
           </TouchableOpacity>
         </View>
@@ -621,9 +649,21 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
+  topBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   topLogoImg: {
-    height: 48,
-    width: 180,
+    height: 26,
+    width: 88,
   },
   iconBtn: {
     padding: 6,
@@ -633,16 +673,22 @@ const s = StyleSheet.create({
   loginHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#DBEAFE',
+    maxWidth: 105,
+    flexShrink: 0,
+  },
+  logoutHeaderBtn: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   loginHeaderText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: T.primary,
   },
@@ -736,6 +782,20 @@ const s = StyleSheet.create({
     backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  callNowBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 2,
+  },
+  callNowText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16a34a',
   },
   contactIconWrapChat: {
     width: 36,
