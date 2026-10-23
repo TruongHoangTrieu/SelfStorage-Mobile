@@ -57,6 +57,7 @@ interface CustomerSupportScreenProps {
   onLogout?: () => void;
   currentUser?: any;
   onNavigateBottomTab?: (tab: CustomerTabType) => void;
+  onOpenAiAssistant?: () => void;
 }
 
 export default function CustomerSupportScreen({
@@ -68,6 +69,7 @@ export default function CustomerSupportScreen({
   onLogout,
   currentUser,
   onNavigateBottomTab,
+  onOpenAiAssistant,
 }: CustomerSupportScreenProps) {
   // Trạng thái phiếu hỗ trợ từ Backend
   const [tickets, setTickets] = useState<any[]>([]);
@@ -332,6 +334,66 @@ export default function CustomerSupportScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ─── Trợ lý AI Phản Hồi Tức Thì 24/7 ─── */}
+        {onOpenAiAssistant && (
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#eff6ff',
+              borderWidth: 1.5,
+              borderColor: '#bfdbfe',
+              borderRadius: 16,
+              padding: 14,
+              marginBottom: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              shadowColor: '#2563eb',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.08,
+              shadowRadius: 6,
+              elevation: 2,
+            }}
+            onPress={onOpenAiAssistant}
+            activeOpacity={0.85}
+          >
+            <View
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 13,
+                backgroundColor: '#2563eb',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <MaterialIcons name="auto-awesome" size={22} color="#ffffff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#1e3a8a' }}>
+                  Trợ lý AI SelfStorage
+                </Text>
+                <View
+                  style={{
+                    backgroundColor: '#dbeafe',
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>
+                    Phản hồi 1s
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
+                Tư vấn cỡ kho, đồ đạc, đồ cấm & phí quá hạn ngay tức thì.
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color="#2563eb" />
+          </TouchableOpacity>
+        )}
 
         {/* ─── Kênh Hotline Khẩn Cấp 24/7 ─── */}
         <View style={s.contactRow}>

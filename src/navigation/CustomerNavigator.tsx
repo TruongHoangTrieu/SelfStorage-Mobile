@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import RenewContractModal from '../components/customer/RenewContractModal';
 import UpgradeUnitModal from '../components/customer/UpgradeUnitModal';
 import ReportIssueModal from '../components/customer/ReportIssueModal';
 import ChangePinModal from '../components/customer/ChangePinModal';
+import AiAssistantModal from '../components/customer/AiAssistantModal';
+import { AiSuggestedUnit } from '../api';
 import {
   CustomerPaymentsScreen,
   CustomerDocumentsScreen,
@@ -81,6 +83,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     handleTicketCreated,
     handlePinChanged,
   } = customerContractsState;
+
+  // Trợ lý AI Assistant Modal
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [aiInitialPrompt, setAiInitialPrompt] = useState<string>('');
 
   const reservationsState = useReservations(() => {
     if (onRefreshStaffData) {
@@ -152,6 +158,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           }
         }}
         rentedUnitsCount={rentedUnits.length}
+        onOpenAiAssistant={() => {
+          setAiInitialPrompt('');
+          setShowAiModal(true);
+        }}
       />
 
       {/* Nội dung theo Tab chính: Kiểm tra nếu chưa đăng nhập thì buộc đăng nhập */}
@@ -350,6 +360,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             onLogout={handleLogout}
             currentUser={currentUser}
             onNavigateBottomTab={handleNavigateBottomTab}
+            onOpenAiAssistant={() => {
+              setAiInitialPrompt('');
+              setShowAiModal(true);
+            }}
           />
         ) : (
           /* TAB 5: Quản lý tài khoản & Đổi thông tin */
@@ -584,6 +598,60 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           }}
         />
       </Modal>
+
+      {/* ─── FLOATING ACTION BUTTON: TRỢ LÝ AI ASSISTANT ─── */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          bottom: 84,
+          right: 18,
+          width: 54,
+          height: 54,
+          borderRadius: 27,
+          backgroundColor: '#1d4ed8',
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: '#1d4ed8',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.35,
+          shadowRadius: 8,
+          elevation: 8,
+          borderWidth: 2,
+          borderColor: '#ffffff',
+          zIndex: 999,
+        }}
+        activeOpacity={0.85}
+        onPress={() => {
+          setAiInitialPrompt('');
+          setShowAiModal(true);
+        }}
+      >
+        <MaterialIcons name="auto-awesome" size={26} color="#ffffff" />
+        <View
+          style={{
+            position: 'absolute',
+            top: -2,
+            right: -2,
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: '#10b981',
+            borderWidth: 2.5,
+            borderColor: '#ffffff',
+          }}
+        />
+      </TouchableOpacity>
+
+      {/* ─── MODAL TRỢ LÝ AI (3 KỸ NĂNG & ML MODELS) ─── */}
+      <AiAssistantModal
+        visible={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        initialPrompt={aiInitialPrompt}
+        onSelectUnitToBook={(unit: AiSuggestedUnit) => {
+          setShowAiModal(false);
+          setCustomerTab('book');
+        }}
+      />
     </View>
   );
 }

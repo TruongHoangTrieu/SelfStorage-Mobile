@@ -18,6 +18,7 @@ interface CustomerSidebarProps {
   onSelectTab: (tab: CustomerTab) => void;
   rentedUnitsCount?: number;
   onSwitchToStaff?: () => void;
+  onOpenAiAssistant?: () => void;
 }
 
 export default function CustomerSidebar({
@@ -27,6 +28,7 @@ export default function CustomerSidebar({
   onSelectTab,
   rentedUnitsCount = 2,
   onSwitchToStaff,
+  onOpenAiAssistant,
 }: CustomerSidebarProps) {
   const menuItems: { id: CustomerTab; icon: string; label: string; badge?: string }[] = [
     { id: 'my_units', icon: '🏠', label: 'Kho của tôi', badge: `${rentedUnitsCount} ô` },
@@ -100,6 +102,50 @@ export default function CustomerSidebar({
               );
             })}
           </ScrollView>
+
+          {/* AI Assistant Quick Entry */}
+          {onOpenAiAssistant && (
+            <TouchableOpacity
+              style={{
+                marginHorizontal: 16,
+                marginBottom: 12,
+                padding: 12,
+                borderRadius: 14,
+                backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                borderWidth: 1,
+                borderColor: 'rgba(59, 130, 246, 0.4)',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+              activeOpacity={0.8}
+              onPress={() => {
+                onClose();
+                onOpenAiAssistant();
+              }}
+            >
+              <View
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: '#2563eb',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 18 }}>✨</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 13 }}>
+                  Trợ lý AI SelfStorage
+                </Text>
+                <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 1 }}>
+                  Tư vấn cỡ kho & chính sách 24/7
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Footer Info */}
           <View style={styles.footerSection}>

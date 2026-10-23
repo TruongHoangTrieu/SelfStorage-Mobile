@@ -4,6 +4,7 @@ import {
   Text,
   View,
   Modal,
+  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -52,91 +53,93 @@ export default function PrintReceiptModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.modalCard}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>🖨️ IN TÀI LIỆU BÀN GIAO TẠI QUẦY</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Subtitle */}
-          <Text style={styles.subtitle}>
-            In hợp đồng, phiếu bàn giao và thẻ mã PIN Smart Lock cho khách hàng{' '}
-            <Text style={{ fontWeight: 'bold', color: '#0F172A' }}>{appointment.customerName}</Text>.
-          </Text>
-
-          {/* Máy in chọn sẵn */}
-          <Text style={styles.sectionLabel}>CHỌN MÁY IN TẠI CƠ SỞ:</Text>
-          <View style={styles.printerList}>
-            {[
-              { id: 'printer-pos-01', name: 'Máy in Lễ tân (Epson POS-80 Nhiệt)', status: '🟢 Đang sẵn sàng' },
-              { id: 'printer-office-a4', name: 'Máy in Văn phòng A4 (Canon LBP-2900 LAN)', status: '🟢 Đang sẵn sàng' },
-            ].map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.printerOption, selectedPrinter === p.id && styles.printerOptionActive]}
-                onPress={() => setSelectedPrinter(p.id)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.printerName, selectedPrinter === p.id && styles.printerNameActive]}>
-                    {p.name}
-                  </Text>
-                  <Text style={styles.printerStatus}>{p.status}</Text>
-                </View>
-                <View style={[styles.radioCircle, selectedPrinter === p.id && styles.radioCircleActive]}>
-                  {selectedPrinter === p.id && <View style={styles.radioInner} />}
-                </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 2 }}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.title} numberOfLines={1}>🖨️ IN TÀI LIỆU BÀN GIAO</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>✕</Text>
               </TouchableOpacity>
-            ))}
-          </View>
+            </View>
 
-          {/* Danh mục tài liệu cần in */}
-          <Text style={styles.sectionLabel}>TÀI LIỆU CẦN IN KÈM THEO:</Text>
-          <TouchableOpacity
-            style={styles.checkboxRow}
-            onPress={() => setPrintContract(!printContract)}
-          >
-            <View style={[styles.checkbox, printContract && styles.checkboxChecked]}>
-              {printContract && <Text style={styles.checkMark}>✓</Text>}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.checkLabel}>Hợp đồng cho thuê kho điện tử (Khổ A4)</Text>
-              <Text style={styles.checkSub}>Gồm điều khoản quyền lợi, tiền cọc và chữ ký 2 bên</Text>
-            </View>
-          </TouchableOpacity>
+            {/* Subtitle */}
+            <Text style={styles.subtitle}>
+              In hợp đồng, phiếu bàn giao và thẻ mã PIN Smart Lock cho khách hàng{' '}
+              <Text style={{ fontWeight: 'bold', color: '#0F172A' }}>{appointment.customerName}</Text>.
+            </Text>
 
-          <TouchableOpacity
-            style={styles.checkboxRow}
-            onPress={() => setPrintPinReceipt(!printPinReceipt)}
-          >
-            <View style={[styles.checkbox, printPinReceipt && styles.checkboxChecked]}>
-              {printPinReceipt && <Text style={styles.checkMark}>✓</Text>}
+            {/* Máy in chọn sẵn */}
+            <Text style={styles.sectionLabel}>CHỌN MÁY IN TẠI CƠ SỞ:</Text>
+            <View style={styles.printerList}>
+              {[
+                { id: 'printer-pos-01', name: 'Máy in Lễ tân (Epson POS-80 Nhiệt)', status: '🟢 Đang sẵn sàng' },
+                { id: 'printer-office-a4', name: 'Máy in Văn phòng A4 (Canon LBP-2900 LAN)', status: '🟢 Đang sẵn sàng' },
+              ].map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.printerOption, selectedPrinter === p.id && styles.printerOptionActive]}
+                  onPress={() => setSelectedPrinter(p.id)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.printerName, selectedPrinter === p.id && styles.printerNameActive]}>
+                      {p.name}
+                    </Text>
+                    <Text style={styles.printerStatus}>{p.status}</Text>
+                  </View>
+                  <View style={[styles.radioCircle, selectedPrinter === p.id && styles.radioCircleActive]}>
+                    {selectedPrinter === p.id && <View style={styles.radioInner} />}
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.checkLabel}>Phiếu bàn giao & Thẻ Smart PIN (Khổ K80)</Text>
-              <Text style={styles.checkSub}>Số ô kho {assignedUnitCode || appointment.assignedUnit}, mã Smart Key 6 số, mã QR vào thang máy</Text>
-            </View>
-          </TouchableOpacity>
 
-          {/* Buttons */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={isPrinting}>
-              <Text style={styles.cancelBtnText}>Hủy</Text>
+            {/* Danh mục tài liệu cần in */}
+            <Text style={styles.sectionLabel}>TÀI LIỆU CẦN IN KÈM THEO:</Text>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setPrintContract(!printContract)}
+            >
+              <View style={[styles.checkbox, printContract && styles.checkboxChecked]}>
+                {printContract && <Text style={styles.checkMark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.checkLabel}>Hợp đồng cho thuê kho điện tử (Khổ A4)</Text>
+                <Text style={styles.checkSub}>Gồm điều khoản quyền lợi, tiền cọc và chữ ký 2 bên</Text>
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.printBtn}
-              onPress={handleExecutePrint}
-              disabled={isPrinting || (!printContract && !printPinReceipt)}
+              style={styles.checkboxRow}
+              onPress={() => setPrintPinReceipt(!printPinReceipt)}
             >
-              {isPrinting ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.printBtnText}>Gửi Lệnh In Ngay 🖨️</Text>
-              )}
+              <View style={[styles.checkbox, printPinReceipt && styles.checkboxChecked]}>
+                {printPinReceipt && <Text style={styles.checkMark}>✓</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.checkLabel}>Phiếu bàn giao & Thẻ Smart PIN (Khổ K80)</Text>
+                <Text style={styles.checkSub}>Số ô kho {assignedUnitCode || appointment.assignedUnit}, mã Smart Key 6 số, mã QR vào thang máy</Text>
+              </View>
             </TouchableOpacity>
-          </View>
+
+            {/* Buttons */}
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={isPrinting}>
+                <Text style={styles.cancelBtnText}>Hủy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.printBtn}
+                onPress={handleExecutePrint}
+                disabled={isPrinting || (!printContract && !printPinReceipt)}
+              >
+                {isPrinting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.printBtnText}>Gửi Lệnh In Ngay 🖨️</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -156,7 +159,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '100%',
     maxWidth: 420,
-    padding: 20,
+    maxHeight: '88%',
+    padding: 18,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -169,9 +173,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
     color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
   },
   closeBtn: {
     padding: 4,

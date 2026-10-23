@@ -94,10 +94,10 @@ export default function HandoverSuccessScreen({
 
         {/* Khung nổi bật: Mã Hợp Đồng & Ô Kho */}
         <View style={styles.heroSummaryCard}>
-          <View style={styles.heroCol}>
+          <View style={styles.heroColLeft}>
             <Text style={styles.heroLabel}>MÃ HỢP ĐỒNG</Text>
             <View style={styles.codeWithCopyRow}>
-              <Text style={styles.heroCodeText} numberOfLines={1}>
+              <Text style={styles.heroCodeText} numberOfLines={1} ellipsizeMode="middle">
                 {contractCode}
               </Text>
               <TouchableOpacity
@@ -107,7 +107,7 @@ export default function HandoverSuccessScreen({
               >
                 <MaterialIcons
                   name={copiedField === 'contract' ? 'check' : 'content-copy'}
-                  size={14}
+                  size={13}
                   color={T.primary}
                 />
               </TouchableOpacity>
@@ -116,9 +116,11 @@ export default function HandoverSuccessScreen({
 
           <View style={styles.heroDivider} />
 
-          <View style={styles.heroCol}>
+          <View style={styles.heroColRight}>
             <Text style={styles.heroLabel}>Ô KHO BÀN GIAO</Text>
-            <Text style={styles.heroUnitText}>#{assignedUnitCode}</Text>
+            <Text style={styles.heroUnitText} numberOfLines={1}>
+              #{assignedUnitCode}
+            </Text>
           </View>
         </View>
 
@@ -126,7 +128,7 @@ export default function HandoverSuccessScreen({
         <View style={styles.pinCard}>
           <View style={styles.pinCardHeader}>
             <View style={styles.pinIconCircle}>
-              <MaterialIcons name="lock" size={15} color={T.cyan} />
+              <MaterialIcons name="lock" size={14} color={T.cyan} />
             </View>
             <Text style={styles.pinCardTitle}>MÃ SMART PIN MỞ KHÓA 24/7</Text>
           </View>
@@ -141,9 +143,9 @@ export default function HandoverSuccessScreen({
           </View>
 
           <View style={styles.pinGuideBox}>
-            <MaterialIcons name="info-outline" size={14} color="#94A3B8" />
+            <MaterialIcons name="info-outline" size={13} color="#94A3B8" />
             <Text style={styles.pinGuideText}>
-              Nhập mã PIN gồm 6 chữ số rồi nhấn phím <Text style={styles.whiteBold}>[#]</Text> trên bàn phím khóa để mở cửa.
+              Nhập mã PIN gồm 6 số rồi nhấn phím <Text style={styles.whiteBold}>[#]</Text> trên bàn phím khóa để mở cửa.
             </Text>
           </View>
 
@@ -201,11 +203,11 @@ export default function HandoverSuccessScreen({
 
           <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
             <View style={styles.infoLabelGroup}>
-              <MaterialIcons name="circle" size={10} color={T.emerald} />
+              <MaterialIcons name="circle" size={8} color={T.emerald} />
               <Text style={styles.infoLabel}>Trạng thái kho:</Text>
             </View>
             <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>ĐANG LƯU KHO (OCCUPIED)</Text>
+              <Text style={styles.activeTagText}>ĐANG LƯU KHO</Text>
             </View>
           </View>
         </View>
@@ -261,14 +263,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   contentPadding: {
-    padding: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingBottom: 36,
   },
   mainCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 18,
+    padding: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -277,14 +280,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 3,
+    width: '100%',
   },
   successIconWrapper: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   iconRingOuter: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#ECFDF5',
     borderWidth: 2,
     borderColor: '#A7F3D0',
@@ -292,9 +296,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconRingInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
@@ -318,20 +322,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   headline: {
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
     letterSpacing: -0.3,
   },
   subheadline: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748B',
     textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 18,
-    lineHeight: 19,
-    paddingHorizontal: 8,
+    marginTop: 4,
+    marginBottom: 14,
+    lineHeight: 18,
+    paddingHorizontal: 4,
   },
   boldDark: {
     color: '#0F172A',
@@ -344,17 +348,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#EFF6FF',
     borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#BFDBFE',
     marginBottom: 14,
   },
-  heroCol: {
-    flex: 1,
+  heroColLeft: {
+    flex: 1.2,
+    minWidth: 0,
+  },
+  heroColRight: {
+    flex: 0.8,
+    minWidth: 0,
+    alignItems: 'flex-end',
   },
   heroLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
     color: '#2563EB',
     letterSpacing: 0.5,
@@ -363,10 +373,10 @@ const styles = StyleSheet.create({
   codeWithCopyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   heroCodeText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#1E40AF',
     flexShrink: 1,
@@ -378,12 +388,12 @@ const styles = StyleSheet.create({
   },
   heroDivider: {
     width: 1,
-    height: 32,
+    height: 30,
     backgroundColor: '#BFDBFE',
-    marginHorizontal: 12,
+    marginHorizontal: 8,
   },
   heroUnitText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
     color: '#004AC6',
   },
@@ -391,10 +401,10 @@ const styles = StyleSheet.create({
   pinCard: {
     backgroundColor: '#0F172A',
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#1E293B',
   },
@@ -402,7 +412,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   pinIconCircle: {
     width: 22,
@@ -414,19 +424,24 @@ const styles = StyleSheet.create({
   },
   pinCardTitle: {
     color: '#38BDF8',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
   pinDigitsRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    maxWidth: 290,
+    marginBottom: 10,
   },
   digitBox: {
-    width: 42,
-    height: 50,
-    borderRadius: 10,
+    flex: 1,
+    height: 46,
+    maxWidth: 44,
+    borderRadius: 8,
     backgroundColor: '#1E293B',
     borderWidth: 1.5,
     borderColor: '#0284C7',
@@ -435,7 +450,7 @@ const styles = StyleSheet.create({
   },
   digitText: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '900',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -443,14 +458,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 8,
-    marginBottom: 12,
+    paddingHorizontal: 4,
+    marginBottom: 10,
   },
   pinGuideText: {
     color: '#94A3B8',
-    fontSize: 11.5,
+    fontSize: 11,
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 15,
     flexShrink: 1,
   },
   whiteBold: {
@@ -478,23 +493,25 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+    gap: 8,
   },
   infoLabelGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   infoLabel: {
     fontSize: 12,
@@ -502,14 +519,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   infoValue: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#0F172A',
     fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   activeTag: {
     backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#A7F3D0',
@@ -522,7 +541,7 @@ const styles = StyleSheet.create({
 
   actionsContainer: {
     width: '100%',
-    gap: 10,
+    gap: 9,
   },
   primaryActionBtn: {
     flexDirection: 'row',
@@ -530,7 +549,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: '#004AC6',
-    paddingVertical: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 8,
     borderRadius: 12,
     shadowColor: '#004AC6',
     shadowOffset: { width: 0, height: 2 },
@@ -540,8 +560,10 @@ const styles = StyleSheet.create({
   },
   primaryActionText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '800',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   secondaryActionBtn: {
     flexDirection: 'row',
@@ -551,7 +573,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    paddingVertical: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 8,
     borderRadius: 12,
   },
   sentActionBtn: {
@@ -560,8 +583,10 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: {
     color: '#004AC6',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   backQueueBtn: {
     flexDirection: 'row',
@@ -571,13 +596,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingVertical: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 8,
     borderRadius: 12,
     marginTop: 2,
   },
   backQueueText: {
     color: '#0F172A',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'center',
   },
 });

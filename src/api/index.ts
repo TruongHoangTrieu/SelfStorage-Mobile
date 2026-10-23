@@ -393,3 +393,83 @@ export async function deleteStoredItemApi(itemId: number | string) {
     method: 'DELETE',
   });
 }
+
+/**
+ * ==========================================================
+ * CÁC HÀM GỌI API CHO TRỢ LÝ AI (3 KỸ NĂNG & ML MODELS)
+ * ==========================================================
+ */
+
+export interface AiItem {
+  item: string;
+  catalog_name?: string;
+  quantity: number;
+  unit_volume_m3?: number;
+  total_volume_m3?: number;
+  estimated?: boolean;
+  stackable?: boolean;
+  note?: string | null;
+}
+
+export interface AiSuggestedUnit {
+  unit_id: string;
+  unit_number: string;
+  unit_type_id?: string;
+  unit_type_name?: string;
+  facility_name?: string;
+  size_m2?: number;
+  volume_m3?: number;
+  price_per_month?: number;
+  deposit_amount?: number;
+}
+
+export interface AiChatData {
+  items?: AiItem[];
+  total_raw_volume_m3?: number;
+  required_volume_m3?: number;
+  suggested_units?: AiSuggestedUnit[];
+  method?: string;
+  confidence?: number;
+  out_of_scope?: boolean;
+  [key: string]: unknown;
+}
+
+export interface AiChatResponse {
+  conversation_id: string;
+  intent: 'size_advice' | 'search_policy' | 'recommend_package' | 'get_live_data' | 'out_of_scope' | 'fallback' | string;
+  reply: string;
+  data?: AiChatData;
+  sources?: string[];
+  model_version?: string;
+}
+
+/**
+ * Gửi tin nhắn đến Trợ lý AI (hỗ trợ cả khách vãng lai và đã đăng nhập)
+ */
+export async function sendAiChatApi(
+  message: string,
+  options?: {
+    conversationId?: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    facilityId?: string;
+  }
+): Promise<AiChatResponse> {
+  return apiRequest<AiChatResponse>('/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      message,
+      conversationId: options?.conversationId,
+      history: options?.history,
+      facilityId: options?.facilityId,
+    }),
+  });
+}
+
+/**
+ * Kiểm tra trạng thái AI Service
+ */
+export async function checkAiHealthApi(): Promise<any> {
+  return apiRequest<any>('/ai/health', {
+    method: 'GET',
+  });
+}
