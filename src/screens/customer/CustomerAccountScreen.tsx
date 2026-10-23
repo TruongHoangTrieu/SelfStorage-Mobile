@@ -64,6 +64,7 @@ export default function CustomerAccountScreen({
   const [showNewPass, setShowNewPass] = useState(false);
   const [isChangingPass, setIsChangingPass] = useState(false);
   const [passMsg, setPassMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     if (currentUser) {
       if (currentUser.fullName) setFullName(currentUser.fullName);
@@ -117,8 +118,6 @@ export default function CustomerAccountScreen({
       setIsUpdatingProfile(false);
     }
   };
-
-
 
   // Change password
   const handleChangePassword = async () => {
@@ -394,8 +393,6 @@ export default function CustomerAccountScreen({
           </TouchableOpacity>
         </View>
 
-
-
         {/* Nút Đăng Xuất To Rõ Ràng */}
         <TouchableOpacity style={s.fullLogoutBtn} onPress={handleLogout} activeOpacity={0.85}>
           <MaterialIcons name="logout" size={20} color={T.error} />
@@ -651,5 +648,4 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: T.error,
   },
-
 });
