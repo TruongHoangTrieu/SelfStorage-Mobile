@@ -73,7 +73,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             customerName: item.customer?.fullName || 'Khách hàng',
             phone: item.customer?.phone || '0908123456',
             email: item.customer?.email || 'customer@example.com',
-            idCard: item.customer?.idCard || 'Đã đối chiếu tại quầy',
+            idCard: item.customer?.maskedIdentityNumber || item.customer?.identityNumber || item.customer?.idCard || 'Đã đối chiếu tại quầy',
+            identityType: item.customer?.identityType || 'CCCD',
+            identityNumber: item.customer?.identityNumber || '',
+            maskedIdentityNumber: item.customer?.maskedIdentityNumber || '',
+            identityAddress: item.customer?.identityAddress || item.customer?.address || '',
+            isIdentityVerified: item.customer?.isIdentityVerified ?? true,
+            identityFrontUrl: item.customer?.identityFrontUrl || undefined,
+            identityBackUrl: item.customer?.identityBackUrl || undefined,
             slotTime: formatSlotTime(item.appointmentDate),
             timeCategory: new Date(item.appointmentDate).getHours() >= 12 ? 'afternoon' : 'morning',
             unitType: firstItem?.unitType?.name || 'Kho Cá Nhân Mini',
@@ -81,9 +88,23 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             unitSize: `${firstItem?.unitType?.size || 4.9}m² (Tiêu chuẩn)`,
             unitId: firstItem?.unitId || 1,
             assignedUnit: firstItem?.unit?.unitNumber || 'A-101',
-            preferredFloor: firstItem?.unit?.floor || 'Tầng 1',
             status: appStatus,
-            depositStatus: 'paid',
+            depositStatus: (() => {
+              const paidDeposit = Array.isArray(item.payments)
+                ? item.payments.find((p: any) => p.paymentType === 'DEPOSIT' && p.status === 'PAID')
+                : undefined;
+              if (paidDeposit) return 'paid';
+              if (backendStatus === 'CONFIRMED' || backendStatus === 'IN_PROGRESS' || backendStatus === 'COMPLETED') {
+                return 'paid';
+              }
+              return 'unpaid';
+            })(),
+            rentalStatus: (() => {
+              const paidRental = Array.isArray(item.payments)
+                ? item.payments.find((p: any) => p.paymentType === 'RENTAL' && p.status === 'PAID')
+                : undefined;
+              return paidRental ? 'paid' : 'unpaid';
+            })(),
             depositAmount: formatVND(firstItem?.depositAmount || item.totalAmount || 890000),
             monthlyRent: formatVND(firstItem?.price || 890000) + '/tháng',
             startDate: formatVietnameseDate(item.appointmentDate),
@@ -93,6 +114,10 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             accessPin: item.rentalContract?.contractItems?.[0]?.accessCode || item.rentalContract?.accessCodes?.[0]?.code || undefined,
             contractCode: item.rentalContract?.contractCode || undefined,
           };
+        })
+        .filter((app: CheckInAppointment) => {
+          // Nhân viên CHỈ tiếp nhận những khách hàng đã thanh toán cọc thành công
+          return app.depositStatus === 'paid';
         });
 
         setAppointments(mappedAppointments);
@@ -171,6 +196,12 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     condition: string;
     notes?: string;
     photos?: string[];
+    identityType?: 'CCCD' | 'PASSPORT' | 'BUSINESS_LICENSE';
+    identityNumber?: string;
+    identityAddress?: string;
+    isIdentityVerified?: boolean;
+    identityFrontUrl?: string;
+    identityBackUrl?: string;
   }) => {
     setIsSubmittingHandover(true);
     try {
@@ -197,6 +228,12 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             condition: updatedData.condition,
             notes: updatedData.notes,
             photos: updatedData.photos,
+            identityType: updatedData.identityType,
+            identityNumber: updatedData.identityNumber,
+            identityAddress: updatedData.identityAddress,
+            isIdentityVerified: updatedData.isIdentityVerified,
+            identityFrontUrl: updatedData.identityFrontUrl,
+            identityBackUrl: updatedData.identityBackUrl,
           });
 
           if (checkInResponse?.contract) {

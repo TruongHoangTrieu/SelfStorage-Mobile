@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { StaffUser } from '../../types/handover';
 import { useAuth } from '../../context/AuthContext';
 
@@ -28,14 +29,18 @@ export default function StaffSettingsScreen({
 
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
+      {/* Top Bar (Dàn trải rộng, bỏ icon, thiết kế thanh lịch) */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
+          <MaterialIcons name="menu" size={22} color="#0F172A" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.subTitle}>⚙️ QUẢN TRỊ CA TRỰC</Text>
-          <Text style={styles.mainTitle}>CÀI ĐẶT NHÂN VIÊN</Text>
+        <View style={styles.topBarTitleCol}>
+          <Text style={styles.subTitle} numberOfLines={1}>
+            {currentUser.facilityName}
+          </Text>
+          <Text style={styles.mainTitle} numberOfLines={1}>
+            Cài đặt & Tài khoản
+          </Text>
         </View>
       </View>
 
@@ -88,7 +93,7 @@ export default function StaffSettingsScreen({
           <TouchableOpacity style={styles.settingRow} onPress={onSwitchToCustomer}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.settingName, { color: '#2563EB' }]}>🔄 Chuyển sang Giao diện Khách hàng</Text>
-              <Text style={styles.settingDesc}>Xem luồng đặt kho và trải nghiệm khách thuê</Text>
+              <Text style={styles.settingDesc}>Đăng xuất ca trực và quay lại trang chủ khách hàng</Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </TouchableOpacity>
@@ -130,9 +135,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   topBar: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -141,24 +149,29 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuIcon: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
+  topBarTitleCol: {
+    flex: 1,
+    justifyContent: 'center',
   },
   subTitle: {
-    color: '#38BDF8',
+    color: '#1D4ED8',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   mainTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: '#0F172A',
+    fontSize: 18,
     fontWeight: '900',
+    letterSpacing: -0.4,
+    marginTop: 2,
   },
   scroll: {
     flex: 1,

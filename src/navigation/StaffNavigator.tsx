@@ -8,6 +8,8 @@ import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
 import UnitMapScreen from '../screens/staff/UnitMapScreen';
 import StaffSettingsScreen from '../screens/staff/StaffSettingsScreen';
 import PrintReceiptModal from '../components/staff/PrintReceiptModal';
+import NotificationsModal from '../components/common/NotificationsModal';
+import { useNotifications } from '../hooks/useNotifications';
 import { CURRENT_STAFF_USER } from '../data/mockStaffData';
 import { useStaffAppointments } from '../hooks/useStaffAppointments';
 import { useAppMode } from '../context/AppModeContext';
@@ -19,12 +21,16 @@ interface StaffNavigatorProps {
 }
 
 export default function StaffNavigator({ staffAppointmentsState }: StaffNavigatorProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, handleLogout } = useAuth();
   const defaultStaffState = useStaffAppointments(
     currentUser?.facilityId || currentUser?.assignedFacility?.id || currentUser?.facility?.id
   );
   const staffState = staffAppointmentsState || defaultStaffState;
   const { switchToCustomer } = useAppMode();
+
+  const handleSwitchToCustomerAndLogout = async () => {
+    await handleLogout();
+  };
 
   const dynamicStaffUser = useMemo(() => {
     const facilityName =
@@ -67,6 +73,10 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
     handleCompleteHandover,
   } = staffState;
 
+  // Trung tâm thông báo Nhân viên
+  const [showStaffNotifModal, setShowStaffNotifModal] = React.useState<boolean>(false);
+  const staffNotifState = useNotifications('staff');
+
   useEffect(() => {
     loadStaffData();
   }, [loadStaffData]);
@@ -84,7 +94,10 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
         }}
         currentUser={dynamicStaffUser}
         pendingCount={appointments.filter((a) => a.status === 'pending' || a.status === 'arrived').length}
-        onSwitchToCustomer={switchToCustomer}
+        onSwitchToCustomer={handleSwitchToCustomerAndLogout}
+        onLogout={handleLogout}
+        onOpenNotifications={() => setShowStaffNotifModal(true)}
+        unreadNotifCount={staffNotifState.unreadCount}
       />
 
       {/* Render Nội Dung Staff Theo Tab & FlowStep */}
@@ -98,6 +111,8 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             isRefreshing={isStaffLoading}
             onOpenSidebar={() => setIsSidebarVisible(true)}
             facilityName={dynamicStaffUser.facilityName}
+            onOpenNotifications={() => setShowStaffNotifModal(true)}
+            unreadNotifCount={staffNotifState.unreadCount}
           />
         ) : flowStep === 'handover' && selectedAppointment ? (
           /* TRANG B: Xác thực khách hàng & Bàn giao kho */
@@ -130,6 +145,8 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             isRefreshing={isStaffLoading}
             onOpenSidebar={() => setIsSidebarVisible(true)}
             facilityName={dynamicStaffUser.facilityName}
+            onOpenNotifications={() => setShowStaffNotifModal(true)}
+            unreadNotifCount={staffNotifState.unreadCount}
           />
         )
       ) : staffTab === 'dashboard' ? (
@@ -142,6 +159,8 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
           }}
           onOpenSidebar={() => setIsSidebarVisible(true)}
           facilityName={dynamicStaffUser.facilityName}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
         />
       ) : staffTab === 'facility' ? (
         /* TAB 4: Sơ đồ cơ sở & Trạng thái ô kho */
@@ -155,7 +174,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
         <StaffSettingsScreen
           currentUser={dynamicStaffUser}
           onOpenSidebar={() => setIsSidebarVisible(true)}
-          onSwitchToCustomer={switchToCustomer}
+          onSwitchToCustomer={handleSwitchToCustomerAndLogout}
         />
       ) : (
         /* Các tab khác: Checkout / Support */
@@ -205,6 +224,21 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
           assignedUnitCode={selectedAppointment.assignedUnit}
         />
       )}
+
+      {/* ─── MODAL TRUNG TÂM THÔNG BÁO NHÂN VIÊN ─── */}
+      <NotificationsModal
+        visible={showStaffNotifModal}
+        onClose={() => setShowStaffNotifModal(false)}
+        notifications={staffNotifState.notifications}
+        unreadCount={staffNotifState.unreadCount}
+        isLoading={staffNotifState.loading}
+        isRefreshing={staffNotifState.refreshing}
+        onRefresh={() => staffNotifState.loadNotifications(true)}
+        onMarkAsRead={staffNotifState.markAsRead}
+        onMarkAllAsRead={staffNotifState.markAllAsRead}
+        onDeleteNotification={staffNotifState.deleteNotification}
+        role="staff"
+      />
     </View>
   );
 }

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Alert, Platform } from 'react-native';
-import { apiRequest, setAuthToken } from '../api';
+import { apiRequest, setAuthToken, getAuthToken } from '../api';
+import { saveSession, getSession, clearSession } from '../utils/authStorage';
 import { useAppMode } from './AppModeContext';
 
 export function isStaffRole(user: any): boolean {
@@ -32,7 +33,11 @@ interface AuthContextType {
   setCurrentUser: (user: any) => void;
   setShowAuthModal: (show: boolean) => void;
   handleQuickLogin: (onSuccessCallback?: () => void) => Promise<void>;
-  handleLoginSuccess: (user: any, onRoleDetermined?: (role: 'staff' | 'customer') => void) => void;
+  handleLoginSuccess: (
+    user: any,
+    onRoleDetermined?: (role: 'staff' | 'customer') => void,
+    token?: string
+  ) => void;
   handleLogout: () => void;
 }
 
@@ -45,29 +50,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // Khôi phục phiên đăng nhập khi mở lại ứng dụng (Web / Mobile Web)
+  // Khôi phục phiên đăng nhập khi mở lại ứng dụng (hỗ trợ cả Mobile Native iOS/Android & Web)
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        const savedToken = localStorage.getItem('token');
-        const savedUserStr = localStorage.getItem('user');
-        if (savedToken) {
-          setAuthToken(savedToken);
+    getSession().then(({ token, user }) => {
+      if (user) {
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+        if (isStaffRole(user)) {
+          setAppMode('staff');
+        } else {
+          setAppMode('customer');
         }
-        if (savedUserStr) {
-          const user = JSON.parse(savedUserStr);
-          setCurrentUser(user);
-          setIsLoggedIn(true);
-          if (isStaffRole(user)) {
-            setAppMode('staff');
-          } else {
-            setAppMode('customer');
-          }
-        }
-      } catch (e) {
-        console.warn('Session restore error:', e);
       }
-    }
+    });
   }, [setAppMode]);
 
   const handleQuickLogin = async (onSuccessCallback?: () => void) => {
@@ -81,22 +76,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (res?.accessToken) {
-        setAuthToken(res.accessToken);
         const user = res.user || {
           email: 'customer.google@selfstorage.vn',
           fullName: 'Khách hàng Google',
           role: 'STORAGE_CUSTOMER',
         };
+        await saveSession(res.accessToken, user);
         setCurrentUser(user);
         setIsLoggedIn(true);
         setShowAuthModal(false);
-
-        if (Platform.OS === 'web') {
-          try {
-            localStorage.setItem('token', res.accessToken);
-            localStorage.setItem('user', JSON.stringify(user));
-          } catch {}
-        }
 
         const role: 'staff' | 'customer' = isStaffRole(user) ? 'staff' : 'customer';
         setAppMode(role);
@@ -113,13 +101,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleLoginSuccess = (
+  const handleLoginSuccess = async (
     user: any,
-    onRoleDetermined?: (role: 'staff' | 'customer') => void
+    onRoleDetermined?: (role: 'staff' | 'customer') => void,
+    token?: string
   ) => {
     setCurrentUser(user);
     setIsLoggedIn(true);
     setShowAuthModal(false);
+
+    // Lưu session bền vững vào Storage
+    const effectiveToken = token || getAuthToken();
+    await saveSession(effectiveToken, user);
 
     const role: 'staff' | 'customer' = isStaffRole(user) ? 'staff' : 'customer';
     setAppMode(role);
@@ -129,14 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleLogout = () => {
-    setAuthToken('');
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      } catch {}
-    }
+  const handleLogout = async () => {
+    await clearSession();
     setCurrentUser(null);
     setIsLoggedIn(false);
     setAppMode('customer');

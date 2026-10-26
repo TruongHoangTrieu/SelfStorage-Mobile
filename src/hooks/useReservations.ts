@@ -55,10 +55,7 @@ export function useReservations(onReservationChanged?: () => void) {
             depositAmount: ut.depositAmount ?? ut.price ?? 1200000,
             image: (Array.isArray(ut.images) && ut.images[0]) || ut.imageUrl || ut.image || getUnitImage(ut.name, i),
             features: [
-              'Khóa điện tử Smart Lock PIN 24/7',
-              'Máy lạnh & Hút ẩm tiêu chuẩn',
-              'Camera AI giám sát an ninh',
-              'Bảo hiểm hàng hóa miễn phí',
+              
             ],
             dimensions: `${ut.size || 5}${ut.sizeUnit || 'm²'} (Cao 2.8m)`,
           }))

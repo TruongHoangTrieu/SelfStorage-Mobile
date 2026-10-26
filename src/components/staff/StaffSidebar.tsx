@@ -21,6 +21,9 @@ interface StaffSidebarProps {
   currentUser: StaffUser;
   pendingCount?: number;
   onSwitchToCustomer: () => void;
+  onLogout?: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotifCount?: number;
 }
 
 interface NavItemConfig {
@@ -38,6 +41,9 @@ export default function StaffSidebar({
   currentUser,
   pendingCount = 0,
   onSwitchToCustomer,
+  onLogout,
+  onOpenNotifications,
+  unreadNotifCount = 0,
 }: StaffSidebarProps) {
   const navItems: NavItemConfig[] = [
     {
@@ -189,6 +195,30 @@ export default function StaffSidebar({
                 </TouchableOpacity>
               );
             })}
+
+            {/* Mục Thông báo vận hành */}
+            {onOpenNotifications && (
+              <TouchableOpacity
+                style={styles.navItem}
+                onPress={() => {
+                  onClose();
+                  onOpenNotifications();
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={styles.iconWrapper}>
+                  <MaterialIcons name="notifications" size={20} color="#94A3B8" />
+                </View>
+                <Text style={styles.itemLabel}>Thông báo vận hành</Text>
+                {unreadNotifCount > 0 && (
+                  <View style={[styles.badge, { backgroundColor: '#EF4444' }]}>
+                    <Text style={[styles.badgeText, { color: '#FFFFFF' }]}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
           </ScrollView>
 
           {/* Footer: Chuyển vai trò & Version */}
@@ -206,10 +236,24 @@ export default function StaffSidebar({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.switchModeTitle}>Chuyển sang Khách hàng</Text>
-                <Text style={styles.switchModeSubtitle}>Xem kho & hợp đồng cá nhân</Text>
+                <Text style={styles.switchModeSubtitle}>Đăng xuất & Về trang chủ</Text>
               </View>
               <MaterialIcons name="chevron-right" size={18} color="#64748B" />
             </TouchableOpacity>
+
+            {onLogout && (
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                onPress={() => {
+                  onClose();
+                  onLogout();
+                }}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="logout" size={16} color="#EF4444" />
+                <Text style={styles.logoutBtnText}>Đăng xuất ca trực</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.systemInfoRow}>
               <Text style={styles.versionText}>SelfStorage Staff v2.4</Text>
@@ -489,6 +533,23 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 10,
     marginTop: 1,
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    marginBottom: 8,
+  },
+  logoutBtnText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
   },
   systemInfoRow: {
     flexDirection: 'row',

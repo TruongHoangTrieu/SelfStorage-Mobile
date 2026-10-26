@@ -54,13 +54,15 @@ interface Props {
   onRefresh?: () => void;
   onReservationCreated: (reservation: Reservation) => void;
   onViewMyReservations: () => void;
-  onNavigateTab?: (
-    tab: CustomerTabType,
-  ) => void;
+  onNavigateTab?: (tab: CustomerTabType) => void;
   activeBottomTab?: CustomerTabType;
   onOpenLogin?: () => void;
   onLogout?: () => void;
   currentUser?: any;
+  initialSelectedUnit?: any;
+  onClearInitialSelectedUnit?: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotifCount?: number;
 }
 
 export interface StorageDisplayItem {
@@ -101,12 +103,46 @@ const FACILITY_PHOTOS = [
 
 function extractDistrict(address: string, name: string): string {
   const text = `${name} ${address}`.toLowerCase();
-  if (text.includes("thủ đức") || text.includes("thu duc") || text.includes("an phú") || text.includes("võ nguyên giáp") || text.includes("thảo điền")) return "TP. Thủ Đức";
-  if (text.includes("quận 1") || text.includes("q. 1") || text.includes("q1") || text.includes("tân định") || text.includes("nguyễn huệ")) return "Quận 1";
-  if (text.includes("quận 7") || text.includes("q. 7") || text.includes("q7") || text.includes("trần trọng cung") || text.includes("tân phú") || text.includes("nam long")) return "Quận 7";
-  if (text.includes("bình thạnh") || text.includes("binh thanh") || text.includes("landmark")) return "Q. Bình Thạnh";
-  if (text.includes("quận 6") || text.includes("q. 6") || text.includes("q6") || text.includes("centre mall")) return "Quận 6";
-  if (text.includes("quận 9") || text.includes("q. 9") || text.includes("q9")) return "Quận 9";
+  if (
+    text.includes("thủ đức") ||
+    text.includes("thu duc") ||
+    text.includes("an phú") ||
+    text.includes("võ nguyên giáp") ||
+    text.includes("thảo điền")
+  )
+    return "TP. Thủ Đức";
+  if (
+    text.includes("quận 1") ||
+    text.includes("q. 1") ||
+    text.includes("q1") ||
+    text.includes("tân định") ||
+    text.includes("nguyễn huệ")
+  )
+    return "Quận 1";
+  if (
+    text.includes("quận 7") ||
+    text.includes("q. 7") ||
+    text.includes("q7") ||
+    text.includes("trần trọng cung") ||
+    text.includes("tân phú") ||
+    text.includes("nam long")
+  )
+    return "Quận 7";
+  if (
+    text.includes("bình thạnh") ||
+    text.includes("binh thanh") ||
+    text.includes("landmark")
+  )
+    return "Q. Bình Thạnh";
+  if (
+    text.includes("quận 6") ||
+    text.includes("q. 6") ||
+    text.includes("q6") ||
+    text.includes("centre mall")
+  )
+    return "Quận 6";
+  if (text.includes("quận 9") || text.includes("q. 9") || text.includes("q9"))
+    return "Quận 9";
   return "Khu Vực Khác";
 }
 
@@ -125,12 +161,18 @@ export default function BookStorageScreen({
   onOpenLogin,
   onLogout,
   currentUser,
+  initialSelectedUnit,
+  onClearInitialSelectedUnit,
+  onOpenNotifications,
+  unreadNotifCount = 0,
 }: Props) {
   // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
   // Selected Facility State (synced with Web flow: chọn cơ sở -> chọn loại kho)
-  const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
+  const [selectedFacility, setSelectedFacility] = useState<Facility | null>(
+    null,
+  );
   const [facilitySearchQuery, setFacilitySearchQuery] = useState("");
   const [facilityDistrictFilter, setFacilityDistrictFilter] = useState("ALL");
 
@@ -174,6 +216,17 @@ export default function BookStorageScreen({
   const [selectedUnit, setSelectedUnit] = useState<StorageDisplayItem | null>(
     null,
   );
+  const [pendingUnitToBookAfterLogin, setPendingUnitToBookAfterLogin] =
+    useState<StorageDisplayItem | null>(null);
+
+  // Khi khách hàng đăng nhập thành công sau khi bấm đặt kho, tự động đưa họ vào Bước 2
+  useEffect(() => {
+    if (currentUser && pendingUnitToBookAfterLogin) {
+      setSelectedUnit(pendingUnitToBookAfterLogin);
+      setCurrentStep(2);
+      setPendingUnitToBookAfterLogin(null);
+    }
+  }, [currentUser, pendingUnitToBookAfterLogin]);
 
   // Step 2 Form States
   const [moveInDateStr, setMoveInDateStr] = useState(() => {
@@ -209,7 +262,7 @@ export default function BookStorageScreen({
 
   // Active Bottom Tab
   const [currentBottomTab, setCurrentBottomTab] = useState<CustomerTabType>(
-    activeBottomTab || "search"
+    activeBottomTab || "search",
   );
 
   // Category Pill & Favorites States for Stitch Explore UI
@@ -217,7 +270,7 @@ export default function BookStorageScreen({
     "for-you" | "personal" | "family" | "business" | "ac"
   >("for-you");
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
-    new Set(["feat-1"])
+    new Set(["feat-1"]),
   );
 
   const toggleFavorite = (id: string) => {
@@ -288,6 +341,101 @@ export default function BookStorageScreen({
     });
   }, [facilities, unitTypes]);
 
+  // Xử lý khi người dùng chọn đặt một buồng kho được Trợ lý AI gợi ý
+  useEffect(() => {
+    if (initialSelectedUnit) {
+      // Yêu cầu đăng nhập trước khi vào đặt kho
+      if (!currentUser) {
+        if (onOpenLogin) {
+          onOpenLogin();
+        } else {
+          Alert.alert(
+            "Yêu cầu đăng nhập",
+            "Vui lòng đăng nhập tài khoản để đặt giữ chỗ buồng kho."
+          );
+        }
+        return;
+      }
+
+      // 1. Tìm hoặc gán cơ sở phù hợp
+      const matchedFacility =
+        facilities.find(
+          (f) =>
+            String(f.id) === String(initialSelectedUnit.facility_id) ||
+            (initialSelectedUnit.facility_name &&
+              f.name
+                ?.toLowerCase()
+                .includes(initialSelectedUnit.facility_name?.toLowerCase()))
+        ) ||
+        facilities[0] ||
+        null;
+
+      if (matchedFacility) {
+        setSelectedFacility(matchedFacility);
+      }
+
+      // 2. Tìm hoặc tạo StorageDisplayItem tương ứng
+      const matchedItem =
+        storageItems.find(
+          (si) =>
+            String(si.unitTypeId) === String(initialSelectedUnit.unit_type_id) ||
+            (initialSelectedUnit.unit_type_name &&
+              si.title
+                ?.toLowerCase()
+                .includes(initialSelectedUnit.unit_type_name?.toLowerCase()))
+        ) || storageItems[0];
+
+      if (matchedItem) {
+        setSelectedUnit(matchedItem);
+        setCurrentStep(2); // Chuyển thẳng sang Bước 2: Đặt chỗ & Lên lịch hẹn
+      } else {
+        const sizeM2 = Number(initialSelectedUnit.size_m2) || 2.5;
+        const price = Number(initialSelectedUnit.price_per_month) || 1500000;
+        const fallbackItem: StorageDisplayItem = {
+          id: `ai-suggested-${Date.now()}`,
+          facilityId: matchedFacility?.id || 1,
+          unitTypeId: initialSelectedUnit.unit_type_id || 1,
+          facilityName:
+            matchedFacility?.name ||
+            initialSelectedUnit.facility_name ||
+            "SelfStorage Cơ sở chính",
+          locationText: matchedFacility?.address || "TP. Hồ Chí Minh",
+          title: initialSelectedUnit.unit_type_name || "Kho Vừa (Loại M)",
+          unitCode: `#${initialSelectedUnit.unit_number || "M-102"}`,
+          floorText: "Sơ đồ buồng kho",
+          image:
+            "https://images.unsplash.com/photo-1595246140625-573b715d11dc?auto=format&fit=crop&w=1200&q=80",
+          blueprintImage: "",
+          badgeStatus: "Còn phòng",
+          floorArea: `${sizeM2} m²`,
+          volume: `${initialSelectedUnit.volume_m3 || 6.5} m³`,
+          dimensions: `${sizeM2} m² (Cao 2.6m)`,
+          capacity: "Phù hợp lưu trữ gia đình, văn phòng",
+          features: [
+            "Khóa Smart Lock PIN",
+            "Camera an ninh 24/7",
+            "Điều hòa độ ẩm",
+          ],
+          monthlyBasePrice: price,
+          depositAmount: price,
+          category: sizeM2 <= 3 ? "personal" : "family",
+          amenities: ["24/7", "CCTV", "AC"],
+        };
+        setSelectedUnit(fallbackItem);
+        setCurrentStep(2);
+      }
+
+      if (onClearInitialSelectedUnit) {
+        onClearInitialSelectedUnit();
+      }
+    }
+  }, [
+    initialSelectedUnit,
+    storageItems,
+    facilities,
+    onClearInitialSelectedUnit,
+  ]);
+
   // Filtered items (belonging to selectedFacility when chosen)
   const filteredItems = useMemo(() => {
     return storageItems.filter((item) => {
@@ -314,7 +462,13 @@ export default function BookStorageScreen({
       }
       return true;
     });
-  }, [storageItems, selectedFacility, searchQuery, selectedCategory, selectedAmenity]);
+  }, [
+    storageItems,
+    selectedFacility,
+    searchQuery,
+    selectedCategory,
+    selectedAmenity,
+  ]);
 
   //Date select
   const minMoveInDate = useMemo(() => {
@@ -423,7 +577,7 @@ export default function BookStorageScreen({
   const dynamicFacilities = useMemo(() => {
     return facilities.map((fac, idx) => {
       const facUnits = unitTypes.filter(
-        (ut) => String((ut as any).facilityId) === String(fac.id)
+        (ut) => String((ut as any).facilityId) === String(fac.id),
       );
       const validPrices = facUnits
         .map((u) => Number(u.price) || 0)
@@ -439,7 +593,7 @@ export default function BookStorageScreen({
         (fac as any)._count?.storageUnits ??
         facUnits.reduce(
           (acc, u) => acc + (Number((u as any).availableUnits) || 0),
-          0
+          0,
         );
 
       let badge = "Đang hoạt động";
@@ -452,15 +606,18 @@ export default function BookStorageScreen({
       }
 
       const hasPersonal = facUnits.some((u) => Number(u.size) <= 3);
-      const hasFamily = facUnits.some((u) => Number(u.size) > 3 && Number(u.size) <= 9);
+      const hasFamily = facUnits.some(
+        (u) => Number(u.size) > 3 && Number(u.size) <= 9,
+      );
       const hasBusiness = facUnits.some((u) => Number(u.size) > 9);
       const hasAC =
         facUnits.some((u) =>
           ((u as any).features || []).some(
             (f: string) =>
               typeof f === "string" &&
-              (f.toLowerCase().includes("lạnh") || f.toLowerCase().includes("ac"))
-          )
+              (f.toLowerCase().includes("lạnh") ||
+                f.toLowerCase().includes("ac")),
+          ),
         ) || (fac.address || "").toLowerCase().includes("máy lạnh");
 
       return {
@@ -489,11 +646,23 @@ export default function BookStorageScreen({
   // Filter dynamic facilities based on search query and category filter pill
   const filteredDynamicFacilities = useMemo(() => {
     return dynamicFacilities.filter((item) => {
-      if (activeFilterPill === "personal" && !item.hasPersonal && item.unitTypesCount > 0)
+      if (
+        activeFilterPill === "personal" &&
+        !item.hasPersonal &&
+        item.unitTypesCount > 0
+      )
         return false;
-      if (activeFilterPill === "family" && !item.hasFamily && item.unitTypesCount > 0)
+      if (
+        activeFilterPill === "family" &&
+        !item.hasFamily &&
+        item.unitTypesCount > 0
+      )
         return false;
-      if (activeFilterPill === "business" && !item.hasBusiness && item.unitTypesCount > 0)
+      if (
+        activeFilterPill === "business" &&
+        !item.hasBusiness &&
+        item.unitTypesCount > 0
+      )
         return false;
       if (activeFilterPill === "ac" && !item.hasAC && item.unitTypesCount > 0)
         return false;
@@ -512,6 +681,17 @@ export default function BookStorageScreen({
 
   // Step 2 -> Step 3: Tạo đơn hẹn và tạo mã VietQR thanh toán cọc giữ chỗ
   const handleSignContract = async () => {
+    if (!currentUser) {
+      if (onOpenLogin) {
+        onOpenLogin();
+      } else {
+        Alert.alert(
+          "Yêu cầu đăng nhập",
+          "Vui lòng đăng nhập tài khoản để tạo hợp đồng giữ chỗ buồng kho."
+        );
+      }
+      return;
+    }
     if (!selectedUnit) {
       Alert.alert("Lỗi", "Chưa chọn buồng kho.");
       return;
@@ -708,18 +888,22 @@ export default function BookStorageScreen({
       const confirmLogout = () => {
         onLogout?.();
       };
-      if (Platform.OS === 'web') {
-        if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+      if (Platform.OS === "web") {
+        if (
+          window.confirm(
+            "Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?",
+          )
+        ) {
           confirmLogout();
         }
       } else {
         Alert.alert(
-          'Đăng xuất',
-          `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
+          "Đăng xuất",
+          `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ""}?`,
           [
-            { text: 'Hủy', style: 'cancel' },
-            { text: 'Đăng xuất', style: 'destructive', onPress: confirmLogout },
-          ]
+            { text: "Hủy", style: "cancel" },
+            { text: "Đăng xuất", style: "destructive", onPress: confirmLogout },
+          ],
         );
       }
     } else {
@@ -779,7 +963,10 @@ export default function BookStorageScreen({
                 <View style={s.topActionsRow}>
                   {(onOpenLogin || onLogout) && (
                     <TouchableOpacity
-                      style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+                      style={[
+                        s.loginHeaderBtn,
+                        currentUser && s.logoutHeaderBtn,
+                      ]}
                       onPress={handleAuthAction}
                       activeOpacity={0.8}
                     >
@@ -802,13 +989,29 @@ export default function BookStorageScreen({
                       </Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity style={s.notifBtn} activeOpacity={0.8} onPress={onViewMyReservations}>
+                  <TouchableOpacity
+                    style={s.notifBtn}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (onOpenNotifications) {
+                        onOpenNotifications();
+                      } else {
+                        onViewMyReservations();
+                      }
+                    }}
+                  >
                     <MaterialIcons
                       name="notifications-none"
                       size={22}
                       color={T.onSurface}
                     />
-                    <View style={s.notifBadgeDot} />
+                    {unreadNotifCount > 0 ? (
+                      <View style={s.notifBadgeDot}>
+                        <Text style={s.notifBadgeCountText}>
+                          {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+                        </Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -833,14 +1036,25 @@ export default function BookStorageScreen({
                         activeOpacity={0.8}
                         onPress={onOpenLogin}
                       >
-                        <MaterialIcons name="person" size={26} color={T.primary} />
+                        <MaterialIcons
+                          name="person"
+                          size={26}
+                          color={T.primary}
+                        />
                       </TouchableOpacity>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={s.greetingSub}>
                           {currentUser ? "Xin chào," : "Chào mừng bạn,"}
                         </Text>
-                        <Text style={s.greetingName} numberOfLines={1} ellipsizeMode="tail">
-                          {currentUser?.fullName || (currentUser?.email ? currentUser.email.split("@")[0] : "Khách hàng")}
+                        <Text
+                          style={s.greetingName}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {currentUser?.fullName ||
+                            (currentUser?.email
+                              ? currentUser.email.split("@")[0]
+                              : "Khách hàng")}
                         </Text>
                       </View>
                     </View>
@@ -854,26 +1068,40 @@ export default function BookStorageScreen({
                             onOpenLogin();
                             return;
                           }
-                          onNavigateTab?.('support');
+                          onNavigateTab?.("support");
                         }}
                         accessibilityLabel="Hỗ trợ kỹ thuật"
                       >
-                        <MaterialIcons name="headset-mic" size={20} color={T.primary} />
+                        <MaterialIcons
+                          name="headset-mic"
+                          size={20}
+                          color={T.primary}
+                        />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={s.iconCircleBtn}
                         activeOpacity={0.8}
                         onPress={() => {
-                          if (!currentUser && onOpenLogin) {
-                            onOpenLogin();
-                            return;
+                          if (onOpenNotifications) {
+                            onOpenNotifications();
+                          } else {
+                            onViewMyReservations();
                           }
-                          onViewMyReservations();
                         }}
                         accessibilityLabel="Thông báo"
                       >
-                        <MaterialIcons name="notifications-none" size={20} color={T.onSurface} />
-                        <View style={s.iconNotifDot} />
+                        <MaterialIcons
+                          name="notifications-none"
+                          size={20}
+                          color={T.onSurface}
+                        />
+                        {unreadNotifCount > 0 ? (
+                          <View style={s.iconNotifDot}>
+                            <Text style={s.notifBadgeCountText}>
+                              {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+                            </Text>
+                          </View>
+                        ) : null}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -881,7 +1109,12 @@ export default function BookStorageScreen({
                   {/* 3. SEARCH BAR */}
                   <View style={s.searchSection}>
                     <View style={s.searchBarPill}>
-                      <MaterialIcons name="search" size={22} color={T.outline} style={{ marginRight: 10 }} />
+                      <MaterialIcons
+                        name="search"
+                        size={22}
+                        color={T.outline}
+                        style={{ marginRight: 10 }}
+                      />
                       <TextInput
                         style={s.searchInputStitch}
                         placeholder="Tìm kiếm kho, vị trí hoặc kích thước..."
@@ -931,7 +1164,11 @@ export default function BookStorageScreen({
                           }}
                         >
                           <Text style={s.heroCtaText}>Khám phá ngay</Text>
-                          <MaterialIcons name="arrow-forward" size={15} color={T.primary} />
+                          <MaterialIcons
+                            name="arrow-forward"
+                            size={15}
+                            color={T.primary}
+                          />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -947,7 +1184,8 @@ export default function BookStorageScreen({
                       <TouchableOpacity
                         style={[
                           s.categoryPill,
-                          activeFilterPill === "for-you" && s.categoryPillActive,
+                          activeFilterPill === "for-you" &&
+                            s.categoryPillActive,
                         ]}
                         onPress={() => setActiveFilterPill("for-you")}
                         activeOpacity={0.8}
@@ -955,12 +1193,17 @@ export default function BookStorageScreen({
                         <MaterialIcons
                           name="assignment-turned-in"
                           size={17}
-                          color={activeFilterPill === "for-you" ? "#ffffff" : T.primary}
+                          color={
+                            activeFilterPill === "for-you"
+                              ? "#ffffff"
+                              : T.primary
+                          }
                         />
                         <Text
                           style={[
                             s.categoryPillText,
-                            activeFilterPill === "for-you" && s.categoryPillTextActive,
+                            activeFilterPill === "for-you" &&
+                              s.categoryPillTextActive,
                           ]}
                         >
                           Dành cho bạn
@@ -970,7 +1213,8 @@ export default function BookStorageScreen({
                       <TouchableOpacity
                         style={[
                           s.categoryPill,
-                          activeFilterPill === "personal" && s.categoryPillActive,
+                          activeFilterPill === "personal" &&
+                            s.categoryPillActive,
                         ]}
                         onPress={() => setActiveFilterPill("personal")}
                         activeOpacity={0.8}
@@ -978,12 +1222,17 @@ export default function BookStorageScreen({
                         <MaterialIcons
                           name="inventory-2"
                           size={17}
-                          color={activeFilterPill === "personal" ? "#ffffff" : T.primary}
+                          color={
+                            activeFilterPill === "personal"
+                              ? "#ffffff"
+                              : T.primary
+                          }
                         />
                         <Text
                           style={[
                             s.categoryPillText,
-                            activeFilterPill === "personal" && s.categoryPillTextActive,
+                            activeFilterPill === "personal" &&
+                              s.categoryPillTextActive,
                           ]}
                         >
                           Cá nhân (1-3m²)
@@ -1001,12 +1250,17 @@ export default function BookStorageScreen({
                         <MaterialIcons
                           name="home-work"
                           size={17}
-                          color={activeFilterPill === "family" ? "#ffffff" : T.primary}
+                          color={
+                            activeFilterPill === "family"
+                              ? "#ffffff"
+                              : T.primary
+                          }
                         />
                         <Text
                           style={[
                             s.categoryPillText,
-                            activeFilterPill === "family" && s.categoryPillTextActive,
+                            activeFilterPill === "family" &&
+                              s.categoryPillTextActive,
                           ]}
                         >
                           Gia đình (4-9m²)
@@ -1016,7 +1270,8 @@ export default function BookStorageScreen({
                       <TouchableOpacity
                         style={[
                           s.categoryPill,
-                          activeFilterPill === "business" && s.categoryPillActive,
+                          activeFilterPill === "business" &&
+                            s.categoryPillActive,
                         ]}
                         onPress={() => setActiveFilterPill("business")}
                         activeOpacity={0.8}
@@ -1024,12 +1279,17 @@ export default function BookStorageScreen({
                         <MaterialIcons
                           name="storefront"
                           size={17}
-                          color={activeFilterPill === "business" ? "#ffffff" : T.primary}
+                          color={
+                            activeFilterPill === "business"
+                              ? "#ffffff"
+                              : T.primary
+                          }
                         />
                         <Text
                           style={[
                             s.categoryPillText,
-                            activeFilterPill === "business" && s.categoryPillTextActive,
+                            activeFilterPill === "business" &&
+                              s.categoryPillTextActive,
                           ]}
                         >
                           Kho lớn / E-com
@@ -1047,12 +1307,15 @@ export default function BookStorageScreen({
                         <MaterialIcons
                           name="ac-unit"
                           size={17}
-                          color={activeFilterPill === "ac" ? "#ffffff" : T.primary}
+                          color={
+                            activeFilterPill === "ac" ? "#ffffff" : T.primary
+                          }
                         />
                         <Text
                           style={[
                             s.categoryPillText,
-                            activeFilterPill === "ac" && s.categoryPillTextActive,
+                            activeFilterPill === "ac" &&
+                              s.categoryPillTextActive,
                           ]}
                         >
                           Máy lạnh 24/7
@@ -1071,15 +1334,25 @@ export default function BookStorageScreen({
                           setActiveFilterPill("for-you");
                         }}
                       >
-                        <Text style={s.sectionHeaderAction}>Tất cả ({dynamicFacilities.length})</Text>
+                        <Text style={s.sectionHeaderAction}>
+                          Tất cả ({dynamicFacilities.length})
+                        </Text>
                       </TouchableOpacity>
                     </View>
 
                     {filteredDynamicFacilities.length === 0 ? (
                       <View style={s.emptyFeaturedCard}>
-                        <MaterialCommunityIcons name="warehouse" size={36} color={T.outline} />
-                        <Text style={s.emptyFeaturedTitle}>Không tìm thấy cơ sở kho</Text>
-                        <Text style={s.emptyFeaturedSub}>Vui lòng thử tìm kiếm khác hoặc đổi bộ lọc.</Text>
+                        <MaterialCommunityIcons
+                          name="warehouse"
+                          size={36}
+                          color={T.outline}
+                        />
+                        <Text style={s.emptyFeaturedTitle}>
+                          Không tìm thấy cơ sở kho
+                        </Text>
+                        <Text style={s.emptyFeaturedSub}>
+                          Vui lòng thử tìm kiếm khác hoặc đổi bộ lọc.
+                        </Text>
                       </View>
                     ) : (
                       <ScrollView
@@ -1103,7 +1376,6 @@ export default function BookStorageScreen({
                                   resizeMode="cover"
                                 />
 
-
                                 <View style={s.cardDotsWrap}>
                                   <View style={[s.cardDot, s.cardDotActive]} />
                                   <View style={s.cardDot} />
@@ -1112,27 +1384,41 @@ export default function BookStorageScreen({
                               </View>
 
                               <View style={s.featuredCardBody}>
-                                <Text style={s.featuredCardTitle} numberOfLines={1}>
+                                <Text
+                                  style={s.featuredCardTitle}
+                                  numberOfLines={1}
+                                >
                                   {card.title}
                                 </Text>
 
                                 <View style={s.featuredPriceRow}>
-                                  <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-                                    <Text style={s.featuredPriceVal}>{card.price}</Text>
+                                  <View
+                                    style={{
+                                      flexDirection: "row",
+                                      alignItems: "baseline",
+                                    }}
+                                  >
+                                    <Text style={s.featuredPriceVal}>
+                                      {card.price}
+                                    </Text>
                                     {card.priceUnit ? (
-                                      <Text style={s.featuredPriceUnit}>{card.priceUnit}</Text>
+                                      <Text style={s.featuredPriceUnit}>
+                                        {card.priceUnit}
+                                      </Text>
                                     ) : null}
                                   </View>
                                   <View
                                     style={[
                                       s.featuredTagPill,
-                                      card.tagType === "business" && s.featuredTagBusiness,
+                                      card.tagType === "business" &&
+                                        s.featuredTagBusiness,
                                     ]}
                                   >
                                     <Text
                                       style={[
                                         s.featuredTagText,
-                                        card.tagType === "business" && s.featuredTagBusinessText,
+                                        card.tagType === "business" &&
+                                          s.featuredTagBusinessText,
                                       ]}
                                     >
                                       {card.tag}
@@ -1147,7 +1433,10 @@ export default function BookStorageScreen({
                                     color={T.primary}
                                     style={{ marginRight: 4 }}
                                   />
-                                  <Text style={s.featuredLocationText} numberOfLines={1}>
+                                  <Text
+                                    style={s.featuredLocationText}
+                                    numberOfLines={1}
+                                  >
                                     {card.location}
                                   </Text>
                                 </View>
@@ -1169,14 +1458,18 @@ export default function BookStorageScreen({
                           setActiveFilterPill("for-you");
                         }}
                       >
-                        <Text style={s.sectionHeaderSort}>Xem tất cả ({dynamicFacilities.length})</Text>
+                        <Text style={s.sectionHeaderSort}>
+                          Xem tất cả ({dynamicFacilities.length})
+                        </Text>
                       </TouchableOpacity>
                     </View>
 
                     <View style={s.nearbyListWrap}>
                       {dynamicFacilities.length === 0 ? (
                         <View style={s.emptyFeaturedCard}>
-                          <Text style={s.emptyFeaturedSub}>Đang tải dữ liệu cơ sở kho từ hệ thống...</Text>
+                          <Text style={s.emptyFeaturedSub}>
+                            Đang tải dữ liệu cơ sở kho từ hệ thống...
+                          </Text>
                         </View>
                       ) : (
                         dynamicFacilities.map((rec) => (
@@ -1206,7 +1499,10 @@ export default function BookStorageScreen({
                                   color={T.primary}
                                   style={{ marginRight: 4 }}
                                 />
-                                <Text style={s.nearbyDistanceText} numberOfLines={1}>
+                                <Text
+                                  style={s.nearbyDistanceText}
+                                  numberOfLines={1}
+                                >
                                   {rec.location}
                                 </Text>
                               </View>
@@ -1215,15 +1511,21 @@ export default function BookStorageScreen({
                                 <Text style={s.nearbyPriceText}>
                                   {rec.price}
                                   {rec.priceUnit ? (
-                                    <Text style={s.nearbyPriceUnit}>{rec.priceUnit}</Text>
+                                    <Text style={s.nearbyPriceUnit}>
+                                      {rec.priceUnit}
+                                    </Text>
                                   ) : null}
                                 </Text>
                                 <TouchableOpacity
                                   style={s.nearbyActionBtn}
                                   activeOpacity={0.8}
-                                  onPress={() => setSelectedFacility(rec.facility)}
+                                  onPress={() =>
+                                    setSelectedFacility(rec.facility)
+                                  }
                                 >
-                                  <Text style={s.nearbyActionBtnText}>Xem ngay</Text>
+                                  <Text style={s.nearbyActionBtnText}>
+                                    Xem ngay
+                                  </Text>
                                 </TouchableOpacity>
                               </View>
                             </View>
@@ -1242,7 +1544,11 @@ export default function BookStorageScreen({
                   <View style={s.activeFacilityBar}>
                     <View style={s.activeFacilityInfo}>
                       <View style={s.activeFacilityHeaderRow}>
-                        <MaterialIcons name="business" size={18} color={T.blue} />
+                        <MaterialIcons
+                          name="business"
+                          size={18}
+                          color={T.blue}
+                        />
                         <Text style={s.activeFacilityName} numberOfLines={1}>
                           {selectedFacility.name}
                         </Text>
@@ -1260,7 +1566,11 @@ export default function BookStorageScreen({
                       onPress={() => setSelectedFacility(null)}
                       activeOpacity={0.8}
                     >
-                      <MaterialIcons name="swap-horiz" size={16} color={T.blue} />
+                      <MaterialIcons
+                        name="swap-horiz"
+                        size={16}
+                        color={T.blue}
+                      />
                       <Text style={s.changeFacilityBtnText}>Đổi cơ sở</Text>
                     </TouchableOpacity>
                   </View>
@@ -1311,7 +1621,11 @@ export default function BookStorageScreen({
                           setSelectedAmenity(null);
                         }}
                       >
-                        <MaterialIcons name="tune" size={20} color={T.onPrimary} />
+                        <MaterialIcons
+                          name="tune"
+                          size={20}
+                          color={T.onPrimary}
+                        />
                       </TouchableOpacity>
                     </View>
 
@@ -1334,7 +1648,15 @@ export default function BookStorageScreen({
                             selectedCategory === "all" && s.sizeChipTextActive,
                           ]}
                         >
-                          Tất cả ({storageItems.filter(item => String(item.facilityId) === String(selectedFacility.id)).length})
+                          Tất cả (
+                          {
+                            storageItems.filter(
+                              (item) =>
+                                String(item.facilityId) ===
+                                String(selectedFacility.id),
+                            ).length
+                          }
+                          )
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -1347,7 +1669,8 @@ export default function BookStorageScreen({
                         <Text
                           style={[
                             s.sizeChipText,
-                            selectedCategory === "personal" && s.sizeChipTextActive,
+                            selectedCategory === "personal" &&
+                              s.sizeChipTextActive,
                           ]}
                         >
                           Cá nhân (1-3m²)
@@ -1363,7 +1686,8 @@ export default function BookStorageScreen({
                         <Text
                           style={[
                             s.sizeChipText,
-                            selectedCategory === "family" && s.sizeChipTextActive,
+                            selectedCategory === "family" &&
+                              s.sizeChipTextActive,
                           ]}
                         >
                           Gia đình (4-9m²)
@@ -1379,7 +1703,8 @@ export default function BookStorageScreen({
                         <Text
                           style={[
                             s.sizeChipText,
-                            selectedCategory === "business" && s.sizeChipTextActive,
+                            selectedCategory === "business" &&
+                              s.sizeChipTextActive,
                           ]}
                         >
                           Doanh nghiệp (&gt;10m²)
@@ -1393,10 +1718,18 @@ export default function BookStorageScreen({
                     <View style={s.listHeaderRow}>
                       <View style={s.listHeaderLeft}>
                         <View style={s.livePulseDot} />
-                        <Text style={s.listHeaderTitle}>Các buồng kho tại chi nhánh</Text>
+                        <Text style={s.listHeaderTitle}>
+                          Các buồng kho tại chi nhánh
+                        </Text>
                       </View>
                       <Text style={s.listHeaderSort}>
-                        Cơ sở: <Text style={s.listHeaderSortBold}>{extractDistrict(selectedFacility.address || "", selectedFacility.name)}</Text>
+                        Cơ sở:{" "}
+                        <Text style={s.listHeaderSortBold}>
+                          {extractDistrict(
+                            selectedFacility.address || "",
+                            selectedFacility.name,
+                          )}
+                        </Text>
                       </Text>
                     </View>
 
@@ -1411,13 +1744,17 @@ export default function BookStorageScreen({
                           Chưa có buồng kho khả dụng
                         </Text>
                         <Text style={s.emptyStateSub}>
-                          Cơ sở này hiện tại chưa có loại kho phù hợp với bộ lọc. Bạn có thể chọn chi nhánh khác hoặc đặt lại bộ lọc.
+                          Cơ sở này hiện tại chưa có loại kho phù hợp với bộ
+                          lọc. Bạn có thể chọn chi nhánh khác hoặc đặt lại bộ
+                          lọc.
                         </Text>
                         <TouchableOpacity
                           style={s.emptyStateBtn}
                           onPress={() => setSelectedFacility(null)}
                         >
-                          <Text style={s.emptyStateBtnText}>Chọn chi nhánh khác</Text>
+                          <Text style={s.emptyStateBtnText}>
+                            Chọn chi nhánh khác
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     ) : (
@@ -1518,7 +1855,9 @@ export default function BookStorageScreen({
                                       size={14}
                                       color={T.secondaryBrand}
                                     />
-                                    <Text style={ac.featureChipText}>{feat}</Text>
+                                    <Text style={ac.featureChipText}>
+                                      {feat}
+                                    </Text>
                                   </View>
                                 ))}
                               </View>
@@ -1546,12 +1885,26 @@ export default function BookStorageScreen({
                               <TouchableOpacity
                                 style={ac.ctaBtn}
                                 onPress={() => {
+                                  if (!currentUser) {
+                                    setPendingUnitToBookAfterLogin(item);
+                                    if (onOpenLogin) {
+                                      onOpenLogin();
+                                    } else {
+                                      Alert.alert(
+                                        "Yêu cầu đăng nhập",
+                                        "Vui lòng đăng nhập tài khoản để đặt giữ chỗ buồng kho."
+                                      );
+                                    }
+                                    return;
+                                  }
                                   setSelectedUnit(item);
                                   setCurrentStep(2);
                                 }}
                                 activeOpacity={0.88}
                               >
-                                <Text style={ac.ctaBtnText}>Xem & Đặt ngay</Text>
+                                <Text style={ac.ctaBtnText}>
+                                  Xem & Đặt ngay
+                                </Text>
                                 <MaterialIcons
                                   name="arrow-forward"
                                   size={18}
@@ -1992,8 +2345,8 @@ export default function BookStorageScreen({
                           flexDirection: "row",
                           alignItems: "center",
                           gap: 6,
-                           flex: 1,           // ← THÊM
-                           flexShrink: 1, 
+                          flex: 1, // ← THÊM
+                          flexShrink: 1,
                         }}
                       >
                         <Text
@@ -2022,48 +2375,7 @@ export default function BookStorageScreen({
                       </Text>
                     </View>
                   </View>
-
-                  {/* Upfront Deposit Highlight Box */}
-                  <View style={s.depositHighlightCard}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <MaterialIcons
-                        name="security"
-                        size={20}
-                        color={T.secondary}
-                      />
-                      <Text style={s.depositHighlightTitle}>
-                        Tiền cọc cần thanh toán để giữ chỗ ngay
-                      </Text>
-                    </View>
-                    <Text style={s.depositHighlightAmount}>
-                      {formatVND(calc.depositAmount)}
-                    </Text>
-                    <Text style={s.depositHighlightSub}>
-                      * Tiền cọc bảo đảm được hoàn trả 100% khi thanh lý hợp
-                      đồng. Tiền thuê kho sẽ được thanh toán vào ngày nhận kho.
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Security Guarantee Banner */}
-                <View style={s.securityBanner}>
-                  <MaterialIcons
-                    name="verified-user"
-                    size={24}
-                    color={T.onSurface}
-                  />
-                  <Text style={s.securityBannerText}>
-                    Hợp đồng điện tử được định danh và ký kết số bảo mật theo
-                    Luật Giao dịch Điện tử Việt Nam. Có giá trị pháp lý tương
-                    đương văn bản giấy.
-                  </Text>
+                
                 </View>
               </View>
             </ScrollView>
@@ -2083,7 +2395,6 @@ export default function BookStorageScreen({
                     <Text style={[s.stickyGrandTotal, { color: T.secondary }]}>
                       {formatVND(calc.depositAmount)}
                     </Text>
-                    <Text style={s.stickyVatNote}>(Cọc giữ chỗ)</Text>
                   </View>
                 </View>
                 <View style={s.sslBadge}>
@@ -2104,41 +2415,19 @@ export default function BookStorageScreen({
                 ) : (
                   <>
                     <Text style={s.signContractBtnText}>
-                      Xác nhận & Đặt cọc giữ kho 
-                      
+                      Xác nhận & Đặt cọc giữ kho
                     </Text>
-                    
                   </>
                 )}
               </TouchableOpacity>
 
-              <View style={s.securityMicroRow}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-                >
-                  <MaterialIcons
-                    name="lock-clock"
-                    size={14}
-                    color={T.onSurface}
-                  />
-                  <Text style={s.securityMicroText}>
-                    Giữ chỗ tức thì qua VietQR
-                  </Text>
-                </View>
-                <Text style={s.securityMicroText}>•</Text>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-                >
-                  <MaterialIcons name="shield" size={14} color={T.onSurface} />
-                  <Text style={s.securityMicroText}>Bảo mật SePay PCI-DSS</Text>
-                </View>
-              </View>
+              
             </View>
           </View>
         )}
 
         {/* ========================================================================= */}
-        {/* STEP 3: THANH TOÁN CỌC GIỮ CHỖ QUA SEPAY VIETQR                           */}
+        {/* STEP 3: THANH TOÁN CỌC  SEPAY VIETQR                           */}
         {/* ========================================================================= */}
         {currentStep === 3 && (
           <View style={{ flex: 1, position: "relative" }}>
@@ -2305,22 +2594,17 @@ export default function BookStorageScreen({
                       </View>
                     </View>
 
-                    <View style={[s.bankRow, { borderBottomWidth: 0 }]}>
-                      <Text style={s.bankRowLabel}>Nội dung CK</Text>
+                    <View style={{ paddingTop: 4 }}>
                       <View
                         style={{
                           flexDirection: "row",
                           alignItems: "center",
-                          gap: 6,
+                          justifyContent: "space-between",
+                          marginBottom: 6,
                         }}
                       >
-                        <Text
-                          style={[
-                            s.bankRowVal,
-                            { fontWeight: "800", color: "#b91c1c" },
-                          ]}
-                        >
-                          {qrData.transferContent}
+                        <Text style={s.bankRowLabel}>
+                          Nội dung chuyển khoản (bắt buộc)
                         </Text>
                         <TouchableOpacity
                           style={[
@@ -2333,6 +2617,7 @@ export default function BookStorageScreen({
                               "Nội dung chuyển khoản",
                             )
                           }
+                          activeOpacity={0.7}
                         >
                           <MaterialIcons
                             name="content-copy"
@@ -2343,6 +2628,33 @@ export default function BookStorageScreen({
                             Sao chép
                           </Text>
                         </TouchableOpacity>
+                      </View>
+
+                      <View
+                        style={{
+                          backgroundColor: "#fef2f2",
+                          borderWidth: 1,
+                          borderColor: "#fca5a5",
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          paddingVertical: 9,
+                          borderStyle: "dashed",
+                          width: "100%",
+                        }}
+                      >
+                        <Text
+                          selectable
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "800",
+                            color: "#b91c1c",
+                            textAlign: "center",
+                            letterSpacing: 0.5,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {qrData.transferContent}
+                        </Text>
                       </View>
                     </View>
                   </View>
@@ -2357,31 +2669,7 @@ export default function BookStorageScreen({
                   </Text>
                 </View>
               </View>
-
-              {/* Demo Webhook Button for Testing — chỉ hiện trong dev */}
-              {__DEV__ && (
-                <TouchableOpacity
-                  style={s.simulateBtn}
-                  onPress={handleSimulatePayment}
-                  disabled={simulatingPayment}
-                  activeOpacity={0.85}
-                >
-                  {simulatingPayment ? (
-                    <ActivityIndicator color={T.secondary} size="small" />
-                  ) : (
-                    <>
-                      <MaterialIcons
-                        name="bolt"
-                        size={20}
-                        color={T.secondary}
-                      />
-                      <Text style={s.simulateBtnText}>
-                        ⚡ Mô phỏng thanh toán SePay thành công (Dev only)
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
+              
             </ScrollView>
 
             {/* Sticky Bottom Bar for Step 3 */}
@@ -3190,14 +3478,22 @@ const s = StyleSheet.create({
   },
   notifBadgeDot: {
     position: "absolute",
-    top: 7,
-    right: 7,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: T.secondaryContainer,
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#ef4444",
     borderWidth: 1.5,
-    borderColor: T.surfaceLowest,
+    borderColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  notifBadgeCountText: {
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: "800",
   },
 
   // Search & Filters Section
@@ -3672,19 +3968,19 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-     flexShrink: 1,       // ← THÊM
-  flex: 1,     
+    flexShrink: 1, // ← THÊM
+    flex: 1,
   },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
     color: T.onSurface,
-     flexShrink: 1,       // ← THÊM
+    flexShrink: 1, // ← THÊM
   },
   sectionHeaderSub: {
     fontSize: 11,
     color: T.onSurfaceVariant,
-    flexShrink: 0,       // ← THÊM
+    flexShrink: 0, // ← THÊM
   },
   changeLinkText: {
     fontSize: 12,
@@ -3947,8 +4243,8 @@ const s = StyleSheet.create({
     borderBottomColor: "rgba(198,198,205,0.6)",
     paddingBottom: 8,
     marginBottom: 8,
-    gap: 8,              // ← THÊM
-  flexWrap: "wrap",    // ← THÊM (cho phép xuống dòng khi hẹp)
+    gap: 8, // ← THÊM
+    flexWrap: "wrap", // ← THÊM (cho phép xuống dòng khi hẹp)
   },
   costLinesList: {
     gap: 8,
@@ -3957,20 +4253,19 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12, 
+    gap: 12,
   },
   costLineLabel: {
     fontSize: 12,
     color: T.onSurface,
-    flex: 1,  
-    flexShrink: 1,      // ← cho phép co lại
-
+    flex: 1,
+    flexShrink: 1, // ← cho phép co lại
   },
   costLineValue: {
     fontSize: 12,
     fontWeight: "600",
     color: T.onSurface,
-    flexShrink: 0,  
+    flexShrink: 0,
   },
   refundPill: {
     backgroundColor: T.secondaryFixed,
@@ -4091,15 +4386,14 @@ const s = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
-    paddingHorizontal: 16,   // ← THÊM: padding để text không sát mép
-
+    paddingHorizontal: 16, // ← THÊM: padding để text không sát mép
   },
   signContractBtnText: {
     fontSize: 14,
     fontWeight: "800",
     color: T.onPrimary,
-     flexShrink: 1,           // ← THÊM
-     textAlign: "center",     // ← THÊM
+    flexShrink: 1, // ← THÊM
+    textAlign: "center", // ← THÊM
   },
   securityMicroRow: {
     flexDirection: "row",
@@ -4240,8 +4534,7 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: "#1d4ed8",
-    flexWrap:"wrap"
-    
+    flexWrap: "wrap",
   },
   depositHighlightAmount: {
     fontSize: 22,
@@ -4253,7 +4546,7 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: "#1e40af",
     lineHeight: 16,
-      flexShrink: 1,  
+    flexShrink: 1,
   },
   // ─── Step 3 SePay VietQR Styles ──────────────────────────────
   qrPendingBadge: {
@@ -4600,9 +4893,7 @@ function BottomNavBar({
   onSelectTab,
 }: {
   activeTab: "search" | "my-storage" | "support";
-  onSelectTab: (
-    tab: "search" | "my-storage" | "support",
-  ) => void;
+  onSelectTab: (tab: "search" | "my-storage" | "support") => void;
 }) {
   return (
     <View style={bn.container}>

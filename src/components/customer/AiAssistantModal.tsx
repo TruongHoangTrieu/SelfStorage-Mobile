@@ -320,15 +320,15 @@ export default function AiAssistantModal({
     ]);
   };
 
-  const renderContentText = (rawText: string) => {
+  const renderContentText = (rawText: string, isUser = false) => {
     // Basic formatting for **bold**
     const parts = rawText.split(/(\*\*.*?\*\*)/g);
     return (
-      <Text style={s.messageText}>
+      <Text style={[s.messageText, isUser && s.userMessageText]}>
         {parts.map((part, i) => {
           if (part.startsWith('**') && part.endsWith('**')) {
             return (
-              <Text key={i} style={s.boldText}>
+              <Text key={i} style={[s.boldText, isUser && s.userBoldText]}>
                 {part.slice(2, -2)}
               </Text>
             );
@@ -444,7 +444,7 @@ export default function AiAssistantModal({
                       ]}
                     >
                       {/* Formatted Text */}
-                      {renderContentText(msg.content)}
+                      {renderContentText(msg.content, isUser)}
 
                       {/* SKILL 1: RECOGNIZED ITEMS CHIPS */}
                       {msg.data?.items && msg.data.items.length > 0 && (
@@ -489,8 +489,8 @@ export default function AiAssistantModal({
                           {msg.data.suggested_units.slice(0, 3).map((u: AiSuggestedUnit, idx: number) => (
                             <View key={idx} style={s.unitCard}>
                               <View style={s.unitCardHeader}>
-                                <Text style={s.unitCardNumber}>
-                                  Kho {u.unit_number} ({u.unit_type_name || 'Tiêu chuẩn'})
+                                <Text style={s.unitCardNumber} numberOfLines={1} ellipsizeMode="tail">
+                                  Kho {u.unit_number} • {u.unit_type_name || 'Tiêu chuẩn'}
                                 </Text>
                                 <Text style={s.unitCardPrice}>
                                   {formatVND(u.price_per_month || 0)}/tháng
@@ -498,7 +498,7 @@ export default function AiAssistantModal({
                               </View>
 
                               <View style={s.unitCardSpecs}>
-                                <Text style={s.unitCardFacility} numberOfLines={1}>
+                                <Text style={s.unitCardFacility} numberOfLines={1} ellipsizeMode="tail">
                                   📍 {u.facility_name || 'Chi nhánh SelfStorage'}
                                 </Text>
                                 <Text style={s.unitCardDim}>
@@ -756,15 +756,16 @@ const s = StyleSheet.create({
     marginTop: 2,
   },
   messageBubble: {
-    maxWidth: '82%',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    maxWidth: '85%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 18,
   },
   userBubble: {
     backgroundColor: '#2563eb',
     borderBottomRightRadius: 4,
     alignSelf: 'flex-end',
+    maxWidth: '80%',
   },
   aiBubble: {
     backgroundColor: '#ffffff',
@@ -776,15 +777,24 @@ const s = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 1,
+    maxWidth: '92%',
+    alignSelf: 'flex-start',
   },
   messageText: {
     fontSize: 13.5,
     lineHeight: 20,
     color: '#1e293b',
   },
+  userMessageText: {
+    color: '#ffffff',
+  },
   boldText: {
     fontWeight: '700',
     color: '#0f172a',
+  },
+  userBoldText: {
+    color: '#ffffff',
+    fontWeight: '800',
   },
   loadingBubble: {
     flexDirection: 'row',
@@ -883,38 +893,46 @@ const s = StyleSheet.create({
     borderColor: '#bbf7d0',
     borderRadius: 12,
     padding: 10,
-    gap: 5,
+    gap: 6,
+    width: '100%',
+    overflow: 'hidden',
   },
   unitCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 6,
   },
   unitCardNumber: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '800',
     color: '#14532d',
+    flex: 1,
+    flexShrink: 1,
   },
   unitCardPrice: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '800',
     color: '#15803d',
+    flexShrink: 0,
   },
   unitCardSpecs: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 6,
   },
   unitCardFacility: {
     fontSize: 11,
     color: '#4b5563',
     flex: 1,
-    marginRight: 6,
+    flexShrink: 1,
   },
   unitCardDim: {
     fontSize: 11,
     fontWeight: '600',
     color: '#166534',
+    flexShrink: 0,
   },
   bookUnitBtn: {
     marginTop: 4,
@@ -925,6 +943,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    width: '100%',
   },
   bookUnitBtnText: {
     fontSize: 11.5,

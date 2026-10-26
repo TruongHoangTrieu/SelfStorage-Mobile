@@ -56,6 +56,15 @@ export interface Reservation {
 
 let storedToken: string | null = null;
 
+if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+  try {
+    storedToken =
+      window.localStorage.getItem('@selfstorage_token') ||
+      window.localStorage.getItem('token') ||
+      null;
+  } catch {}
+}
+
 export const setAuthToken = (token: string | null) => {
   storedToken = token;
 };
@@ -72,8 +81,19 @@ export async function apiRequest<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (storedToken) {
-    headers['Authorization'] = `Bearer ${storedToken}`;
+  let token = storedToken;
+  if (!token && Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+    try {
+      token =
+        window.localStorage.getItem('@selfstorage_token') ||
+        window.localStorage.getItem('token') ||
+        null;
+      if (token) storedToken = token;
+    } catch {}
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   // 1. Thử gọi URL chính
@@ -175,9 +195,14 @@ export async function performCheckInApi(payload: {
   notes?: string;
   photos?: any[];
   unitCode?: string;
+  identityType?: 'CCCD' | 'PASSPORT' | 'BUSINESS_LICENSE';
+  identityNumber?: string;
+  identityAddress?: string;
+  isIdentityVerified?: boolean;
+  identityFrontUrl?: string;
+  identityBackUrl?: string;
 }) {
-  // Chỉ gửi các trường thuộc CheckInDto hợp lệ (reservationId, condition, notes, photos)
-  // để tránh lỗi "property unitCode should not exist" của NestJS ValidationPipe
+  // Chỉ gửi các trường thuộc CheckInDto hợp lệ
   const cleanBody: any = {
     reservationId: String(payload.reservationId),
     condition: payload.condition,
@@ -186,6 +211,14 @@ export async function performCheckInApi(payload: {
   if (payload.photos && Array.isArray(payload.photos) && payload.photos.length > 0) {
     cleanBody.photos = payload.photos;
   }
+  if (payload.identityType) cleanBody.identityType = payload.identityType;
+  if (payload.identityNumber) cleanBody.identityNumber = payload.identityNumber.trim();
+  if (payload.identityAddress) cleanBody.identityAddress = payload.identityAddress.trim();
+  if (typeof payload.isIdentityVerified === 'boolean') {
+    cleanBody.isIdentityVerified = payload.isIdentityVerified;
+  }
+  if (payload.identityFrontUrl) cleanBody.identityFrontUrl = payload.identityFrontUrl;
+  if (payload.identityBackUrl) cleanBody.identityBackUrl = payload.identityBackUrl;
 
   return apiRequest<{
     message: string;
@@ -227,6 +260,80 @@ export async function performCheckInApi(payload: {
   }>('/handovers/check-in', {
     method: 'POST',
     body: JSON.stringify(cleanBody),
+  });
+}
+
+/**
+ * Tải ảnh CCCD/Hộ chiếu lên Cloudinary Authenticated Storage có đóng dấu Watermark (POST /handovers/upload-cccd)
+ */
+export async function uploadCccdApi(
+  photoUri: string,
+  side: 'front' | 'back',
+  reservationCode?: string
+): Promise<{ url: string; signedUrl: string; public_id: string; expiresAt: number }> {
+  try {
+    const formData = new FormData();
+    const uriParts = (photoUri || '').split('.');
+    const fileType = uriParts[uriParts.length - 1] || 'jpg';
+    const fileName = `cccd_${side}_${Date.now()}.${fileType}`;
+
+    if (Platform.OS === 'web' && photoUri.startsWith('data:')) {
+      const res = await fetch(photoUri);
+      const blob = await res.blob();
+      formData.append('photo', blob, fileName);
+    } else {
+      formData.append('photo', {
+        uri: photoUri,
+        name: fileName,
+        type: `image/${fileType.toLowerCase() === 'png' ? 'png' : 'jpeg'}`,
+      } as any);
+    }
+
+    if (reservationCode) {
+      formData.append('reservationCode', reservationCode);
+    }
+    formData.append('side', side);
+
+    const headers: Record<string, string> = {
+      'X-Requested-With': 'XMLHttpRequest',
+    };
+    if (storedToken) {
+      headers['Authorization'] = `Bearer ${storedToken}`;
+    }
+
+    const res = await fetch(`${PRIMARY_API_BASE_URL}/handovers/upload-cccd`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.message || 'Không thể tải ảnh CCCD lên máy chủ');
+    }
+    return data;
+  } catch (err: any) {
+    console.warn('Lỗi upload CCCD lên Cloud, sử dụng ảnh trực tiếp:', err?.message || err);
+    return {
+      url: photoUri,
+      signedUrl: photoUri,
+      public_id: `offline-cccd-${Date.now()}`,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    };
+  }
+}
+
+/**
+ * Ghi nhận Audit Log truy vết và giải mã CCCD (POST /handovers/log-cccd-access)
+ */
+export async function logCccdAccessApi(contractId: string, reason: string): Promise<{
+  success: boolean;
+  decryptedNumber: string | null;
+  maskedNumber: string | null;
+}> {
+  return apiRequest('/handovers/log-cccd-access', {
+    method: 'POST',
+    body: JSON.stringify({ contractId, reason }),
   });
 }
 
@@ -471,5 +578,158 @@ export async function sendAiChatApi(
 export async function checkAiHealthApi(): Promise<any> {
   return apiRequest<any>('/ai/health', {
     method: 'GET',
+  });
+}
+
+// ─── NOTIFICATIONS API ────────────────────────────────────────────────────────
+export interface AppNotification {
+  id: string;
+  userId?: string;
+  title: string;
+  body: string;
+  type:
+    | 'RESERVATION'
+    | 'PAYMENT'
+    | 'CONTRACT'
+    | 'ACCESS'
+    | 'SUPPORT'
+    | 'RENEWAL'
+    | 'SYSTEM'
+    | string;
+  entityType?: string;
+  entityId?: string;
+  isRead: boolean;
+  metadata?: any;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  items: AppNotification[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  unreadCount: number;
+}
+
+/**
+ * Lấy danh sách thông báo người dùng (có phân trang & lọc theo trạng thái đọc)
+ */
+export async function getNotificationsApi(
+  page = 1,
+  limit = 20,
+  isRead?: boolean,
+  type?: string
+): Promise<NotificationsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (typeof isRead === 'boolean') {
+    params.append('isRead', String(isRead));
+  }
+  if (type) {
+    params.append('type', type);
+  }
+  return apiRequest<NotificationsResponse>(`/notifications?${params.toString()}`);
+}
+
+/**
+ * Lấy số lượng thông báo chưa đọc
+ */
+export async function getUnreadNotifCountApi(): Promise<{ unreadCount: number }> {
+  return apiRequest<{ unreadCount: number }>('/notifications/unread-count');
+}
+
+/**
+ * Đánh dấu toàn bộ thông báo là đã đọc
+ */
+export async function markAllNotificationsReadApi(): Promise<{ count: number }> {
+  return apiRequest<{ count: number }>('/notifications/read-all', {
+    method: 'PATCH',
+  });
+}
+
+/**
+ * Đánh dấu 1 thông báo cụ thể là đã đọc
+ */
+export async function markNotificationReadApi(id: string): Promise<AppNotification> {
+  return apiRequest<AppNotification>(`/notifications/${id}/read`, {
+    method: 'PATCH',
+  });
+}
+
+/**
+ * Xóa 1 thông báo
+ */
+export async function deleteNotificationApi(id: string): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/notifications/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Tạo yêu cầu thanh toán tiền thuê còn lại sau cọc (Flow 2: Rental Payment)
+ */
+export async function createRentalPaymentApi(
+  reservationId: string | number,
+  paymentMethod: 'BANK_TRANSFER' | 'CASH' = 'BANK_TRANSFER'
+) {
+  return apiRequest<{
+    payment: any;
+    qr: {
+      qrCodeUrl: string;
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+      amount: number;
+      transferContent: string;
+    };
+    reservation: any;
+  }>('/payments/rental', {
+    method: 'POST',
+    body: JSON.stringify({
+      reservationId: String(reservationId),
+      paymentMethod,
+    }),
+  });
+}
+
+/**
+ * Lấy tóm tắt tình trạng thanh toán của đơn giữ chỗ (Kiểm tra cọc & tiền thuê)
+ */
+export async function getReservationPaymentSummaryApi(reservationId: string | number) {
+  return apiRequest<{
+    reservationId: string;
+    totalAmount: number;
+    depositAmount: number;
+    depositPaid: boolean;
+    rentalAmount: number;
+    rentalPaid: boolean;
+    remainingAmountToPay: number;
+    reservationStatus: string;
+  }>(`/payments/reservations/${reservationId}/summary`);
+}
+
+/**
+ * Mô phỏng thanh toán SePay Webhook (hỗ trợ kiểm thử tức thì)
+ */
+export async function simulatePaymentWebhookApi(payload: {
+  id?: number;
+  gateway?: string;
+  transactionDate?: string;
+  accountNumber?: string;
+  code?: string;
+  content: string;
+  transferType?: string;
+  transferAmount: number;
+  accumulated?: number;
+  subAccount?: string;
+  referenceCode?: string;
+  description?: string;
+}) {
+  return apiRequest<any>('/payments/sepay/webhook', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

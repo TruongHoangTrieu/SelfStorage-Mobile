@@ -19,6 +19,8 @@ interface CustomerSidebarProps {
   rentedUnitsCount?: number;
   onSwitchToStaff?: () => void;
   onOpenAiAssistant?: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotifCount?: number;
 }
 
 export default function CustomerSidebar({
@@ -29,6 +31,8 @@ export default function CustomerSidebar({
   rentedUnitsCount = 2,
   onSwitchToStaff,
   onOpenAiAssistant,
+  onOpenNotifications,
+  unreadNotifCount = 0,
 }: CustomerSidebarProps) {
   const menuItems: { id: CustomerTab; icon: string; label: string; badge?: string }[] = [
     { id: 'my_units', icon: '🏠', label: 'Kho của tôi', badge: `${rentedUnitsCount} ô` },
@@ -101,6 +105,27 @@ export default function CustomerSidebar({
                 </TouchableOpacity>
               );
             })}
+
+            {/* Mục Thông Báo Hệ Thống */}
+            {onOpenNotifications && (
+              <TouchableOpacity
+                style={[styles.menuItem, { marginTop: 4 }]}
+                onPress={() => {
+                  onClose();
+                  onOpenNotifications();
+                }}
+              >
+                <Text style={styles.menuIcon}>🔔</Text>
+                <Text style={styles.menuLabel}>Thông báo</Text>
+                {unreadNotifCount > 0 ? (
+                  <View style={[styles.badge, { backgroundColor: '#ef4444' }]}>
+                    <Text style={[styles.badgeText, { color: '#ffffff' }]}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount} mới
+                    </Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            )}
           </ScrollView>
 
           {/* AI Assistant Quick Entry */}

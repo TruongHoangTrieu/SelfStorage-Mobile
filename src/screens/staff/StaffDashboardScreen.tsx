@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment } from '../../types/handover';
 
 interface StaffDashboardScreenProps {
@@ -13,6 +14,8 @@ interface StaffDashboardScreenProps {
   onGoToQueue: () => void;
   onOpenSidebar: () => void;
   facilityName?: string;
+  onOpenNotifications?: () => void;
+  unreadNotifCount?: number;
 }
 
 export default function StaffDashboardScreen({
@@ -20,6 +23,8 @@ export default function StaffDashboardScreen({
   onGoToQueue,
   onOpenSidebar,
   facilityName = 'Trụ sở chính Thủ Đức',
+  onOpenNotifications,
+  unreadNotifCount = 0,
 }: StaffDashboardScreenProps) {
   const pending = appointments.filter((a) => a.status === 'pending').length;
   const arrived = appointments.filter((a) => a.status === 'arrived').length;
@@ -28,40 +33,70 @@ export default function StaffDashboardScreen({
 
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
+      {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
+          <MaterialIcons name="menu" size={22} color="#0F172A" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.subTitle}>📍 {facilityName}</Text>
-          <Text style={styles.mainTitle}>BẢNG ĐIỀU KHIỂN HÔM NAY</Text>
+
+        <View style={styles.topBarTitleCol}>
+          <Text style={styles.subTitle} numberOfLines={1}>
+            {facilityName}
+          </Text>
+          <Text style={styles.mainTitle} numberOfLines={1}>
+            Bảng điều khiển ca trực
+          </Text>
         </View>
+
+        {onOpenNotifications && (
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={onOpenNotifications}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="notifications-none" size={21} color="#0F172A" />
+            {unreadNotifCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPadding}>
         {/* KPI Cards Row */}
         <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' }]}>
-            <Text style={styles.kpiIcon}>📥</Text>
+          <View style={[styles.kpiCard, { borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
+            <View style={styles.kpiIconWrap}>
+              <MaterialIcons name="calendar-today" size={18} color="#1D4ED8" />
+            </View>
             <Text style={[styles.kpiValue, { color: '#1D4ED8' }]}>{appointments.length}</Text>
             <Text style={styles.kpiLabel}>Tổng khách hẹn hôm nay</Text>
           </View>
 
-          <View style={[styles.kpiCard, { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }]}>
-            <Text style={styles.kpiIcon}>⏳</Text>
+          <View style={[styles.kpiCard, { borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
+            <View style={[styles.kpiIconWrap, { backgroundColor: '#FEF3C7' }]}>
+              <MaterialIcons name="schedule" size={18} color="#D97706" />
+            </View>
             <Text style={[styles.kpiValue, { color: '#D97706' }]}>{pending + arrived}</Text>
             <Text style={styles.kpiLabel}>Chờ nhận kho</Text>
           </View>
 
-          <View style={[styles.kpiCard, { borderColor: '#E9D5FF', backgroundColor: '#FAF5FF' }]}>
-            <Text style={styles.kpiIcon}>⚙️</Text>
+          <View style={[styles.kpiCard, { borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
+            <View style={[styles.kpiIconWrap, { backgroundColor: '#F3E8FF' }]}>
+              <MaterialIcons name="autorenew" size={18} color="#9333EA" />
+            </View>
             <Text style={[styles.kpiValue, { color: '#9333EA' }]}>{inProgress}</Text>
             <Text style={styles.kpiLabel}>Đang làm thủ tục</Text>
           </View>
 
-          <View style={[styles.kpiCard, { borderColor: '#BBF7D0', backgroundColor: '#F0FDF4' }]}>
-            <Text style={styles.kpiIcon}>✓</Text>
+          <View style={[styles.kpiCard, { borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
+            <View style={[styles.kpiIconWrap, { backgroundColor: '#DCFCE7' }]}>
+              <MaterialIcons name="check-circle" size={18} color="#15803D" />
+            </View>
             <Text style={[styles.kpiValue, { color: '#15803D' }]}>{completed}</Text>
             <Text style={styles.kpiLabel}>Đã bàn giao xong</Text>
           </View>
@@ -117,9 +152,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   topBar: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -128,25 +166,29 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuIcon: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
+  topBarTitleCol: {
+    flex: 1,
+    justifyContent: 'center',
   },
   subTitle: {
-    color: '#38BDF8',
+    color: '#1D4ED8',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   mainTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: '#0F172A',
+    fontSize: 18,
     fontWeight: '900',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
+    marginTop: 2,
   },
   scroll: {
     flex: 1,
@@ -163,13 +205,25 @@ const styles = StyleSheet.create({
   },
   kpiCard: {
     width: '48%',
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 14,
     borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  kpiIcon: {
-    fontSize: 20,
-    marginBottom: 4,
+  kpiIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   kpiValue: {
     fontSize: 24,
@@ -268,5 +322,33 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#64748B',
     marginTop: 2,
+  },
+  notifBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#1E40AF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  notifBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

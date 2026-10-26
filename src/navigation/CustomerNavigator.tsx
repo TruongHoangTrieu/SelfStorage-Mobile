@@ -21,6 +21,9 @@ import UpgradeUnitModal from '../components/customer/UpgradeUnitModal';
 import ReportIssueModal from '../components/customer/ReportIssueModal';
 import ChangePinModal from '../components/customer/ChangePinModal';
 import AiAssistantModal from '../components/customer/AiAssistantModal';
+import DraggableAiFab from '../components/customer/DraggableAiFab';
+import NotificationsModal from '../components/common/NotificationsModal';
+import { useNotifications } from '../hooks/useNotifications';
 import { AiSuggestedUnit } from '../api';
 import {
   CustomerPaymentsScreen,
@@ -87,6 +90,11 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
   // Trợ lý AI Assistant Modal
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string>('');
+  const [aiUnitToBook, setAiUnitToBook] = useState<any>(null);
+
+  // Trung tâm thông báo
+  const [showNotifModal, setShowNotifModal] = useState<boolean>(false);
+  const customerNotifState = useNotifications('customer');
 
   const reservationsState = useReservations(() => {
     if (onRefreshStaffData) {
@@ -162,6 +170,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           setAiInitialPrompt('');
           setShowAiModal(true);
         }}
+        onOpenNotifications={() => setShowNotifModal(true)}
+        unreadNotifCount={customerNotifState.unreadCount}
       />
 
       {/* Nội dung theo Tab chính: Kiểm tra nếu chưa đăng nhập thì buộc đăng nhập */}
@@ -310,6 +320,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               onLogout={handleLogout}
               currentUser={currentUser}
               onNavigateBottomTab={handleNavigateBottomTab}
+              onOpenNotifications={() => setShowNotifModal(true)}
+              unreadNotifCount={customerNotifState.unreadCount}
             />
           ) : selectedRentedUnit ? (
             /* TRANG B: Chi tiết & Quản lý Ô kho */
@@ -399,6 +411,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           currentUser={currentUser}
           activeBottomTab="search"
           onNavigateTab={handleNavigateBottomTab}
+          initialSelectedUnit={aiUnitToBook}
+          onClearInitialSelectedUnit={() => setAiUnitToBook(null)}
+          onOpenNotifications={() => setShowNotifModal(true)}
+          unreadNotifCount={customerNotifState.unreadCount}
         />
       ) : loading ? (
         <View style={styles.centerBox}>
@@ -591,56 +607,29 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
       <Modal visible={showAuthModal} transparent={false} animationType="slide">
         <LoginScreen
           onClose={() => setShowAuthModal(false)}
-          onLoginSuccess={(user) => {
-            handleLoginSuccess(user, (role) => {
-              setAppMode(role);
-            });
+          onLoginSuccess={(user, token) => {
+            handleLoginSuccess(
+              user,
+              (role) => {
+                setAppMode(role);
+              },
+              token
+            );
+            setShowAuthModal(false);
+            if (aiUnitToBook) {
+              setCustomerTab('book');
+            }
           }}
         />
       </Modal>
 
-      {/* ─── FLOATING ACTION BUTTON: TRỢ LÝ AI ASSISTANT ─── */}
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          bottom: 84,
-          right: 18,
-          width: 54,
-          height: 54,
-          borderRadius: 27,
-          backgroundColor: '#1d4ed8',
-          justifyContent: 'center',
-          alignItems: 'center',
-          shadowColor: '#1d4ed8',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.35,
-          shadowRadius: 8,
-          elevation: 8,
-          borderWidth: 2,
-          borderColor: '#ffffff',
-          zIndex: 999,
-        }}
-        activeOpacity={0.85}
+      {/* ─── NÚT TRỢ LÝ AI ASSISTANT CÓ THỂ KÉO THẢ DI CHUYỂN (DRAGGABLE FAB) ─── */}
+      <DraggableAiFab
         onPress={() => {
           setAiInitialPrompt('');
           setShowAiModal(true);
         }}
-      >
-        <MaterialIcons name="auto-awesome" size={26} color="#ffffff" />
-        <View
-          style={{
-            position: 'absolute',
-            top: -2,
-            right: -2,
-            width: 14,
-            height: 14,
-            borderRadius: 7,
-            backgroundColor: '#10b981',
-            borderWidth: 2.5,
-            borderColor: '#ffffff',
-          }}
-        />
-      </TouchableOpacity>
+      />
 
       {/* ─── MODAL TRỢ LÝ AI (3 KỸ NĂNG & ML MODELS) ─── */}
       <AiAssistantModal
@@ -649,8 +638,28 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         initialPrompt={aiInitialPrompt}
         onSelectUnitToBook={(unit: AiSuggestedUnit) => {
           setShowAiModal(false);
+          setAiUnitToBook(unit);
+          if (!isLoggedIn || !currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
           setCustomerTab('book');
         }}
+      />
+
+      {/* ─── MODAL TRUNG TÂM THÔNG BÁO KHÁCH HÀNG ─── */}
+      <NotificationsModal
+        visible={showNotifModal}
+        onClose={() => setShowNotifModal(false)}
+        notifications={customerNotifState.notifications}
+        unreadCount={customerNotifState.unreadCount}
+        isLoading={customerNotifState.loading}
+        isRefreshing={customerNotifState.refreshing}
+        onRefresh={() => customerNotifState.loadNotifications(true)}
+        onMarkAsRead={customerNotifState.markAsRead}
+        onMarkAllAsRead={customerNotifState.markAllAsRead}
+        onDeleteNotification={customerNotifState.deleteNotification}
+        role="customer"
       />
     </View>
   );

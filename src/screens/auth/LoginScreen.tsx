@@ -16,6 +16,7 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { apiRequest, setAuthToken } from '../../api';
+import { saveSession } from '../../utils/authStorage';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -50,7 +51,7 @@ const T = {
 };
 
 interface LoginScreenProps {
-  onLoginSuccess: (user: any) => void;
+  onLoginSuccess: (user: any, token?: string) => void;
   onClose?: () => void;
   initialMode?: 'login' | 'register';
 }
@@ -105,17 +106,10 @@ export default function LoginScreen({
       role: 'STORAGE_CUSTOMER',
     };
 
-    if (Platform.OS === 'web') {
-      try {
-        if (token) localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(userData));
-      } catch {
-        // ignore
-      }
-    }
+    await saveSession(token, userData);
 
     Alert.alert('Thành công', `Đăng nhập Google thành công! Chào mừng ${userData.fullName || userData.email}`);
-    onLoginSuccess(userData);
+    onLoginSuccess(userData, token);
   };
 
   // Watch Google Auth response changes
@@ -174,16 +168,9 @@ export default function LoginScreen({
         role: targetEmail.includes('staff') ? 'FACILITY_STAFF' : 'STORAGE_CUSTOMER',
       };
 
-      if (Platform.OS === 'web') {
-        try {
-          if (token) localStorage.setItem('token', token);
-          localStorage.setItem('user', JSON.stringify(userData));
-        } catch {
-          // ignore
-        }
-      }
+      await saveSession(token, userData);
 
-      onLoginSuccess(userData);
+      onLoginSuccess(userData, token);
     } catch (err: any) {
       setErrorMsg(err.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.');
     } finally {
@@ -232,8 +219,10 @@ export default function LoginScreen({
         role: 'STORAGE_CUSTOMER',
       };
 
+      await saveSession(token, userData);
+
       Alert.alert('Thành công', 'Đăng ký tài khoản thành công!');
-      onLoginSuccess(userData);
+      onLoginSuccess(userData, token);
     } catch (err: any) {
       setErrorMsg(err.message || 'Đăng ký không thành công. Email có thể đã tồn tại.');
     } finally {

@@ -34,11 +34,11 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
       return null;
     }
 
+    // allowsEditing: false để tránh lỗi màn hình đen (black image / CROP intent bug) trên Android và Web
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7, // Nén 70% để tối ưu dung lượng và tốc độ tải
+      allowsEditing: false,
+      quality: 0.85,
       base64: true,
     });
 
@@ -49,11 +49,14 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
     const asset = result.assets[0];
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const formattedBase64 = asset.base64
+      ? (asset.base64.startsWith('data:') ? asset.base64 : `data:image/jpeg;base64,${asset.base64}`)
+      : undefined;
 
     return {
       id: `photo-${Date.now()}`,
-      uri: asset.uri,
-      base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : undefined,
+      uri: asset.uri || formattedBase64 || '',
+      base64: formattedBase64,
       title: `Ảnh chụp camera lúc ${timeStr}`,
       createdAt: now.toISOString(),
     };
@@ -80,9 +83,8 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
+      allowsEditing: false,
+      quality: 0.85,
       base64: true,
     });
 
@@ -93,11 +95,14 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
     const asset = result.assets[0];
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const formattedBase64 = asset.base64
+      ? (asset.base64.startsWith('data:') ? asset.base64 : `data:image/jpeg;base64,${asset.base64}`)
+      : undefined;
 
     return {
       id: `photo-${Date.now()}`,
-      uri: asset.uri,
-      base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : undefined,
+      uri: asset.uri || formattedBase64 || '',
+      base64: formattedBase64,
       title: `Ảnh từ thư viện lúc ${timeStr}`,
       createdAt: now.toISOString(),
     };

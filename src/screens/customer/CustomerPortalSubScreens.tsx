@@ -504,7 +504,7 @@ export function CustomerProfileScreen({
 
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>CCCD / Hộ chiếu:</Text>
-            <Text style={styles.fieldValue}>079095012345 (Đã định danh eKYC)</Text>
+            <Text style={styles.fieldValue}>079095012345</Text>
           </View>
 
           <View style={styles.fieldRow}>

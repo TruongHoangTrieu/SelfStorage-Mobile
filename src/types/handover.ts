@@ -8,6 +8,13 @@ export interface CheckInAppointment {
   phone: string;
   email: string;
   idCard: string;
+  identityType?: 'CCCD' | 'PASSPORT' | 'BUSINESS_LICENSE';
+  identityNumber?: string;
+  maskedIdentityNumber?: string;
+  identityAddress?: string;
+  isIdentityVerified?: boolean;
+  identityFrontUrl?: string;
+  identityBackUrl?: string;
   slotTime: string; // "09:00 SA", "10:00 SA"
   timeCategory: 'morning' | 'afternoon';
   unitType: string;

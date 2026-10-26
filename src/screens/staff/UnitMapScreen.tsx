@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { AvailableUnit } from '../../types/handover';
 
 interface UnitMapScreenProps {
@@ -29,14 +30,18 @@ export default function UnitMapScreen({
 
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
+      {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
+          <MaterialIcons name="menu" size={22} color="#0F172A" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.subTitle}>📍 {facilityName}</Text>
-          <Text style={styles.mainTitle}>SƠ ĐỒ CƠ SỞ & TRẠNG THÁI Ô KHO</Text>
+        <View style={styles.topBarTitleCol}>
+          <Text style={styles.subTitle} numberOfLines={1}>
+            {facilityName}
+          </Text>
+          <Text style={styles.mainTitle} numberOfLines={1}>
+            Sơ đồ cơ sở & Ô kho
+          </Text>
         </View>
       </View>
 
@@ -94,9 +99,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   topBar: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -105,24 +113,29 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuIcon: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
+  topBarTitleCol: {
+    flex: 1,
+    justifyContent: 'center',
   },
   subTitle: {
-    color: '#38BDF8',
+    color: '#1D4ED8',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   mainTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    color: '#0F172A',
+    fontSize: 18,
     fontWeight: '900',
+    letterSpacing: -0.4,
+    marginTop: 2,
   },
   filterBar: {
     backgroundColor: '#FFFFFF',

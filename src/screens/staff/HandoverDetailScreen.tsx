@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,13 +16,18 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, AvailableUnit } from '../../types/handover';
 import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
-import PrintReceiptModal from '../../components/staff/PrintReceiptModal';
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
   uploadMultipleImagesToStorage,
   CapturedPhoto,
 } from '../../services/imageService';
+import {
+  uploadCccdApi,
+  createRentalPaymentApi,
+  getReservationPaymentSummaryApi,
+  simulatePaymentWebhookApi,
+} from '../../api';
 
 interface HandoverDetailScreenProps {
   appointment: CheckInAppointment;
@@ -34,6 +39,12 @@ interface HandoverDetailScreenProps {
     condition: string;
     notes?: string;
     photos?: string[];
+    identityType?: 'CCCD' | 'PASSPORT' | 'BUSINESS_LICENSE';
+    identityNumber?: string;
+    identityAddress?: string;
+    isIdentityVerified?: boolean;
+    identityFrontUrl?: string;
+    identityBackUrl?: string;
   }) => void;
   isSubmitting?: boolean;
 }
@@ -81,12 +92,67 @@ export default function HandoverDetailScreen({
   // Stepper State 1 -> 5 (giống hệt luồng Web)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
-  // Bước 1: CCCD & Ô kho
-  const [isCccdVerified, setIsCccdVerified] = useState<boolean>(true);
+  // Bước 1: KYC Định danh & Ô kho
+  const [identityType, setIdentityType] = useState<'CCCD' | 'PASSPORT'>(
+    appointment.identityType === 'PASSPORT' ? 'PASSPORT' : 'CCCD'
+  );
+  const [identityNumber, setIdentityNumber] = useState<string>(
+    appointment.identityNumber ||
+    (appointment.idCard && appointment.idCard !== 'Đã đối chiếu tại quầy' ? appointment.idCard : '079095012345')
+  );
+  const [identityAddress, setIdentityAddress] = useState<string>(
+    appointment.identityAddress || 'Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM'
+  );
+  const [isCccdVerified, setIsCccdVerified] = useState<boolean>(appointment.isIdentityVerified ?? true);
   const [selectedUnitCode, setSelectedUnitCode] = useState<string>(
     appointment.assignedUnit || 'A-101'
   );
   const [showUnitPickerModal, setShowUnitPickerModal] = useState<boolean>(false);
+
+  // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
+  const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
+    appointment.identityFrontUrl
+      ? {
+          id: 'cccd-front-initial',
+          title: 'Mặt trước CCCD',
+          uri: appointment.identityFrontUrl,
+          createdAt: new Date().toISOString(),
+        }
+      : null
+  );
+  const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(
+    appointment.identityBackUrl
+      ? {
+          id: 'cccd-back-initial',
+          title: 'Mặt sau CCCD',
+          uri: appointment.identityBackUrl,
+          createdAt: new Date().toISOString(),
+        }
+      : null
+  );
+  const [isCapturingCccd, setIsCapturingCccd] = useState<boolean>(false);
+
+  const handleCaptureCccd = async (side: 'front' | 'back') => {
+    setIsCapturingCccd(true);
+    const photo = await takePhotoWithCamera();
+    if (photo) {
+      const customized = { ...photo, title: side === 'front' ? 'Mặt trước CCCD' : 'Mặt sau CCCD' };
+      if (side === 'front') setFrontCccdPhoto(customized);
+      else setBackCccdPhoto(customized);
+    }
+    setIsCapturingCccd(false);
+  };
+
+  const handlePickCccd = async (side: 'front' | 'back') => {
+    setIsCapturingCccd(true);
+    const photo = await pickPhotoFromGallery();
+    if (photo) {
+      const customized = { ...photo, title: side === 'front' ? 'Mặt trước CCCD' : 'Mặt sau CCCD' };
+      if (side === 'front') setFrontCccdPhoto(customized);
+      else setBackCccdPhoto(customized);
+    }
+    setIsCapturingCccd(false);
+  };
 
   // Bước 2: Hiện trạng ô kho & Chụp ảnh
   const [photos, setPhotos] = useState<CapturedPhoto[]>([
@@ -99,7 +165,7 @@ export default function HandoverDetailScreen({
     {
       id: 'photo-2',
       title: 'Trong kho',
-      uri: 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=400&auto=format&fit=crop&q=80',
+      uri: 'https://res.cloudinary.com/micb9okr/image/upload/v1792946232/selfstorage/storage_units/unit_sto1.png',
       createdAt: new Date().toISOString(),
     },
     {
@@ -147,12 +213,24 @@ export default function HandoverDetailScreen({
   // Bước 3: Hợp đồng thuê
   const [isContractSigned, setIsContractSigned] = useState<boolean>(false);
   const [showContractModal, setShowContractModal] = useState<boolean>(false);
-  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   // Bước 4: Thu tiền thuê kho
+  // Bước 4: Thu tiền thuê kho (SePay VietQR)
   const [paymentMethod, setPaymentMethod] = useState<'vietqr' | 'cash'>('vietqr');
   const [isPaid, setIsPaid] = useState<boolean>(appointment.rentalStatus === 'paid');
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // SePay VietQR Dynamic State
+  const [sepayQrInfo, setSepayQrInfo] = useState<{
+    qrCodeUrl: string;
+    bankCode: string;
+    accountNumber: string;
+    accountName: string;
+    amount: number;
+    transferContent: string;
+  } | null>(null);
+  const [isLoadingPaymentQr, setIsLoadingPaymentQr] = useState<boolean>(false);
+  const [isSimulatingPayment, setIsSimulatingPayment] = useState<boolean>(false);
 
   // Bước 5: Cấp mã PIN Smart Lock
   const [accessPin, setAccessPin] = useState<string>(
@@ -174,11 +252,67 @@ export default function HandoverDetailScreen({
   const totalRent = rawTotal - discountAmount;
   const remainingAmount = Math.max(0, totalRent - depositNum);
 
-  // QR Code URL chuẩn hóa
-  const paymentContent = `THANH TOAN ${appointment.id}`;
-  const qrUrl = `https://img.vietqr.io/image/MB-0900000000-compact2.png?amount=${remainingAmount}&addInfo=${encodeURIComponent(
-    paymentContent
-  )}&accountName=${encodeURIComponent('SELFSTORAGE VN')}`;
+  // Cấu hình ngân hàng SePay (ưu tiên từ Backend, sau đó tới biến môi trường, cuối cùng fallback)
+  const fallbackBankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
+  const fallbackAccountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0900000000';
+  const fallbackAccountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'SELF STORAGE SYSTEM';
+
+  const paymentContent = sepayQrInfo?.transferContent || `THANH TOAN ${appointment.id}`;
+  const bankCode = sepayQrInfo?.bankCode || fallbackBankCode;
+  const accountNumber = sepayQrInfo?.accountNumber || fallbackAccountNumber;
+  const accountName = sepayQrInfo?.accountName || fallbackAccountName;
+  const displayAmount = sepayQrInfo?.amount || remainingAmount;
+  const qrUrl =
+    sepayQrInfo?.qrCodeUrl ||
+    `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${displayAmount}&addInfo=${encodeURIComponent(
+      paymentContent
+    )}&accountName=${encodeURIComponent(accountName)}`;
+
+  // Tự động sinh mã thanh toán tiền thuê SePay khi vào Bước 4
+  useEffect(() => {
+    if (currentStep !== 4 || isPaid || sepayQrInfo) return;
+    let isSubscribed = true;
+    const fetchRentalPayment = async () => {
+      try {
+        setIsLoadingPaymentQr(true);
+        const resId = (appointment as any).rawId || appointment.id.replace('RSV-', '');
+        const res = await createRentalPaymentApi(resId, 'BANK_TRANSFER');
+        if (isSubscribed && res?.qr) {
+          setSepayQrInfo(res.qr);
+        }
+      } catch (err) {
+        console.warn('Backend rental payment info notice:', err);
+      } finally {
+        if (isSubscribed) setIsLoadingPaymentQr(false);
+      }
+    };
+    fetchRentalPayment();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [currentStep, appointment.id, isPaid]);
+
+  // Polling tự động lắng nghe Webhook SePay mỗi 3.5 giây khi ở Bước 4
+  useEffect(() => {
+    if (currentStep !== 4 || isPaid) return;
+    let isSubscribed = true;
+    const interval = setInterval(async () => {
+      try {
+        const resId = (appointment as any).rawId || appointment.id.replace('RSV-', '');
+        const summary = await getReservationPaymentSummaryApi(resId);
+        if (isSubscribed && (summary.rentalPaid || summary.reservationStatus === 'COMPLETED')) {
+          setIsPaid(true);
+          clearInterval(interval);
+        }
+      } catch {
+        // silent
+      }
+    }, 3500);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [currentStep, appointment.id, isPaid]);
 
   const handleCopy = (text: string, label: string) => {
     Clipboard.setString(text);
@@ -219,6 +353,10 @@ export default function HandoverDetailScreen({
 
   const handleNext = () => {
     if (currentStep === 1) {
+      if (!identityNumber.trim()) {
+        Alert.alert('Thiếu số định danh', 'Vui lòng nhập số CCCD hoặc Hộ chiếu của khách hàng.');
+        return;
+      }
       if (!isCccdVerified) {
         Alert.alert('Chưa đối chiếu CCCD', 'Vui lòng xác nhận đối chiếu CCCD gốc của khách hàng.');
         return;
@@ -272,6 +410,11 @@ export default function HandoverDetailScreen({
       setCurrentStep(1);
       return;
     }
+    if (!identityNumber.trim()) {
+      Alert.alert('Lỗi', 'Vui lòng nhập số CCCD/Hộ chiếu tại Bước 1.');
+      setCurrentStep(1);
+      return;
+    }
     if (!isContractSigned) {
       Alert.alert('Lỗi', 'Vui lòng ký hợp đồng tại Bước 3.');
       setCurrentStep(3);
@@ -279,12 +422,38 @@ export default function HandoverDetailScreen({
     }
 
     let uploadedUrls: string[] = [];
+    let frontUrl = appointment.identityFrontUrl;
+    let backUrl = appointment.identityBackUrl;
+
     try {
       setIsUploadingPhotos(true);
-      // Upload ảnh lên Cloudinary CDN nếu có cấu hình (hoặc fallback Base64 / URI)
+      // Upload ảnh hiện trạng ô kho
       uploadedUrls = await uploadMultipleImagesToStorage(photos);
+
+      // Upload ảnh CCCD 2 mặt đóng dấu Watermark lên Cloudinary Private Storage
+      if (frontCccdPhoto && (!frontCccdPhoto.uri.startsWith('http') || frontCccdPhoto.base64)) {
+        try {
+          const resFront = await uploadCccdApi(frontCccdPhoto.uri, 'front', appointment.id);
+          frontUrl = resFront.signedUrl || resFront.url;
+        } catch (e) {
+          frontUrl = frontCccdPhoto.uri;
+        }
+      } else if (frontCccdPhoto) {
+        frontUrl = frontCccdPhoto.uri;
+      }
+
+      if (backCccdPhoto && (!backCccdPhoto.uri.startsWith('http') || backCccdPhoto.base64)) {
+        try {
+          const resBack = await uploadCccdApi(backCccdPhoto.uri, 'back', appointment.id);
+          backUrl = resBack.signedUrl || resBack.url;
+        } catch (e) {
+          backUrl = backCccdPhoto.uri;
+        }
+      } else if (backCccdPhoto) {
+        backUrl = backCccdPhoto.uri;
+      }
     } catch (uploadErr) {
-      console.warn('Lỗi khi upload ảnh hiện trạng:', uploadErr);
+      console.warn('Lỗi khi upload ảnh:', uploadErr);
       uploadedUrls = photos.map((p) => p.base64 || p.uri);
     } finally {
       setIsUploadingPhotos(false);
@@ -296,6 +465,12 @@ export default function HandoverDetailScreen({
       condition,
       notes: customNotes,
       photos: uploadedUrls,
+      identityType,
+      identityNumber: identityNumber.trim(),
+      identityAddress: identityAddress.trim(),
+      isIdentityVerified: isCccdVerified,
+      identityFrontUrl: frontUrl,
+      identityBackUrl: backUrl,
     });
   };
 
@@ -320,10 +495,6 @@ export default function HandoverDetailScreen({
             Đơn #{appointment.id.slice(-6).toUpperCase()} • Ô #{selectedUnitCode}
           </Text>
         </View>
-        <TouchableOpacity style={s.printQuickBtn} onPress={() => setShowPrintModal(true)}>
-          <MaterialIcons name="print" size={18} color={T.primary} />
-          <Text style={s.printQuickText}>In</Text>
-        </TouchableOpacity>
       </View>
 
       {/* ─── Stepper Progress Bar (5 bước) ─── */}
@@ -379,29 +550,267 @@ export default function HandoverDetailScreen({
 
       {/* ─── Nội Dung Từng Bước ─── */}
       <ScrollView contentContainerStyle={s.contentScroll} showsVerticalScrollIndicator={false}>
-        {/* ================= BƯỚC 1: CCCD & Ô KHO ================= */}
+        {/* ================= BƯỚC 1: XÁC THỰC ĐỊNH DANH (KYC) & Ô KHO ================= */}
         {currentStep === 1 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <MaterialIcons name="verified-user" size={20} color={T.primary} />
-              <Text style={s.cardTitle}>Bước 1: Đối Chiếu CCCD & Ô Kho</Text>
+              <Text style={s.cardTitle}>Bước 1: Xác Thực Định Danh (KYC) & Ô Kho</Text>
             </View>
 
-            {/* Thông tin khách */}
+            {/* Thông tin khách hàng */}
             <View style={s.infoBox}>
               <View style={s.infoRow}>
                 <Text style={s.infoLabel}>Khách hàng:</Text>
                 <Text style={s.infoVal}>{appointment.customerName}</Text>
               </View>
               <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Số CCCD/Hộ chiếu:</Text>
-                <Text style={[s.infoVal, { color: T.primary, fontWeight: '700' }]}>
-                  {appointment.idCard || '079095012345'}
-                </Text>
-              </View>
-              <View style={s.infoRow}>
                 <Text style={s.infoLabel}>Số điện thoại:</Text>
                 <Text style={s.infoVal}>{appointment.phone}</Text>
+              </View>
+              <View style={s.infoRow}>
+                <Text style={s.infoLabel}>Email:</Text>
+                <Text style={s.infoVal}>{appointment.email || 'customer@example.com'}</Text>
+              </View>
+            </View>
+
+            {/* Chọn loại giấy tờ: CCCD vs Passport */}
+            <Text style={[s.sectionSubtitle, { marginTop: 14 }]}>Loại giấy tờ định danh:</Text>
+            <View style={s.kycTypeRow}>
+              <TouchableOpacity
+                style={[s.kycTypeBtn, identityType === 'CCCD' && s.kycTypeBtnActive]}
+                onPress={() => setIdentityType('CCCD')}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons
+                  name="badge"
+                  size={18}
+                  color={identityType === 'CCCD' ? '#fff' : T.textMuted}
+                />
+                <Text style={[s.kycTypeText, identityType === 'CCCD' && s.kycTypeTextActive]}>
+                  CCCD / Căn cước
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.kycTypeBtn, identityType === 'PASSPORT' && s.kycTypeBtnActive]}
+                onPress={() => setIdentityType('PASSPORT')}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons
+                  name="flight"
+                  size={18}
+                  color={identityType === 'PASSPORT' ? '#fff' : T.textMuted}
+                />
+                <Text style={[s.kycTypeText, identityType === 'PASSPORT' && s.kycTypeTextActive]}>
+                  Hộ chiếu (Passport)
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Chụp 2 mặt CCCD / Trang Hộ chiếu có đóng dấu Watermark */}
+            <Text style={[s.sectionSubtitle, { marginTop: 16 }]}>
+              Ảnh chụp {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} gốc (Watermark bảo mật):
+            </Text>
+            <View style={s.cccdGrid}>
+              {/* Mặt trước / Trang thông tin */}
+              <View style={s.cccdBox}>
+                <View style={s.cccdHeaderRow}>
+                  <Text style={s.cccdBoxTitle} numberOfLines={1}>
+                    {identityType === 'CCCD' ? '1. Mặt trước CCCD' : '1. Trang thông tin Hộ chiếu'}
+                  </Text>
+                  {frontCccdPhoto && (
+                    <View style={s.cccdStatusBadge}>
+                      <MaterialIcons name="check-circle" size={12} color="#16A34A" />
+                      <Text style={s.cccdStatusText}>Đã chụp</Text>
+                    </View>
+                  )}
+                </View>
+
+                {frontCccdPhoto ? (
+                  <View style={s.cccdPreviewWrap}>
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={s.cccdImageTouch}
+                      onPress={() => setPreviewImage(frontCccdPhoto.uri || frontCccdPhoto.base64 || null)}
+                    >
+                      <Image
+                        source={{ uri: frontCccdPhoto.uri || frontCccdPhoto.base64 }}
+                        style={s.cccdPreviewImg}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+
+                    <View style={s.cccdWatermarkTag}>
+                      <MaterialIcons name="lock" size={11} color="#fff" />
+                      <Text style={s.cccdWatermarkText}>Bảo mật Watermark</Text>
+                    </View>
+
+                    <View style={s.cccdOverlayActions}>
+                      <TouchableOpacity
+                        style={s.cccdOverlayBtn}
+                        onPress={() => setPreviewImage(frontCccdPhoto.uri || frontCccdPhoto.base64 || null)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <MaterialIcons name="zoom-in" size={16} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.cccdOverlayBtn, { backgroundColor: '#EF4444' }]}
+                        onPress={() => setFrontCccdPhoto(null)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <MaterialIcons name="delete-outline" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={s.cccdPlaceholder}>
+                    <View style={s.cccdIconCircle}>
+                      <MaterialIcons
+                        name={identityType === 'CCCD' ? 'credit-card' : 'badge'}
+                        size={22}
+                        color={T.primary}
+                      />
+                    </View>
+                    <Text style={s.cccdPlaceholderTitle}>
+                      {identityType === 'CCCD' ? 'Chưa chụp mặt trước' : 'Chưa chụp trang chính'}
+                    </Text>
+                    <View style={s.cccdActionCol}>
+                      <TouchableOpacity
+                        style={s.cccdActionBtnPrimary}
+                        onPress={() => handleCaptureCccd('front')}
+                        disabled={isCapturingCccd}
+                      >
+                        <MaterialIcons name="camera-alt" size={13} color="#fff" />
+                        <Text style={s.cccdActionBtnPrimaryText}>Chụp ảnh</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={s.cccdActionBtnSecondary}
+                        onPress={() => handlePickCccd('front')}
+                        disabled={isCapturingCccd}
+                      >
+                        <MaterialIcons name="photo-library" size={13} color={T.primary} />
+                        <Text style={s.cccdActionBtnSecondaryText}>Thư viện</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Mặt sau / Thị thực */}
+              <View style={s.cccdBox}>
+                <View style={s.cccdHeaderRow}>
+                  <Text style={s.cccdBoxTitle} numberOfLines={1}>
+                    {identityType === 'CCCD' ? '2. Mặt sau CCCD' : '2. Thị thực / Bìa Hộ chiếu'}
+                  </Text>
+                  {backCccdPhoto && (
+                    <View style={s.cccdStatusBadge}>
+                      <MaterialIcons name="check-circle" size={12} color="#16A34A" />
+                      <Text style={s.cccdStatusText}>Đã chụp</Text>
+                    </View>
+                  )}
+                </View>
+
+                {backCccdPhoto ? (
+                  <View style={s.cccdPreviewWrap}>
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      style={s.cccdImageTouch}
+                      onPress={() => setPreviewImage(backCccdPhoto.uri || backCccdPhoto.base64 || null)}
+                    >
+                      <Image
+                        source={{ uri: backCccdPhoto.uri || backCccdPhoto.base64 }}
+                        style={s.cccdPreviewImg}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+
+                    <View style={s.cccdWatermarkTag}>
+                      <MaterialIcons name="lock" size={11} color="#fff" />
+                      <Text style={s.cccdWatermarkText}>Bảo mật Watermark</Text>
+                    </View>
+
+                    <View style={s.cccdOverlayActions}>
+                      <TouchableOpacity
+                        style={s.cccdOverlayBtn}
+                        onPress={() => setPreviewImage(backCccdPhoto.uri || backCccdPhoto.base64 || null)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <MaterialIcons name="zoom-in" size={16} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.cccdOverlayBtn, { backgroundColor: '#EF4444' }]}
+                        onPress={() => setBackCccdPhoto(null)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <MaterialIcons name="delete-outline" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={s.cccdPlaceholder}>
+                    <View style={s.cccdIconCircle}>
+                      <MaterialIcons
+                        name={identityType === 'CCCD' ? 'flip-to-back' : 'flight'}
+                        size={22}
+                        color={T.primary}
+                      />
+                    </View>
+                    <Text style={s.cccdPlaceholderTitle}>
+                      {identityType === 'CCCD' ? 'Chưa chụp mặt sau' : 'Chưa chụp thị thực'}
+                    </Text>
+                    <View style={s.cccdActionCol}>
+                      <TouchableOpacity
+                        style={s.cccdActionBtnPrimary}
+                        onPress={() => handleCaptureCccd('back')}
+                        disabled={isCapturingCccd}
+                      >
+                        <MaterialIcons name="camera-alt" size={13} color="#fff" />
+                        <Text style={s.cccdActionBtnPrimaryText}>Chụp ảnh</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={s.cccdActionBtnSecondary}
+                        onPress={() => handlePickCccd('back')}
+                        disabled={isCapturingCccd}
+                      >
+                        <MaterialIcons name="photo-library" size={13} color={T.primary} />
+                        <Text style={s.cccdActionBtnSecondaryText}>Thư viện</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+           
+            {/* Nhập & Đối chiếu thông tin giấy tờ */}
+            <View style={s.kycInputGroup}>
+              <Text style={s.kycInputLabel}>
+                Số {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} đối chiếu: *
+              </Text>
+              <View style={s.kycInputWrap}>
+                <MaterialIcons name="badge" size={18} color={T.textMuted} />
+                <TextInput
+                  style={s.kycInput}
+                  value={identityNumber}
+                  onChangeText={setIdentityNumber}
+                  placeholder={`Nhập số ${identityType}`}
+                  placeholderTextColor={T.textMuted}
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
+
+            <View style={s.kycInputGroup}>
+              <Text style={s.kycInputLabel}>Địa chỉ thường trú / Nơi cấp:</Text>
+              <View style={s.kycInputWrap}>
+                <MaterialIcons name="home" size={18} color={T.textMuted} />
+                <TextInput
+                  style={s.kycInput}
+                  value={identityAddress}
+                  onChangeText={setIdentityAddress}
+                  placeholder="Nhập địa chỉ ghi trên giấy tờ"
+                  placeholderTextColor={T.textMuted}
+                />
               </View>
             </View>
 
@@ -418,16 +827,16 @@ export default function HandoverDetailScreen({
               />
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Text style={s.checkActionTitle}>
-                  Đã đối chiếu thông tin với CCCD/Hộ chiếu gốc
+                  Đã đối chiếu người thật khớp với giấy tờ gốc xuất trình
                 </Text>
-                <Text style={s.checkActionSub}>Khách xuất trình giấy tờ trùng khớp thông tin</Text>
+                <Text style={s.checkActionSub}>Nhân viên xác nhận khuôn mặt và thông tin trùng khớp</Text>
               </View>
             </TouchableOpacity>
 
             {/* Ô kho & Đổi ô */}
             <View style={s.unitSelectBox}>
               <View style={{ flex: 1 }}>
-                <Text style={s.infoLabel}>Ô kho được gán:</Text>
+                <Text style={s.infoLabel}>Ô kho được gán bàn giao:</Text>
                 <Text style={s.unitSelectVal}>
                   Ô #{selectedUnitCode} • {appointment.unitType}
                 </Text>
@@ -592,26 +1001,15 @@ export default function HandoverDetailScreen({
               </View>
             </View>
 
-            {/* 2 nút Xem & In hợp đồng */}
-            <View style={s.actionRow}>
-              <TouchableOpacity
-                style={s.contractActionBtn}
-                onPress={() => setShowContractModal(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="article" size={17} color={T.primary} />
-                <Text style={s.contractActionText}>Xem Hợp Đồng</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[s.contractActionBtn, s.contractActionBtnPrint]}
-                onPress={() => setShowPrintModal(true)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="print" size={17} color="#334155" />
-                <Text style={[s.contractActionText, { color: '#334155' }]}>In Hợp Đồng Giấy</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Nút Xem Toàn Văn Hợp Đồng Điện Tử */}
+            <TouchableOpacity
+              style={s.viewContractFullBtn}
+              onPress={() => setShowContractModal(true)}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="visibility" size={18} color="#FFFFFF" />
+              <Text style={s.viewContractFullText}>Xem Toàn Văn Hợp Đồng Điện Tử</Text>
+            </TouchableOpacity>
 
             {/* Checkbox xác nhận ký hợp đồng */}
             <TouchableOpacity
@@ -710,6 +1108,22 @@ export default function HandoverDetailScreen({
             {/* HIỂN THỊ MÃ VIETQR TRỰC TIẾP */}
             {paymentMethod === 'vietqr' && (
               <View style={s.qrWrapper}>
+                {isLoadingPaymentQr && (
+                  <View style={s.qrLoadingBox}>
+                    <ActivityIndicator size="small" color={T.primary} />
+                    <Text style={s.qrLoadingText}>Đang lấy thông tin VietQR SePay từ hệ thống...</Text>
+                  </View>
+                )}
+
+                {isPaid && (
+                  <View style={s.sepaySuccessBadge}>
+                    <MaterialIcons name="verified" size={18} color="#15803D" />
+                    <Text style={s.sepaySuccessText}>
+                      Hệ thống SePay đã tự động xác nhận thanh toán thành công!
+                    </Text>
+                  </View>
+                )}
+
                 <View style={s.qrBox}>
                   <Image source={{ uri: qrUrl }} style={s.qrImage} resizeMode="contain" />
                   <Text style={s.qrHint}>Đưa màn hình cho khách quét bằng App Ngân hàng</Text>
@@ -719,18 +1133,18 @@ export default function HandoverDetailScreen({
                 <View style={s.bankDetailList}>
                   <View style={s.bankRow}>
                     <Text style={s.bankLabel}>Ngân hàng:</Text>
-                    <Text style={s.bankVal}>MBBank (Quân Đội)</Text>
+                    <Text style={[s.bankVal, { fontWeight: '700' }]}>{bankCode}</Text>
                   </View>
 
                   <View style={s.bankRow}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={s.bankLabel}>Số tài khoản:</Text>
-                      <Text style={[s.bankVal, { color: T.primary, fontWeight: '700' }]}>
-                        0900000000
+                      <Text style={[s.bankVal, { color: T.primary, fontWeight: '800', fontSize: 14 }]}>
+                        {accountNumber}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => handleCopy('0900000000', 'STK')}
+                      onPress={() => handleCopy(accountNumber, 'STK')}
                       style={s.copyBtn}
                       activeOpacity={0.7}
                     >
@@ -743,6 +1157,11 @@ export default function HandoverDetailScreen({
                         {copiedField === 'STK' ? 'Đã chép' : 'Sao chép'}
                       </Text>
                     </TouchableOpacity>
+                  </View>
+
+                  <View style={s.bankRow}>
+                    <Text style={s.bankLabel}>Chủ tài khoản:</Text>
+                    <Text style={[s.bankVal, { fontWeight: '700' }]}>{accountName}</Text>
                   </View>
 
                   {/* Khung nội dung chuyển khoản riêng biệt, không bị lồi ra ngoài */}
@@ -768,6 +1187,41 @@ export default function HandoverDetailScreen({
                       </Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Nút mô phỏng thanh toán SePay dành cho kiểm thử */}
+                  {!isPaid && (
+                    <TouchableOpacity
+                      style={s.simulateBtn}
+                      onPress={async () => {
+                        try {
+                          setIsSimulatingPayment(true);
+                          await simulatePaymentWebhookApi({
+                            gateway: bankCode,
+                            accountNumber: accountNumber,
+                            content: paymentContent,
+                            transferAmount: displayAmount,
+                          });
+                          setIsPaid(true);
+                          Alert.alert('Thành công', 'Đã mô phỏng thanh toán SePay thành công!');
+                        } catch {
+                          setIsPaid(true);
+                          Alert.alert('Đã xác nhận', 'Đã đánh dấu đã thu tiền thuê kho.');
+                        } finally {
+                          setIsSimulatingPayment(false);
+                        }
+                      }}
+                      disabled={isSimulatingPayment}
+                    >
+                      {isSimulatingPayment ? (
+                        <ActivityIndicator size="small" color="#D97706" />
+                      ) : (
+                        <MaterialIcons name="bolt" size={14} color="#D97706" />
+                      )}
+                      <Text style={s.simulateBtnText}>
+                        {isSimulatingPayment ? 'Đang kích hoạt SePay...' : 'Mô phỏng thanh toán SePay (Test)'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             )}
@@ -956,16 +1410,10 @@ export default function HandoverDetailScreen({
         </Modal>
       )}
 
-      {/* Modals Hợp Đồng & In */}
+      {/* Modal Xem Hợp Đồng Điện Tử */}
       <ContractPreviewModal
         visible={showContractModal}
         onClose={() => setShowContractModal(false)}
-        appointment={appointment}
-        assignedUnitCode={selectedUnitCode}
-      />
-      <PrintReceiptModal
-        visible={showPrintModal}
-        onClose={() => setShowPrintModal(false)}
         appointment={appointment}
         assignedUnitCode={selectedUnitCode}
       />
@@ -1097,6 +1545,234 @@ const s = StyleSheet.create({
     borderColor: '#BFDBFE',
   },
   changeUnitBtnText: { fontSize: 12, fontWeight: '700', color: T.primary },
+
+  kycTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  kycTypeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+  },
+  kycTypeBtnActive: {
+    backgroundColor: T.primary,
+    borderColor: T.primary,
+  },
+  kycTypeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: T.textMain,
+  },
+  kycTypeTextActive: {
+    color: '#fff',
+  },
+  cccdGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  cccdBox: {
+    flex: 1,
+    backgroundColor: T.surfaceLow,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    padding: 10,
+  },
+  cccdHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    minHeight: 18,
+  },
+  cccdBoxTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: T.textMain,
+    flex: 1,
+  },
+  cccdStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 10,
+  },
+  cccdStatusText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  cccdPlaceholder: {
+    minHeight: 140,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  cccdIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  cccdPlaceholderTitle: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: T.textMuted,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  cccdActionCol: {
+    width: '100%',
+    gap: 6,
+  },
+  cccdActionBtnPrimary: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: T.primary,
+    borderRadius: 6,
+    paddingVertical: 6,
+  },
+  cccdActionBtnPrimaryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  cccdActionBtnSecondary: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 6,
+    paddingVertical: 5.5,
+  },
+  cccdActionBtnSecondaryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: T.primary,
+  },
+  cccdPreviewWrap: {
+    height: 140,
+    borderRadius: 10,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cccdImageTouch: {
+    width: '100%',
+    height: '100%',
+  },
+  cccdPreviewImg: {
+    width: '100%',
+    height: '100%',
+  },
+  cccdWatermarkTag: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(0, 74, 198, 0.85)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  cccdWatermarkText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  cccdOverlayActions: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  cccdOverlayBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securityNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  securityNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#0369A1',
+    fontWeight: '500',
+  },
+  kycInputGroup: {
+    marginBottom: 10,
+  },
+  kycInputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: T.textMain,
+    marginBottom: 4,
+  },
+  kycInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surfaceLow,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    gap: 8,
+    height: 42,
+  },
+  kycInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: T.textMain,
+    paddingVertical: 0,
+  },
 
   sectionSubtitle: { fontSize: 12, fontWeight: '700', color: T.textMain, marginBottom: 8 },
   photoActionRow: {
@@ -1238,24 +1914,26 @@ const s = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
 
-  actionRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  contractActionBtn: {
-    flex: 1,
+  viewContractFullBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingVertical: 11,
+    gap: 8,
+    backgroundColor: '#1D4ED8',
+    paddingVertical: 12,
     borderRadius: 12,
+    marginTop: 12,
+    shadowColor: '#1D4ED8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  contractActionBtnPrint: {
-    backgroundColor: '#F1F5F9',
-    borderColor: '#CBD5E1',
+  viewContractFullText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  contractActionText: { fontSize: 11.5, fontWeight: '700', color: T.primary },
 
   signedBox: {
     flexDirection: 'row',
@@ -1399,6 +2077,58 @@ const s = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+
+  simulateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    paddingVertical: 8,
+    marginTop: 6,
+  },
+  simulateBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  qrLoadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    width: '100%',
+  },
+  qrLoadingText: {
+    fontSize: 11,
+    color: T.primary,
+    fontWeight: '600',
+  },
+  sepaySuccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    width: '100%',
+  },
+  sepaySuccessText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+    flex: 1,
   },
 
   cashBox: {

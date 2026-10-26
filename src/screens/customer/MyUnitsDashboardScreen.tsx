@@ -62,6 +62,8 @@ interface MyUnitsDashboardScreenProps {
   onOpenLogin?: () => void;
   onLogout?: () => void;
   currentUser?: any;
+  onOpenNotifications?: () => void;
+  unreadNotifCount?: number;
 }
 
 export default function MyUnitsDashboardScreen({
@@ -80,6 +82,8 @@ export default function MyUnitsDashboardScreen({
   onOpenLogin,
   onLogout,
   currentUser,
+  onOpenNotifications,
+  unreadNotifCount = 0,
 }: MyUnitsDashboardScreenProps) {
   // Selected active unit
   const [selectedUnitIndex, setSelectedUnitIndex] = useState<number>(0);
@@ -249,15 +253,16 @@ export default function MyUnitsDashboardScreen({
             <TouchableOpacity
               style={s.notifBtn}
               activeOpacity={0.8}
-              onPress={() =>
-                Alert.alert(
-                  'Thông báo hệ thống',
-                  'Hệ thống an ninh và điều hòa phòng kho đang hoạt động ổn định 24/7.'
-                )
-              }
+              onPress={onOpenNotifications}
             >
               <MaterialIcons name="notifications-none" size={20} color={T.onSurfaceVariant} />
-              <View style={s.notifBadgeDot} />
+              {unreadNotifCount > 0 ? (
+                <View style={s.notifBadgeDot}>
+                  <Text style={s.notifBadgeCountText}>
+                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                  </Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
           </View>
         </View>
@@ -716,12 +721,22 @@ const s = StyleSheet.create({
   },
   notifBadgeDot: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ba1a1a',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  notifBadgeCountText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   scrollView: { flex: 1 },
   scrollContent: {
