@@ -49,7 +49,7 @@ const T = {
 interface MyUnitsDashboardScreenProps {
   units: CustomerRentedUnit[];
   onViewDetail?: (unit: CustomerRentedUnit) => void;
-  onOpenGuestPin: (unit: CustomerRentedUnit) => void;
+  onOpenGuestPin?: (unit: CustomerRentedUnit) => void;
   onOpenRenew: (unit: CustomerRentedUnit) => void;
   onOpenReportIssue: (unit: CustomerRentedUnit) => void;
   onOpenChangePin?: (unit: CustomerRentedUnit) => void;
@@ -133,52 +133,7 @@ export default function MyUnitsDashboardScreen({
 
   const maskedPin = masterPin ? `•••• ${masterPin.slice(-4)}` : '••••';
 
-  // Ký số
-  const [signingContract, setSigningContract] = useState(false);
-  const [signedContracts, setSignedContracts] = useState<Record<string, boolean>>({});
 
-  const isContractSigned = activeUnit?.contractId
-    ? !!signedContracts[String(activeUnit.contractId)]
-    : false;
-
-  const handleSignContract = async () => {
-    if (!activeUnit?.contractId) {
-      Alert.alert('Lỗi', 'Không tìm thấy hợp đồng để ký');
-      return;
-    }
-    if (isContractSigned) {
-      Alert.alert('Đã ký', `Hợp đồng ${activeUnit.contractCode} đã được ký số trước đó.`);
-      return;
-    }
-
-    Alert.alert(
-      'Ký hợp đồng điện tử',
-      `Bạn xác nhận ký số hợp đồng ${activeUnit.contractCode}?\n\nSau khi ký, hợp đồng có giá trị pháp lý theo Luật Giao dịch điện tử Việt Nam.`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Ký ngay',
-          onPress: async () => {
-            try {
-              setSigningContract(true);
-              await apiRequest(`/contracts/${activeUnit.contractId}/sign`, {
-                method: 'PATCH',
-              });
-              setSignedContracts((prev) => ({
-                ...prev,
-                [String(activeUnit.contractId)]: true,
-              }));
-              Alert.alert('Thành công', 'Đã ký số hợp đồng điện tử');
-            } catch (err: any) {
-              Alert.alert('Lỗi', err.message || 'Không thể ký hợp đồng. Vui lòng thử lại.');
-            } finally {
-              setSigningContract(false);
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const handleAuthAction = () => {
     if (currentUser) {
@@ -434,92 +389,134 @@ export default function MyUnitsDashboardScreen({
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={s.shortcutBtn}
-                activeOpacity={0.8}
-                onPress={() => onOpenGuestPin(activeUnit)}
-              >
-                <View style={s.shortcutIconWrap}>
-                  <MaterialIcons name="share" size={18} color={T.primary} />
-                </View>
-                <Text style={s.shortcutTitle}>Chia sẻ khóa</Text>
-                <Text style={s.shortcutSub}>Ủy quyền</Text>
-              </TouchableOpacity>
+
+            </View>
+          </View>
+
+          {/* 2.1 THÔNG SỐ VÀ TIỆN ÍCH BUỒNG KHO */}
+          <View style={s.unitSpecsCard}>
+            <View style={s.specsHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                <MaterialIcons name="tune" size={16} color={T.primary} />
+                <Text style={s.specsTitle} numberOfLines={1}>THÔNG SỐ BUỒNG KHO</Text>
+              </View>
+              <View style={s.unitTypePill}>
+                <Text style={s.unitTypePillText} numberOfLines={1}>
+                  {activeUnit?.unitName || 'Kho Tiêu Chuẩn'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={s.specsGrid}>
+              <View style={s.specItem}>
+                <Text style={s.specLabel}>Kích thước (D x R x C)</Text>
+                <Text style={s.specVal}>{activeUnit?.dimensions || '2.0m x 1.5m x 2.8m'}</Text>
+              </View>
+              <View style={s.specItem}>
+                <Text style={s.specLabel}>Thể tích lưu trữ</Text>
+                <Text style={[s.specVal, { color: T.primary, fontWeight: '800' }]}>
+                  {activeUnit?.size || '8.4 m³ (Tiêu chuẩn)'}
+                </Text>
+              </View>
+              <View style={s.specItem}>
+                <Text style={s.specLabel}>Vị trí mặt bằng</Text>
+                <Text style={s.specVal}>{activeUnit?.floor || 'Tầng 2'} • {activeUnit?.zone || 'Zone A'}</Text>
+              </View>
+              <View style={s.specItem}>
+                <Text style={s.specLabel}>Nhiệt độ bảo quản</Text>
+                <Text style={[s.specVal, { color: '#059669' }]}>22°C - 25°C (24/7)</Text>
+              </View>
+            </View>
+
+            <View style={s.amenitiesList}>
+              <View style={s.amenityTag}>
+                <MaterialIcons name="ac-unit" size={12} color="#0284C7" />
+                <Text style={s.amenityText}>Máy lạnh 24/7</Text>
+              </View>
+              <View style={s.amenityTag}>
+                <MaterialIcons name="videocam" size={12} color="#0284C7" />
+                <Text style={s.amenityText}>CCTV 24/7</Text>
+              </View>
+              <View style={s.amenityTag}>
+                <MaterialIcons name="local-fire-department" size={12} color="#0284C7" />
+                <Text style={s.amenityText}>PCCC Tự Động</Text>
+              </View>
+              <View style={s.amenityTag}>
+                <MaterialIcons name="lock" size={12} color="#0284C7" />
+                <Text style={s.amenityText}>Khóa Thông Minh</Text>
+              </View>
             </View>
           </View>
 
           {/* 3. CHI TIẾT HỢP ĐỒNG */}
           <View style={s.contractCard}>
             <View style={s.contractHeaderRow}>
-              <View>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
                 <Text style={s.contractCardTitle}>Chi tiết Hợp đồng</Text>
-                <Text style={s.contractCodeSub}>
+                <Text style={s.contractCodeSub} numberOfLines={1}>
                   Mã HĐ: {activeUnit?.contractCode || '—'}
                 </Text>
               </View>
-              <View style={s.contractActiveBadge}>
-                <Text style={s.contractActiveBadgeText}>
-                  {isContractSigned ? 'Đã ký số' : activeUnit?.statusLabel || 'Đang hoạt động'}
+              <View style={[
+                s.contractActiveBadge,
+                activeUnit?.status === 'overdue' && { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
+                activeUnit?.status === 'expiring_soon' && { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' },
+              ]}>
+                <Text style={[
+                  s.contractActiveBadgeText,
+                  activeUnit?.status === 'overdue' && { color: '#DC2626' },
+                  activeUnit?.status === 'expiring_soon' && { color: '#D97706' },
+                ]} numberOfLines={1}>
+                  {activeUnit?.statusLabel || (activeUnit?.status === 'expiring_soon' ? 'Sắp hết hạn' : 'Đang hoạt động')}
                 </Text>
               </View>
             </View>
 
             <View style={s.contractStatsGrid}>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.contractStatLabel}>Thời hạn hợp đồng</Text>
                 <Text style={s.contractStatValBold}>
                   {activeUnit?.totalDays
                     ? `${Math.round(activeUnit.totalDays / 30)} Tháng`
                     : '—'}
                 </Text>
-                <Text style={s.contractStatDates}>
+                <Text style={s.contractStatDates} numberOfLines={1}>
                   {activeUnit?.startDate || '—'} - {activeUnit?.endDate || '—'}
                 </Text>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.contractStatLabel}>Thời gian còn lại</Text>
-                <Text style={[s.contractStatValBold, { color: T.primary }]}>
+                <Text style={[
+                  s.contractStatValBold,
+                  { color: activeUnit?.status === 'overdue' ? '#DC2626' : (activeUnit?.status === 'expiring_soon' ? '#D97706' : T.primary) }
+                ]}>
                   {activeUnit?.daysRemaining ?? 0} Ngày
                 </Text>
-                <Text style={s.autoPayNote}>
-                  {activeUnit?.status === 'expiring_soon'
-                    ? 'Sắp hết hạn'
-                    : activeUnit?.status === 'overdue'
-                    ? 'Đã quá hạn'
-                    : 'Đang hoạt động'}
-                </Text>
+                <View style={[
+                  s.statusPillSmall,
+                  activeUnit?.status === 'overdue' ? s.statusPillRed : (activeUnit?.status === 'expiring_soon' ? s.statusPillYellow : s.statusPillGreen)
+                ]}>
+                  <Text style={[
+                    s.statusPillSmallText,
+                    activeUnit?.status === 'overdue' ? { color: '#B91C1C' } : (activeUnit?.status === 'expiring_soon' ? { color: '#B45309' } : { color: '#047857' })
+                  ]} numberOfLines={1}>
+                    {activeUnit?.status === 'expiring_soon'
+                      ? 'Sắp hết hạn'
+                      : activeUnit?.status === 'overdue'
+                      ? 'Đã quá hạn'
+                      : 'Đang an toàn'}
+                  </Text>
+                </View>
               </View>
             </View>
 
-            <View style={s.contractActionsRow}>
-              <TouchableOpacity
-                style={[s.eContractBtn, signingContract && { opacity: 0.6 }]}
-                activeOpacity={0.85}
-                onPress={handleSignContract}
-                disabled={signingContract || isContractSigned}
-              >
-                {signingContract ? (
-                  <ActivityIndicator size="small" color={T.primary} />
-                ) : (
-                  <>
-                    <MaterialCommunityIcons
-                      name={isContractSigned ? 'check-decagram' : 'draw'}
-                      size={18}
-                      color={T.primary}
-                    />
-                    <Text style={s.eContractBtnText}>
-                      {isContractSigned ? 'Đã ký số' : 'Ký số e-Contract'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
+            <View style={{ marginTop: 6 }}>
               <TouchableOpacity
                 style={s.renewBtn}
-                activeOpacity={0.88}
+                activeOpacity={0.85}
                 onPress={() => onOpenRenew(activeUnit)}
               >
-                <MaterialIcons name="autorenew" size={18} color={T.white} />
+                <MaterialCommunityIcons name="autorenew" size={20} color="#FFFFFF" />
                 <Text style={s.renewBtnText}>Gia hạn trực tuyến</Text>
               </TouchableOpacity>
             </View>
@@ -564,7 +561,7 @@ export default function MyUnitsDashboardScreen({
 
 // ─── STYLESHEET ────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  outerWrapper: { flex: 1, backgroundColor: '#0F172A', alignItems: 'center' },
+  outerWrapper: { flex: 1, backgroundColor: '#f8fafc', width: '100%', alignItems: 'center' },
   mobileContainer: {
     flex: 1,
     width: '100%',
@@ -1046,9 +1043,11 @@ const s = StyleSheet.create({
     backgroundColor: T.emeraldBg,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: T.emeraldBorder,
+    maxWidth: '50%',
+    flexShrink: 0,
   },
   contractActiveBadgeText: {
     fontSize: 10,
@@ -1251,6 +1250,123 @@ const s = StyleSheet.create({
   submitAddBtnText: {
     color: T.white,
     fontSize: 13,
+    fontWeight: '700',
+  },
+  // Unit Specs Card
+  unitSpecsCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  specsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 8,
+  },
+  specsTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  unitTypePill: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    maxWidth: '52%',
+    flexShrink: 1,
+  },
+  unitTypePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  specsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  specItem: {
+    width: '48%',
+    backgroundColor: '#f8fafc',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  specLabel: {
+    fontSize: 10,
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  specVal: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  amenitiesList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  amenityTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0f2fe',
+  },
+  amenityText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#0369a1',
+  },
+  statusPillSmall: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+    maxWidth: '100%',
+  },
+  statusPillGreen: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  statusPillYellow: {
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  statusPillRed: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  statusPillSmallText: {
+    fontSize: 9,
     fontWeight: '700',
   },
 });

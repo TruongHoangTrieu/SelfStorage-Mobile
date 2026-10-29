@@ -1355,11 +1355,7 @@ export default function BookStorageScreen({
                         </Text>
                       </View>
                     ) : (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={s.featuredCarouselScroll}
-                      >
+                      <View style={s.featuredVerticalList}>
                         {filteredDynamicFacilities.map((card) => {
                           const isFav = favoriteIds.has(card.id);
                           return (
@@ -1376,37 +1372,21 @@ export default function BookStorageScreen({
                                   resizeMode="cover"
                                 />
 
-                                <View style={s.cardDotsWrap}>
-                                  <View style={[s.cardDot, s.cardDotActive]} />
-                                  <View style={s.cardDot} />
-                                  <View style={s.cardDot} />
+                                <View style={s.cardBadgeTopLeft}>
+                                  <Text style={s.cardBadgeText}>
+                                    ⭐ {card.facility?.rating ? card.facility.rating.toFixed(1) : "4.9"} (200+)
+                                  </Text>
                                 </View>
                               </View>
 
                               <View style={s.featuredCardBody}>
-                                <Text
-                                  style={s.featuredCardTitle}
-                                  numberOfLines={1}
-                                >
-                                  {card.title}
-                                </Text>
-
-                                <View style={s.featuredPriceRow}>
-                                  <View
-                                    style={{
-                                      flexDirection: "row",
-                                      alignItems: "baseline",
-                                    }}
+                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                                  <Text
+                                    style={[s.featuredCardTitle, { flex: 1 }]}
+                                    numberOfLines={1}
                                   >
-                                    <Text style={s.featuredPriceVal}>
-                                      {card.price}
-                                    </Text>
-                                    {card.priceUnit ? (
-                                      <Text style={s.featuredPriceUnit}>
-                                        {card.priceUnit}
-                                      </Text>
-                                    ) : null}
-                                  </View>
+                                    {card.title}
+                                  </Text>
                                   <View
                                     style={[
                                       s.featuredTagPill,
@@ -1440,11 +1420,33 @@ export default function BookStorageScreen({
                                     {card.location}
                                   </Text>
                                 </View>
+
+                                <View style={s.featuredPriceRow}>
+                                  <View
+                                    style={{
+                                      flexDirection: "row",
+                                      alignItems: "baseline",
+                                    }}
+                                  >
+                                    <Text style={s.featuredPriceVal}>
+                                      {card.price}
+                                    </Text>
+                                    {card.priceUnit ? (
+                                      <Text style={s.featuredPriceUnit}>
+                                        {card.priceUnit}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+
+                                  <View style={s.chooseFacilityBtn}>
+                                    <Text style={s.chooseFacilityBtnText}>Chọn kho →</Text>
+                                  </View>
+                                </View>
                               </View>
                             </TouchableOpacity>
                           );
                         })}
-                      </ScrollView>
+                      </View>
                     )}
                   </View>
 
@@ -2804,7 +2806,10 @@ export default function BookStorageScreen({
               {/* Action Buttons */}
               <TouchableOpacity
                 style={s.manageBookingBtn}
-                onPress={onViewMyReservations}
+                onPress={() => {
+                  onNavigateTab?.("my-storage");
+                  onViewMyReservations();
+                }}
                 activeOpacity={0.88}
               >
                 <MaterialIcons
@@ -3136,26 +3141,43 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 16,
   },
+  featuredVerticalList: {
+    paddingHorizontal: 16,
+    gap: 14,
+  },
   featuredCard: {
-    width: 275,
+    width: "100%",
     backgroundColor: "#ffffff",
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(195, 198, 215, 0.5)",
-    padding: 10,
+    borderColor: "rgba(195, 198, 215, 0.45)",
+    padding: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
   },
   featuredImageWrap: {
     position: "relative",
     width: "100%",
-    height: 176,
-    borderRadius: 16,
+    height: 150,
+    borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#eff4ff",
+  },
+  chooseFacilityBtn: {
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  chooseFacilityBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1d4ed8",
   },
   featuredImage: {
     width: "100%",

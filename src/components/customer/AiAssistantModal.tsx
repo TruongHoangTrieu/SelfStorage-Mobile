@@ -552,7 +552,7 @@ export default function AiAssistantModal({
                   </View>
                   <View style={[s.messageBubble, s.aiBubble, s.loadingBubble]}>
                     <ActivityIndicator size="small" color="#2563eb" />
-                    <Text style={s.loadingText}>AI đang phân tích & tính toán thể tích...</Text>
+                    <Text style={s.loadingText}>AI đang phân tích </Text>
                   </View>
                 </View>
               )}

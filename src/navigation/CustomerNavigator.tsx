@@ -405,7 +405,12 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               onRefreshStaffData();
             }
           }}
-          onViewMyReservations={() => setCustomerTab('my_reservations')}
+          onViewMyReservations={() => {
+            setCustomerTab('my_units');
+            setCustomerNavTab('my_units');
+            setCustomerFlowStep('dashboard');
+            loadCustomerContracts();
+          }}
           onOpenLogin={() => setShowAuthModal(true)}
           onLogout={handleLogout}
           currentUser={currentUser}
