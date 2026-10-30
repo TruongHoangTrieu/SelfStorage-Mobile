@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Platform,
   KeyboardAvoidingView,
   Image,
+  Animated,
+  StatusBar,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -54,13 +56,55 @@ interface LoginScreenProps {
   onLoginSuccess: (user: any, token?: string) => void;
   onClose?: () => void;
   initialMode?: 'login' | 'register';
+  toastMessage?: string | null;
 }
 
 export default function LoginScreen({
   onLoginSuccess,
   onClose,
   initialMode = 'login',
+  toastMessage,
 }: LoginScreenProps) {
+  const [currentToast, setCurrentToast] = useState<string | null>(toastMessage || null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTranslateY = useRef(new Animated.Value(-16)).current;
+
+  useEffect(() => {
+    if (toastMessage) {
+      setCurrentToast(toastMessage);
+      Animated.parallel([
+        Animated.timing(toastOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastTranslateY, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(toastOpacity, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+          Animated.timing(toastTranslateY, {
+            toValue: -16,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setCurrentToast(null);
+        });
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -244,72 +288,13 @@ export default function LoginScreen({
         } else if (res.params?.code) {
           await handleBackendGoogleLogin(undefined, res.params.code);
         }
-      } else if (res?.type === 'cancel' || res?.type === 'dismiss') {
-        // Cửa sổ đóng - có thể do user đóng hoặc do gặp Error 400: invalid_request từ Google
-        Alert.alert(
-          'Đăng nhập Google',
-          `Bạn vừa đóng cửa sổ Google. Nếu bạn gặp lỗi "Error 400: invalid_request" trên trang Google, đó là do Google yêu cầu tạo thêm OAuth Client ID cho Mobile (Android/iOS) hoặc cấp quyền Redirect URI.\n\nRedirect URI hiện tại của app:\n${request?.redirectUri || 'Chưa xác định'}\n\nBạn có muốn đăng nhập nhanh bằng tài khoản Google để tiếp tục trải nghiệm không?`,
-          [
-            { text: 'Đóng', style: 'cancel' },
-            {
-              text: 'Đăng nhập Google Test ngay',
-              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
-            },
-          ]
-        );
       } else if (res?.type === 'error') {
         throw new Error(res.error?.message || 'Google từ chối yêu cầu xác thực');
       }
     } catch (err: any) {
       console.warn('Google Auth Error:', err);
       const msg = err.message || '';
-      const isStateError =
-        msg.toLowerCase().includes('cross-site') ||
-        msg.toLowerCase().includes('state');
-      const isAuthError =
-        msg.toLowerCase().includes('authoriz') ||
-        msg.toLowerCase().includes('redirect') ||
-        msg.toLowerCase().includes('400') ||
-        msg.toLowerCase().includes('invalid');
-
-      if (isStateError) {
-        Alert.alert(
-          'Phiên xác thực bị trùng lặp (State Mismatch)',
-          'Trình duyệt vừa nhận 2 yêu cầu đăng nhập liên tiếp hoặc bị reload dở dang. Vui lòng thử bấm lại 1 lần duy nhất hoặc chọn Đăng nhập Google Test để tiếp tục.',
-          [
-            { text: 'Đóng', style: 'cancel' },
-            {
-              text: 'Đăng nhập Google Test',
-              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
-            },
-          ]
-        );
-      } else if (isAuthError) {
-        Alert.alert(
-          'Lỗi xác thực Google (OAuth Error 400)',
-          `Google chặn yêu cầu do chưa khớp Authorized Redirect URI hoặc thiếu Client ID Mobile trong Google Cloud Console.\n\nRedirect URI của bạn:\n${request?.redirectUri || 'Chưa xác định'}\n\nBạn có muốn đăng nhập nhanh bằng tài khoản Google Test không?`,
-          [
-            { text: 'Đóng', style: 'cancel' },
-            {
-              text: 'Đăng nhập Google Test',
-              onPress: () => handleBackendGoogleLogin('demo-google-token-' + Date.now()),
-            },
-          ]
-        );
-      } else {
-        setErrorMsg(msg || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
-  const handleDemoGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-      await handleBackendGoogleLogin('demo-google-token-' + Date.now());
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Đăng nhập Google Test thất bại.');
+      setErrorMsg(msg || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
     } finally {
       setGoogleLoading(false);
     }
@@ -327,203 +312,215 @@ export default function LoginScreen({
         </TouchableOpacity>
       )}
 
+      {/* Floating 3s Toast trên đầu màn hình đăng nhập */}
+      {currentToast && (
+        <Animated.View
+          style={[
+            s.topToastContainer,
+            {
+              opacity: toastOpacity,
+              transform: [{ translateY: toastTranslateY }],
+              right: onClose ? 58 : 16,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <View style={s.topToastContent}>
+            <View style={s.topToastIconWrap}>
+              <MaterialIcons name="notifications-active" size={16} color="#ffffff" />
+            </View>
+            <Text style={s.topToastText} numberOfLines={1} ellipsizeMode="tail">{typeof currentToast === 'string' ? currentToast : ''}</Text>
+          </View>
+        </Animated.View>
+      )}
+
       <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
-
-        {/* Prominent Logo */}
-        <View style={s.topBrand}>
-          <Image
-            source={require('../../../assets/logo.png')}
-            style={s.brandLogoImg}
-            resizeMode="contain"
-          />
-        </View>
-
-        {/* Hero Banner */}
-        <View style={s.heroSection}>
-          <Text style={s.heroTitle}>
-            {mode === 'login' ? 'Đăng Nhập Tài Khoản' : 'Tạo Tài Khoản Mới'}
-          </Text>
-          <Text style={s.heroSubtitle}>
-            {mode === 'login'
-              ? 'Đăng nhập để quản lý buồng kho tự quản, mã PIN thông minh và ra vào 24/7.'
-              : 'Trải nghiệm hệ thống lưu trữ tự quản hiện đại, bảo mật và tiện lợi.'}
-          </Text>
-        </View>
-
-        {/* Mode Switch Tabs */}
-        <View style={s.tabWrap}>
-          <TouchableOpacity
-            style={[s.tabBtn, mode === 'login' && s.tabBtnActive]}
-            onPress={() => {
-              setMode('login');
-              setErrorMsg('');
-            }}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name="login"
-              size={18}
-              color={mode === 'login' ? T.brandDark : T.onSurfaceVariant}
-            />
-            <Text style={[s.tabText, mode === 'login' && s.tabTextActive]}>Đăng Nhập</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[s.tabBtn, mode === 'register' && s.tabBtnActive]}
-            onPress={() => {
-              setMode('register');
-              setErrorMsg('');
-            }}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name="person-add"
-              size={18}
-              color={mode === 'register' ? T.brandDark : T.onSurfaceVariant}
-            />
-            <Text style={[s.tabText, mode === 'register' && s.tabTextActive]}>Đăng Ký</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Error Notification */}
-        {!!errorMsg && (
-          <View style={s.errorBox}>
-            <MaterialIcons name="error-outline" size={20} color={T.error} />
-            <Text style={s.errorText}>{errorMsg}</Text>
-          </View>
-        )}
-
-        {/* Form Fields */}
-        <View style={s.formCard}>
-          {mode === 'register' && (
-            <>
-              <Text style={s.inputLabel}>Họ và tên *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="person" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Ví dụ: Nguyễn Văn An"
-                  placeholderTextColor={T.outline}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                />
-              </View>
-
-              <Text style={s.inputLabel}>Số điện thoại</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="phone" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Ví dụ: 0908 123 456"
-                  placeholderTextColor={T.outline}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                />
-              </View>
-            </>
-          )}
-
-          <Text style={s.inputLabel}>Email đăng nhập *</Text>
-          <View style={s.inputWrap}>
-            <MaterialIcons name="mail-outline" size={20} color={T.outline} style={s.inputIcon} />
-            <TextInput
-              style={s.input}
-              placeholder="customer@selfstorage.vn"
-              placeholderTextColor={T.outline}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
+        <View style={s.centerWrapper}>
+          {/* Prominent Logo */}
+          <View style={s.topBrand}>
+            <Image
+              source={require('../../../assets/logo.png')}
+              style={s.brandLogoImg}
+              resizeMode="contain"
             />
           </View>
 
-          <Text style={s.inputLabel}>Mật khẩu *</Text>
-          <View style={s.inputWrap}>
-            <MaterialIcons name="lock-outline" size={20} color={T.outline} style={s.inputIcon} />
-            <TextInput
-              style={s.input}
-              placeholder="Nhập mật khẩu..."
-              placeholderTextColor={T.outline}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
+          {/* Hero Banner */}
+          <View style={s.heroSection}>
+            <Text style={s.heroTitle}>
+              {mode === 'login' ? 'Đăng Nhập Tài Khoản' : 'Tạo Tài Khoản Mới'}
+            </Text>
+            <Text style={s.heroSubtitle}>
+              {mode === 'login'
+                ? 'Đăng nhập để quản lý buồng kho tự quản, mã PIN thông minh và ra vào 24/7.'
+                : 'Trải nghiệm hệ thống lưu trữ tự quản hiện đại, bảo mật và tiện lợi.'}
+            </Text>
+          </View>
+
+          {/* Mode Switch Tabs */}
+          <View style={s.tabWrap}>
             <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={s.eyeBtn}
-              activeOpacity={0.7}
+              style={[s.tabBtn, mode === 'login' && s.tabBtnActive]}
+              onPress={() => {
+                setMode('login');
+                setErrorMsg('');
+              }}
+              activeOpacity={0.8}
             >
               <MaterialIcons
-                name={showPassword ? 'visibility' : 'visibility-off'}
-                size={20}
-                color={T.outline}
+                name="login"
+                size={18}
+                color={mode === 'login' ? T.brandDark : T.onSurfaceVariant}
               />
+              <Text style={[s.tabText, mode === 'login' && s.tabTextActive]}>Đăng Nhập</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.tabBtn, mode === 'register' && s.tabBtnActive]}
+              onPress={() => {
+                setMode('register');
+                setErrorMsg('');
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons
+                name="person-add"
+                size={18}
+                color={mode === 'register' ? T.brandDark : T.onSurfaceVariant}
+              />
+              <Text style={[s.tabText, mode === 'register' && s.tabTextActive]}>Đăng Ký</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[s.submitBtn, (loading || googleLoading) && s.submitBtnDisabled]}
-            onPress={() => (mode === 'login' ? handleLogin() : handleRegister())}
-            disabled={loading || googleLoading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <>
-                <Text style={s.submitText}>
-                  {mode === 'login' ? 'Đăng Nhập Ngay' : 'Tạo Tài Khoản Khách Hàng'}
-                </Text>
-                <MaterialIcons name="arrow-forward" size={18} color="#ffffff" />
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Error Notification */}
+          {!!errorMsg && (
+            <View style={s.errorBox}>
+              <MaterialIcons name="error-outline" size={20} color={T.error} />
+              <Text style={s.errorText}>{errorMsg}</Text>
+            </View>
+          )}
 
-          {/* Google Divider */}
-          <View style={s.dividerWithText}>
-            <View style={s.line} />
-            <Text style={s.dividerLabel}>HOẶC TIẾP TỤC VỚI</Text>
-            <View style={s.line} />
-          </View>
-
-          {/* Google Sign In Button */}
-          <TouchableOpacity
-            style={[s.googleBtn, googleLoading && s.googleBtnDisabled]}
-            onPress={handleGoogleLogin}
-            disabled={loading || googleLoading}
-            activeOpacity={0.85}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color={T.brand} size="small" />
-            ) : (
+          {/* Form Fields */}
+          <View style={s.formCard}>
+            {mode === 'register' && (
               <>
-                <View style={s.googleIconWrap}>
-                  <MaterialCommunityIcons name="google" size={18} color="#EA4335" />
+                <Text style={s.inputLabel}>Họ và tên *</Text>
+                <View style={s.inputWrap}>
+                  <MaterialIcons name="person" size={20} color={T.outline} style={s.inputIcon} />
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ví dụ: Nguyễn Văn An"
+                    placeholderTextColor={T.outline}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                  />
                 </View>
-                <Text style={s.googleBtnText}>
-                  {mode === 'login'
-                    ? 'Đăng nhập với Google'
-                    : 'Đăng ký nhanh với Google'}
-                </Text>
+
+                <Text style={s.inputLabel}>Số điện thoại</Text>
+                <View style={s.inputWrap}>
+                  <MaterialIcons name="phone" size={20} color={T.outline} style={s.inputIcon} />
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ví dụ: 0908 123 456"
+                    placeholderTextColor={T.outline}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
               </>
             )}
-          </TouchableOpacity>
 
-          {/* Quick Demo Google Button */}
-          <TouchableOpacity
-            style={s.demoGoogleBtn}
-            onPress={handleDemoGoogleLogin}
-            disabled={loading || googleLoading}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="lightning-bolt" size={16} color="#d97706" />
-            <Text style={s.demoGoogleBtnText}>Đăng nhập nhanh (Tài khoản Google Test)</Text>
-          </TouchableOpacity>
+            <Text style={s.inputLabel}>Email đăng nhập *</Text>
+            <View style={s.inputWrap}>
+              <MaterialIcons name="mail-outline" size={20} color={T.outline} style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                placeholder="customer@selfstorage.vn"
+                placeholderTextColor={T.outline}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <Text style={s.inputLabel}>Mật khẩu *</Text>
+            <View style={s.inputWrap}>
+              <MaterialIcons name="lock-outline" size={20} color={T.outline} style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                placeholder="Nhập mật khẩu..."
+                placeholderTextColor={T.outline}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={s.eyeBtn}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons
+                  name={showPassword ? 'visibility' : 'visibility-off'}
+                  size={20}
+                  color={T.outline}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              style={[s.submitBtn, (loading || googleLoading) && s.submitBtnDisabled]}
+              onPress={() => (mode === 'login' ? handleLogin() : handleRegister())}
+              disabled={loading || googleLoading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <>
+                  <Text style={s.submitText}>
+                    {mode === 'login' ? 'Đăng Nhập Ngay' : 'Tạo Tài Khoản Khách Hàng'}
+                  </Text>
+                  <MaterialIcons name="arrow-forward" size={18} color="#ffffff" />
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Google Divider */}
+            <View style={s.dividerWithText}>
+              <View style={s.line} />
+              <Text style={s.dividerLabel}>HOẶC TIẾP TỤC VỚI</Text>
+              <View style={s.line} />
+            </View>
+
+            {/* Google Sign In Button */}
+            <TouchableOpacity
+              style={[s.googleBtn, googleLoading && s.googleBtnDisabled]}
+              onPress={handleGoogleLogin}
+              disabled={loading || googleLoading}
+              activeOpacity={0.85}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color={T.brand} size="small" />
+              ) : (
+                <>
+                  <View style={s.googleIconWrap}>
+                    <MaterialCommunityIcons name="google" size={18} color="#EA4335" />
+                  </View>
+                  <Text style={s.googleBtnText}>
+                    {mode === 'login'
+                      ? 'Đăng nhập với Google'
+                      : 'Đăng ký nhanh với Google'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -536,9 +533,16 @@ const s = StyleSheet.create({
     backgroundColor: T.bg,
   },
   scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 24 : 12,
-    paddingBottom: 32,
+    paddingVertical: 24,
+  },
+  centerWrapper: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
   },
   closeBtn: {
     position: 'absolute',
@@ -559,10 +563,46 @@ const s = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
+  topToastContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 44 : 14,
+    left: 16,
+    right: 60,
+    zIndex: 9999,
+  },
+  topToastContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1d4ed8',
+    borderRadius: 20,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    shadowColor: '#1d4ed8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#60a5fa',
+  },
+  topToastIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  topToastText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#ffffff',
+    flex: 1,
+  },
   topBrand: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
     marginBottom: 8,
   },
   brandLogoImg: {
@@ -570,7 +610,8 @@ const s = StyleSheet.create({
     width: 125,
   },
   heroSection: {
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 16,
   },
   heroTitle: {
     fontSize: 20,
@@ -578,11 +619,13 @@ const s = StyleSheet.create({
     color: T.onSurface,
     letterSpacing: -0.5,
     marginBottom: 4,
+    textAlign: 'center',
   },
   heroSubtitle: {
     fontSize: 12,
     color: T.onSurfaceVariant,
     lineHeight: 16,
+    textAlign: 'center',
   },
   tabWrap: {
     flexDirection: 'row',
@@ -646,7 +689,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 10,
     elevation: 2,
-    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 13,
@@ -748,23 +790,5 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: T.onSurface,
-  },
-  demoGoogleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fffbeb',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    gap: 6,
-  },
-  demoGoogleBtnText: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#b45309',
   },
 });

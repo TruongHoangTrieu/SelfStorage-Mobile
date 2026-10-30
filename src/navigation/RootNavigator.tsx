@@ -33,14 +33,15 @@ export default function RootNavigator() {
       style={[
         styles.safeArea,
         {
+          backgroundColor: '#FFFFFF',
           paddingTop: topInset,
           paddingBottom: bottomInset,
         },
       ]}
     >
       <StatusBar
-        barStyle="light-content"
-        backgroundColor="#0F172A"
+        barStyle="dark-content"
+        backgroundColor="#FFFFFF"
         translucent={Platform.OS === 'android'}
       />
       {appMode === 'staff' ? (

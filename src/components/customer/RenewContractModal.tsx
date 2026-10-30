@@ -153,14 +153,6 @@ export default function RenewContractModal({
       // 3. Cập nhật ngày kết thúc mới cho hợp đồng
       onRenewSuccess(selectedMonths, newEndDate);
 
-      // Hiển thị thông báo hoàn tất
-      const successMsg = `🎉 Hệ thống đã nhận diện thanh toán thành công!\nÔ kho ${unit.unitCode} đã được cộng thêm ${selectedMonths} tháng.\nThời hạn mới đến: ${newEndDate}`;
-      if (Platform.OS === 'web') {
-        window.alert(successMsg);
-      } else {
-        Alert.alert('Gia hạn thành công! 🎉', successMsg);
-      }
-
       handleSafeClose();
     } catch (err: any) {
       const errMsg = err?.message || 'Không thể gia hạn. Vui lòng thử lại';

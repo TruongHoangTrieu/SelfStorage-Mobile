@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
   Image,
   Alert,
+  Animated,
+  StatusBar,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import CustomerSidebar from '../components/customer/CustomerSidebar';
@@ -92,9 +94,40 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string>('');
   const [aiUnitToBook, setAiUnitToBook] = useState<any>(null);
 
-  // Trung tâm thông báo
+  // Trung tâm thông báo & Toast lý do đăng nhập
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false);
+  const [authModalToast, setAuthModalToast] = useState<string | null>(null);
   const customerNotifState = useNotifications('customer');
+
+  const handleOpenAuthModal = (reason?: any) => {
+    setAuthModalToast(typeof reason === 'string' ? reason : null);
+    setShowAuthModal(true);
+  };
+
+  // Toast thông báo thao tác thành công (In-app Action Toast 3s)
+  const [actionToast, setActionToast] = useState<{ message: string; type?: 'success' | 'info' } | null>(null);
+  const actionToastOpacity = useRef(new Animated.Value(0)).current;
+  const actionToastTranslateY = useRef(new Animated.Value(-16)).current;
+  const actionToastTimerRef = useRef<any>(null);
+
+  const showActionToast = (message: string, type: 'success' | 'info' = 'success') => {
+    if (actionToastTimerRef.current) clearTimeout(actionToastTimerRef.current);
+    setActionToast({ message, type });
+    actionToastOpacity.setValue(0);
+    actionToastTranslateY.setValue(-16);
+
+    Animated.parallel([
+      Animated.timing(actionToastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.timing(actionToastTranslateY, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start();
+
+    actionToastTimerRef.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(actionToastOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(actionToastTranslateY, { toValue: -16, duration: 250, useNativeDriver: true }),
+      ]).start(() => setActionToast(null));
+    }, 3000);
+  };
 
   const reservationsState = useReservations(() => {
     if (onRefreshStaffData) {
@@ -118,17 +151,26 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
   useEffect(() => {
     loadCustomerData();
     loadCustomerContracts();
-  }, [loadCustomerData, loadCustomerContracts]);
+    customerNotifState.loadNotifications();
+  }, [loadCustomerData, loadCustomerContracts, currentUser]);
 
   // Điều hướng thanh dưới đáy & kiểm tra bắt buộc đăng nhập
   const handleNavigateBottomTab = (tab: CustomerTabType) => {
-    if (tab === 'search') {
+    if (tab === 'search' || tab === 'book-new') {
       setCustomerTab('book');
       return;
     }
     // Bắt buộc đăng nhập khi nhấn qua Kho của tôi, Hỗ trợ hoặc Tài khoản
-    if ((tab === 'my-storage' || tab === 'support' || tab === 'account') && (!isLoggedIn || !currentUser)) {
-      setShowAuthModal(true);
+    if (tab === 'my-storage' && (!isLoggedIn || !currentUser)) {
+      handleOpenAuthModal('Vui lòng đăng nhập để xem buồng kho & mã PIN của bạn');
+      return;
+    }
+    if (tab === 'support' && (!isLoggedIn || !currentUser)) {
+      handleOpenAuthModal('Vui lòng đăng nhập để gửi yêu cầu hỗ trợ kỹ thuật');
+      return;
+    }
+    if (tab === 'account' && (!isLoggedIn || !currentUser)) {
+      handleOpenAuthModal();
       return;
     }
     if (tab === 'my-storage') {
@@ -153,8 +195,12 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         activeTab={customerNavTab}
         onSelectTab={(tab) => {
           setIsCustomerSidebarVisible(false);
-          if ((tab === 'my_units' || tab === 'support' || tab === 'payments' || tab === 'documents') && (!isLoggedIn || !currentUser)) {
-            setShowAuthModal(true);
+          if ((tab === 'my_units' || tab === 'payments' || tab === 'documents') && (!isLoggedIn || !currentUser)) {
+            handleOpenAuthModal('Vui lòng đăng nhập để xem buồng kho & mã PIN của bạn');
+            return;
+          }
+          if (tab === 'support' && (!isLoggedIn || !currentUser)) {
+            handleOpenAuthModal('Vui lòng đăng nhập để gửi yêu cầu hỗ trợ kỹ thuật');
             return;
           }
           setCustomerNavTab(tab);
@@ -170,7 +216,14 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           setAiInitialPrompt('');
           setShowAiModal(true);
         }}
-        onOpenNotifications={() => setShowNotifModal(true)}
+        onOpenNotifications={() => {
+          if (!isLoggedIn || !currentUser) {
+            setAuthModalToast('Vui lòng đăng nhập để xem thông báo');
+            setShowAuthModal(true);
+            return;
+          }
+          setShowNotifModal(true);
+        }}
         unreadNotifCount={customerNotifState.unreadCount}
       />
 
@@ -316,11 +369,18 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               onRefresh={loadCustomerContracts}
               isRefreshing={isCustomerLoading}
               customerName={currentUser?.fullName || CURRENT_CUSTOMER_USER.fullName}
-              onOpenLogin={() => setShowAuthModal(true)}
+              onOpenLogin={handleOpenAuthModal}
               onLogout={handleLogout}
               currentUser={currentUser}
               onNavigateBottomTab={handleNavigateBottomTab}
-              onOpenNotifications={() => setShowNotifModal(true)}
+              onOpenNotifications={() => {
+          if (!isLoggedIn || !currentUser) {
+            setAuthModalToast('Vui lòng đăng nhập để xem thông báo');
+            setShowAuthModal(true);
+            return;
+          }
+          setShowNotifModal(true);
+        }}
               unreadNotifCount={customerNotifState.unreadCount}
             />
           ) : selectedRentedUnit ? (
@@ -368,7 +428,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setSelectedRentedUnit(u);
               setShowReportIssueModal(true);
             }}
-            onOpenLogin={() => setShowAuthModal(true)}
+            onOpenLogin={handleOpenAuthModal}
             onLogout={handleLogout}
             currentUser={currentUser}
             onNavigateBottomTab={handleNavigateBottomTab}
@@ -411,15 +471,26 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             setCustomerFlowStep('dashboard');
             loadCustomerContracts();
           }}
-          onOpenLogin={() => setShowAuthModal(true)}
+          onOpenLogin={handleOpenAuthModal}
           onLogout={handleLogout}
           currentUser={currentUser}
           activeBottomTab="search"
           onNavigateTab={handleNavigateBottomTab}
           initialSelectedUnit={aiUnitToBook}
           onClearInitialSelectedUnit={() => setAiUnitToBook(null)}
-          onOpenNotifications={() => setShowNotifModal(true)}
+          onOpenNotifications={() => {
+          if (!isLoggedIn || !currentUser) {
+            setAuthModalToast('Vui lòng đăng nhập để xem thông báo');
+            setShowAuthModal(true);
+            return;
+          }
+          setShowNotifModal(true);
+        }}
           unreadNotifCount={customerNotifState.unreadCount}
+          onOpenAiAssistant={(prompt) => {
+            setAiInitialPrompt(prompt || '');
+            setShowAiModal(true);
+          }}
         />
       ) : loading ? (
         <View style={styles.centerBox}>
@@ -611,7 +682,11 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
       {/* MODAL AUTH */}
       <Modal visible={showAuthModal} transparent={false} animationType="slide">
         <LoginScreen
-          onClose={() => setShowAuthModal(false)}
+          toastMessage={authModalToast}
+          onClose={() => {
+            setShowAuthModal(false);
+            setAuthModalToast(null);
+          }}
           onLoginSuccess={(user, token) => {
             handleLoginSuccess(
               user,
@@ -621,6 +696,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               token
             );
             setShowAuthModal(false);
+            setAuthModalToast(null);
             if (aiUnitToBook) {
               setCustomerTab('book');
             }
@@ -645,7 +721,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           setShowAiModal(false);
           setAiUnitToBook(unit);
           if (!isLoggedIn || !currentUser) {
-            setShowAuthModal(true);
+            handleOpenAuthModal('Vui lòng đăng nhập để tiếp tục với buồng kho AI gợi ý');
             return;
           }
           setCustomerTab('book');
@@ -666,6 +742,71 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         onDeleteNotification={customerNotifState.deleteNotification}
         role="customer"
       />
+
+      {/* ─── TOAST THÔNG BÁO THAO TÁC THÀNH CÔNG (IN-APP ACTION TOAST 3S) ─── */}
+      {actionToast && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            top: Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight ? StatusBar.currentHeight + 12 : 36),
+            left: 20,
+            right: 20,
+            zIndex: 999999,
+            elevation: 999999,
+            opacity: actionToastOpacity,
+            transform: [{ translateY: actionToastTranslateY }],
+          }}
+          pointerEvents="none"
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: actionToast.type === 'success' ? '#15803d' : '#1d4ed8',
+              borderRadius: 14,
+              paddingVertical: 11,
+              paddingHorizontal: 14,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 8,
+              elevation: 10,
+              borderWidth: 1,
+              borderColor: actionToast.type === 'success' ? '#86efac' : '#93c5fd',
+            }}
+          >
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 10,
+              }}
+            >
+              <MaterialIcons
+                name={actionToast.type === 'success' ? 'check-circle' : 'info'}
+                size={16}
+                color="#ffffff"
+              />
+            </View>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: '#ffffff',
+                flex: 1,
+                lineHeight: 18,
+              }}
+              numberOfLines={2}
+            >
+              {actionToast.message}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }

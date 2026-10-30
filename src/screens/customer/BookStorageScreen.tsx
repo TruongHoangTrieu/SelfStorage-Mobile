@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,11 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
+  Animated,
 } from "react-native";
 import { MaterialIcons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { Facility, UnitType, Reservation } from "../../api";
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -56,13 +59,14 @@ interface Props {
   onViewMyReservations: () => void;
   onNavigateTab?: (tab: CustomerTabType) => void;
   activeBottomTab?: CustomerTabType;
-  onOpenLogin?: () => void;
+  onOpenLogin?: (reason?: string) => void;
   onLogout?: () => void;
   currentUser?: any;
   initialSelectedUnit?: any;
   onClearInitialSelectedUnit?: () => void;
   onOpenNotifications?: () => void;
   unreadNotifCount?: number;
+  onOpenAiAssistant?: (prompt?: string) => void;
 }
 
 export interface StorageDisplayItem {
@@ -100,6 +104,31 @@ const FACILITY_PHOTOS = [
   "https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=1200&q=80",
   "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80",
 ];
+
+// Tọa độ GPS chuẩn các khu vực kho tại TP. Hồ Chí Minh
+const DISTRICT_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  "TP. Thủ Đức": { lat: 10.8031, lng: 106.7456 },
+  "Quận 1": { lat: 10.7915, lng: 106.6912 },
+  "Quận 7": { lat: 10.7328, lng: 106.7321 },
+  "Q. Bình Thạnh": { lat: 10.8021, lng: 106.7118 },
+  "Quận 6": { lat: 10.7482, lng: 106.6352 },
+  "Quận 9": { lat: 10.8428, lng: 106.7954 },
+};
+
+// Công thức Haversine đo khoảng cách hình cầu chuẩn xác (đơn vị: km)
+function calculateHaversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Bán kính Trái Đất (km)
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function extractDistrict(address: string, name: string): string {
   const text = `${name} ${address}`.toLowerCase();
@@ -165,9 +194,23 @@ export default function BookStorageScreen({
   onClearInitialSelectedUnit,
   onOpenNotifications,
   unreadNotifCount = 0,
+  onOpenAiAssistant,
 }: Props) {
   // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Mở Google Maps / Apple Maps chỉ đường đến cơ sở kho
+  const handleOpenDirections = (address: string, title: string) => {
+    const query = encodeURIComponent(`${title}, ${address}, TP. Hồ Chí Minh`);
+    const url = Platform.select({
+      ios: `maps:0,0?q=${query}`,
+      android: `geo:0,0?q=${query}`,
+      default: `https://www.google.com/maps/search/?api=1&query=${query}`,
+    });
+    Linking.openURL(url).catch(() => {
+      Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
+    });
+  };
 
   // Selected Facility State (synced with Web flow: chọn cơ sở -> chọn loại kho)
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(
@@ -175,15 +218,95 @@ export default function BookStorageScreen({
   );
   const [facilitySearchQuery, setFacilitySearchQuery] = useState("");
   const [facilityDistrictFilter, setFacilityDistrictFilter] = useState("ALL");
+  const [selectedDistrictFilter, setSelectedDistrictFilter] = useState<string>("all");
+
+  // Floating Toast thông báo tự tắt sau 3 giây
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTranslateY = useRef(new Animated.Value(-16)).current;
+  const toastTimeoutRef = useRef<any>(null);
+
+  const showToast = (message: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastMessage(message);
+
+    Animated.parallel([
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(toastTranslateY, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    toastTimeoutRef.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(toastTranslateY, {
+          toValue: -16,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setToastMessage(null);
+      });
+    }, 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+  // Vị trí GPS thật của khách hàng (null nếu không bật hoặc từ chối)
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Lấy vị trí GPS thật một cách nhẹ nhàng (nếu khách từ chối thì fallback hiển thị tên quận)
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted" && isMounted) {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (loc?.coords && isMounted) {
+            setUserLocation({
+              lat: loc.coords.latitude,
+              lng: loc.coords.longitude,
+            });
+          }
+        }
+      } catch (err) {
+        // Khách tắt GPS hoặc không cấp quyền -> Tự động chuyển sang chế độ không GPS
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Dynamic Districts for Filter Chips
   const availableDistricts = useMemo(() => {
     const set = new Set<string>();
     facilities.forEach((f) => {
       const d = extractDistrict(f.address || "", f.name || "");
-      if (d) set.add(d);
+      if (d && d.toUpperCase() !== "ALL") set.add(d);
     });
-    return ["ALL", ...Array.from(set)];
+    return Array.from(set);
   }, [facilities]);
 
   // Filtered Facilities List
@@ -347,7 +470,7 @@ export default function BookStorageScreen({
       // Yêu cầu đăng nhập trước khi vào đặt kho
       if (!currentUser) {
         if (onOpenLogin) {
-          onOpenLogin();
+          onOpenLogin("Vui lòng đăng nhập để tiếp tục với buồng kho AI gợi ý");
         } else {
           Alert.alert(
             "Yêu cầu đăng nhập",
@@ -551,7 +674,7 @@ export default function BookStorageScreen({
 
   // Handle Bottom Nav Press
   const handleTabPress = (tab: CustomerTabType) => {
-    if (tab === "search") {
+    if (tab === "search" || tab === "book-new") {
       setCurrentBottomTab("search");
       setCurrentStep(1);
       setSelectedFacility(null);
@@ -559,10 +682,12 @@ export default function BookStorageScreen({
       return;
     }
     // Bắt buộc login khi nhấn qua Kho của tôi hoặc Hỗ trợ
-    if ((tab === "my-storage" || tab === "support") && !currentUser) {
-      if (onOpenLogin) {
-        onOpenLogin();
-      }
+    if (tab === "my-storage" && !currentUser) {
+      if (onOpenLogin) onOpenLogin("Vui lòng đăng nhập để xem buồng kho & mã PIN của bạn");
+      return;
+    }
+    if (tab === "support" && !currentUser) {
+      if (onOpenLogin) onOpenLogin("Vui lòng đăng nhập để gửi yêu cầu hỗ trợ kỹ thuật");
       return;
     }
     setCurrentBottomTab(tab);
@@ -575,7 +700,7 @@ export default function BookStorageScreen({
 
   // ─── Dynamic Facilities mapping strictly from Backend API ─────────────────
   const dynamicFacilities = useMemo(() => {
-    return facilities.map((fac, idx) => {
+    const list = facilities.map((fac, idx) => {
       const facUnits = unitTypes.filter(
         (ut) => String((ut as any).facilityId) === String(fac.id),
       );
@@ -639,9 +764,36 @@ export default function BookStorageScreen({
         hasFamily,
         hasBusiness,
         hasAC,
+        // Tọa độ cơ sở kho
+        lat: (fac as any).lat || DISTRICT_COORDINATES[district]?.lat || 10.8031,
+        lng: (fac as any).lng || DISTRICT_COORDINATES[district]?.lng || 10.7456,
       };
     });
-  }, [facilities, unitTypes]);
+
+    // Tính khoảng cách thật nếu có GPS của khách
+    const withDistance = list.map((item) => {
+      let realKm: number | null = null;
+      if (userLocation) {
+        realKm = calculateHaversineKm(userLocation.lat, userLocation.lng, item.lat, item.lng);
+      }
+      return {
+        ...item,
+        realDistanceKm: realKm !== null ? realKm.toFixed(1) : null,
+        rawDistanceNum: realKm !== null ? realKm : 99999,
+      };
+    });
+
+    // Nếu có GPS thật -> Tự động xếp cơ sở gần nhất lên trên cùng
+    if (userLocation) {
+      withDistance.sort((a, b) => a.rawDistanceNum - b.rawDistanceNum);
+    }
+
+    // Đánh dấu cơ sở gần nhất
+    return withDistance.map((item, idx) => ({
+      ...item,
+      isNearest: userLocation ? idx === 0 : false,
+    }));
+  }, [facilities, unitTypes, userLocation]);
 
   // Filter dynamic facilities based on search query and category filter pill
   const filteredDynamicFacilities = useMemo(() => {
@@ -683,7 +835,7 @@ export default function BookStorageScreen({
   const handleSignContract = async () => {
     if (!currentUser) {
       if (onOpenLogin) {
-        onOpenLogin();
+        onOpenLogin("Phiên làm việc hết hạn, vui lòng đăng nhập lại");
       } else {
         Alert.alert(
           "Yêu cầu đăng nhập",
@@ -923,6 +1075,7 @@ export default function BookStorageScreen({
   return (
     <View style={s.outerWrapper}>
       <View style={s.mobileContainer}>
+
         {/* ========================================================================= */}
         {/* STEP 1: DANH SÁCH BUỒNG KHO & TÌM KIẾM THÔNG MINH                         */}
         {/* ========================================================================= */}
@@ -993,6 +1146,14 @@ export default function BookStorageScreen({
                     style={s.notifBtn}
                     activeOpacity={0.8}
                     onPress={() => {
+                      if (!currentUser) {
+                        if (onOpenLogin) {
+                          onOpenLogin("Vui lòng đăng nhập để xem thông báo");
+                        } else if (onOpenNotifications) {
+                          onOpenNotifications();
+                        }
+                        return;
+                      }
                       if (onOpenNotifications) {
                         onOpenNotifications();
                       } else {
@@ -1032,30 +1193,41 @@ export default function BookStorageScreen({
                   <View style={s.greetingHeader}>
                     <View style={s.greetingLeft}>
                       <TouchableOpacity
-                        style={s.avatarWrap}
+                        style={[s.avatarWrap, !currentUser && s.avatarWrapUnauth]}
                         activeOpacity={0.8}
-                        onPress={onOpenLogin}
+                        onPress={() => onOpenLogin?.()}
                       >
                         <MaterialIcons
-                          name="person"
-                          size={26}
-                          color={T.primary}
+                          name={currentUser ? "person" : "person-outline"}
+                          size={24}
+                          color={currentUser ? T.primary : "#475569"}
                         />
                       </TouchableOpacity>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={s.greetingSub}>
-                          {currentUser ? "Xin chào," : "Chào mừng bạn,"}
-                        </Text>
-                        <Text
-                          style={s.greetingName}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {currentUser?.fullName ||
-                            (currentUser?.email
-                              ? currentUser.email.split("@")[0]
-                              : "Khách hàng")}
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                          <MaterialIcons name="location-on" size={13} color={T.primary} />
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: T.primary }}>
+                            TP. Hồ Chí Minh
+                          </Text>
+                        </View>
+                        {currentUser ? (
+                          <Text
+                            style={s.greetingName}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {currentUser?.fullName || currentUser?.email?.split("@")[0]}
+                          </Text>
+                        ) : (
+                          <TouchableOpacity
+                            onPress={() => onOpenLogin?.()}
+                            activeOpacity={0.7}
+                            style={{ flexDirection: "row", alignItems: "center", gap: 2, marginTop: 1 }}
+                          >
+                            <Text style={s.loginPromptText}>Đăng nhập / Đăng ký</Text>
+                            <MaterialIcons name="chevron-right" size={15} color="#2563eb" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
 
@@ -1065,7 +1237,7 @@ export default function BookStorageScreen({
                         activeOpacity={0.8}
                         onPress={() => {
                           if (!currentUser && onOpenLogin) {
-                            onOpenLogin();
+                            onOpenLogin("Vui lòng đăng nhập để gửi yêu cầu hỗ trợ kỹ thuật");
                             return;
                           }
                           onNavigateTab?.("support");
@@ -1082,6 +1254,14 @@ export default function BookStorageScreen({
                         style={s.iconCircleBtn}
                         activeOpacity={0.8}
                         onPress={() => {
+                          if (!currentUser) {
+                            if (onOpenLogin) {
+                              onOpenLogin("Vui lòng đăng nhập để xem thông báo");
+                            } else if (onOpenNotifications) {
+                              onOpenNotifications();
+                            }
+                            return;
+                          }
                           if (onOpenNotifications) {
                             onOpenNotifications();
                           } else {
@@ -1106,34 +1286,41 @@ export default function BookStorageScreen({
                     </View>
                   </View>
 
-                  {/* 3. SEARCH BAR */}
+                  {/* 3. SEARCH BAR TÍCH HỢP AI TÍNH CỠ KHO */}
                   <View style={s.searchSection}>
                     <View style={s.searchBarPill}>
                       <MaterialIcons
                         name="search"
-                        size={22}
+                        size={20}
                         color={T.outline}
-                        style={{ marginRight: 10 }}
+                        style={{ marginRight: 8 }}
                       />
                       <TextInput
                         style={s.searchInputStitch}
-                        placeholder="Tìm kiếm kho, vị trí hoặc kích thước..."
+                        placeholder="Tìm theo quận: Thủ Đức, Q7..."
                         placeholderTextColor={T.outline}
                         value={facilitySearchQuery}
                         onChangeText={setFacilitySearchQuery}
                       />
+                      {facilitySearchQuery ? (
+                        <TouchableOpacity
+                          style={{ paddingHorizontal: 6 }}
+                          onPress={() => setFacilitySearchQuery("")}
+                        >
+                          <MaterialIcons name="close" size={18} color={T.outline} />
+                        </TouchableOpacity>
+                      ) : null}
                       <TouchableOpacity
-                        style={s.filterTuneBtn}
-                        activeOpacity={0.7}
+                        style={s.aiSearchActionBtn}
+                        activeOpacity={0.85}
+                        accessibilityLabel="Tính cỡ kho AI"
                         onPress={() => {
-                          if (facilitySearchQuery) setFacilitySearchQuery("");
+                          if (onOpenAiAssistant) {
+                            onOpenAiAssistant("Tôi muốn tính cỡ kho phù hợp cho đồ đạc của mình");
+                          }
                         }}
                       >
-                        <MaterialIcons
-                          name={facilitySearchQuery ? "close" : "tune"}
-                          size={21}
-                          color={T.onSurface}
-                        />
+                        <MaterialIcons name="calculate" size={18} color="#ffffff" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1150,9 +1337,13 @@ export default function BookStorageScreen({
                       />
                       <View style={s.heroBannerOverlay} />
                       <View style={s.heroBannerContent}>
-                        <Text style={s.heroTitle}>Tìm buồng kho lý tưởng</Text>
+                        <View style={s.heroTagBadge}>
+                          <MaterialIcons name="security" size={13} color="#ffffff" />
+                          <Text style={s.heroTagText}>Kho tự quản thông minh 24/7</Text>
+                        </View>
+                        <Text style={s.heroTitle}>Lưu trữ an toàn & riêng biệt</Text>
                         <Text style={s.heroSubtitle}>
-                          Không gian an toàn, linh hoạt theo nhu cầu của bạn
+                          Đặt phòng trực tuyến, máy lạnh 23-25°C, tự do ra vào bằng mã PIN
                         </Text>
                         <TouchableOpacity
                           style={s.heroCtaBtn}
@@ -1163,7 +1354,7 @@ export default function BookStorageScreen({
                             }
                           }}
                         >
-                          <Text style={s.heroCtaText}>Khám phá ngay</Text>
+                          <Text style={s.heroCtaText}>Khám phá buồng kho trống</Text>
                           <MaterialIcons
                             name="arrow-forward"
                             size={15}
@@ -1174,160 +1365,10 @@ export default function BookStorageScreen({
                     </View>
                   </View>
 
-                  {/* 5. CATEGORY FILTER PILLS */}
-                  <View style={s.categoryPillsSection}>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={s.categoryPillsScroll}
-                    >
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "for-you" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("for-you")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="assignment-turned-in"
-                          size={17}
-                          color={
-                            activeFilterPill === "for-you"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "for-you" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Dành cho bạn
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "personal" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("personal")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="inventory-2"
-                          size={17}
-                          color={
-                            activeFilterPill === "personal"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "personal" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Cá nhân (1-3m²)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "family" && s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("family")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="home-work"
-                          size={17}
-                          color={
-                            activeFilterPill === "family"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "family" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Gia đình (4-9m²)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "business" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("business")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="storefront"
-                          size={17}
-                          color={
-                            activeFilterPill === "business"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "business" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Kho lớn / E-com
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "ac" && s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("ac")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="ac-unit"
-                          size={17}
-                          color={
-                            activeFilterPill === "ac" ? "#ffffff" : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "ac" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Máy lạnh 24/7
-                        </Text>
-                      </TouchableOpacity>
-                    </ScrollView>
-                  </View>
-
                   {/* 6. SECTION KHO NỔI BẬT & CAROUSEL (Dữ liệu động từ Backend) */}
                   <View style={s.featuredSection}>
                     <View style={s.sectionHeaderRow}>
-                      <Text style={s.sectionHeaderTitle}>Kho nổi bật</Text>
+                      <Text style={s.sectionHeaderTitle}>Hệ thống cơ sở kho</Text>
                       <TouchableOpacity
                         onPress={() => {
                           setFacilitySearchQuery("");
@@ -1372,45 +1413,22 @@ export default function BookStorageScreen({
                                   resizeMode="cover"
                                 />
 
-                                <View style={s.cardBadgeTopLeft}>
-                                  <Text style={s.cardBadgeText}>
-                                    ⭐ {card.facility?.rating ? card.facility.rating.toFixed(1) : "4.9"} (200+)
-                                  </Text>
-                                </View>
+
                               </View>
 
                               <View style={s.featuredCardBody}>
-                                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                                  <Text
-                                    style={[s.featuredCardTitle, { flex: 1 }]}
-                                    numberOfLines={1}
-                                  >
-                                    {card.title}
-                                  </Text>
-                                  <View
-                                    style={[
-                                      s.featuredTagPill,
-                                      card.tagType === "business" &&
-                                        s.featuredTagBusiness,
-                                    ]}
-                                  >
-                                    <Text
-                                      style={[
-                                        s.featuredTagText,
-                                        card.tagType === "business" &&
-                                          s.featuredTagBusinessText,
-                                      ]}
-                                    >
-                                      {card.tag}
-                                    </Text>
-                                  </View>
-                                </View>
+                                <Text
+                                  style={s.featuredCardTitle}
+                                  numberOfLines={1}
+                                >
+                                  {card.title}
+                                </Text>
 
                                 <View style={s.featuredLocationRow}>
                                   <MaterialIcons
                                     name="location-on"
-                                    size={15}
-                                    color={T.primary}
+                                    size={14}
+                                    color={T.outline}
                                     style={{ marginRight: 4 }}
                                   />
                                   <Text
@@ -1421,25 +1439,47 @@ export default function BookStorageScreen({
                                   </Text>
                                 </View>
 
-                                <View style={s.featuredPriceRow}>
-                                  <View
-                                    style={{
-                                      flexDirection: "row",
-                                      alignItems: "baseline",
-                                    }}
-                                  >
-                                    <Text style={s.featuredPriceVal}>
-                                      {card.price}
-                                    </Text>
-                                    {card.priceUnit ? (
-                                      <Text style={s.featuredPriceUnit}>
-                                        {card.priceUnit}
+                                <View style={s.featuredBottomActionRow}>
+                                  {/* Bên trái: Tag buồng kho & Đang hoạt động */}
+                                  <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                                    <View
+                                      style={[
+                                        s.featuredTagPill,
+                                        card.tagType === "business" &&
+                                          s.featuredTagBusiness,
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          s.featuredTagText,
+                                          card.tagType === "business" &&
+                                            s.featuredTagBusinessText,
+                                        ]}
+                                      >
+                                        {card.tag}
                                       </Text>
-                                    ) : null}
+                                    </View>
+                                    <View style={s.activeStatusPill}>
+                                      <View style={s.activeStatusDot} />
+                                      <Text style={s.activeStatusText}>Hoạt động</Text>
+                                    </View>
                                   </View>
 
-                                  <View style={s.chooseFacilityBtn}>
-                                    <Text style={s.chooseFacilityBtnText}>Chọn kho →</Text>
+                                  {/* Bên phải: Nút Chỉ đường & Chọn kho */}
+                                  <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                                    <TouchableOpacity
+                                      style={s.directionsBtn}
+                                      activeOpacity={0.7}
+                                      onPress={() => handleOpenDirections(card.location, card.title)}
+                                      accessibilityLabel="Chỉ đường"
+                                    >
+                                      <MaterialIcons name="directions" size={15} color="#475569" />
+                                    </TouchableOpacity>
+
+                                    <View style={s.chooseFacilityBtn}>
+                                      <Text style={s.chooseFacilityBtnText}>Chọn kho</Text>
+                                      <MaterialIcons name="chevron-right" size={14} color="#ffffff" />
+                                    </View>
                                   </View>
                                 </View>
                               </View>
@@ -1453,19 +1493,70 @@ export default function BookStorageScreen({
                   {/* 7. RECOMMENDED / NEARBY LISTING (Dữ liệu động từ Backend) */}
                   <View style={s.nearbySection}>
                     <View style={s.sectionHeaderRow}>
-                      <Text style={s.sectionHeaderTitle}>Gợi ý gần bạn</Text>
+                      <View>
+                        <Text style={s.sectionHeaderTitle}>Gợi ý gần bạn</Text>
+                        <Text style={{ fontSize: 11, color: "#737686", marginTop: 2 }}>
+                          Kho tự quản tại các quận thuận tiện giao thông
+                        </Text>
+                      </View>
                       <TouchableOpacity
                         onPress={() => {
                           setFacilitySearchQuery("");
-                          setActiveFilterPill("for-you");
+                          setSelectedDistrictFilter("all");
                         }}
                       >
                         <Text style={s.sectionHeaderSort}>
-                          Xem tất cả ({dynamicFacilities.length})
+                          Tất cả ({dynamicFacilities.length})
                         </Text>
                       </TouchableOpacity>
                     </View>
 
+                    {/* Hàng Chip lọc nhanh theo Quận (Đề xuất 2) */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={s.districtChipsScroll}
+                    >
+                      <TouchableOpacity
+                        style={[
+                          s.districtChip,
+                          selectedDistrictFilter === "all" && s.districtChipActive,
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() => setSelectedDistrictFilter("all")}
+                      >
+                        <Text
+                          style={[
+                            s.districtChipText,
+                            selectedDistrictFilter === "all" && s.districtChipTextActive,
+                          ]}
+                        >
+                          Tất cả khu vực
+                        </Text>
+                      </TouchableOpacity>
+                      {availableDistricts.map((dst) => (
+                        <TouchableOpacity
+                          key={dst}
+                          style={[
+                            s.districtChip,
+                            selectedDistrictFilter === dst && s.districtChipActive,
+                          ]}
+                          activeOpacity={0.8}
+                          onPress={() => setSelectedDistrictFilter(dst)}
+                        >
+                          <Text
+                            style={[
+                              s.districtChipText,
+                              selectedDistrictFilter === dst && s.districtChipTextActive,
+                            ]}
+                          >
+                            {dst}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
+                    {/* Danh sách thẻ kho có đo khoảng cách km và nút chỉ đường */}
                     <View style={s.nearbyListWrap}>
                       {dynamicFacilities.length === 0 ? (
                         <View style={s.emptyFeaturedCard}>
@@ -1474,66 +1565,249 @@ export default function BookStorageScreen({
                           </Text>
                         </View>
                       ) : (
-                        dynamicFacilities.map((rec) => (
-                          <TouchableOpacity
-                            key={rec.id}
-                            style={s.nearbyItemCard}
-                            activeOpacity={0.9}
-                            onPress={() => setSelectedFacility(rec.facility)}
-                          >
-                            <View style={s.nearbyThumbnailWrap}>
-                              <Image
-                                source={{ uri: rec.image }}
-                                style={s.nearbyThumbnail}
-                                resizeMode="cover"
-                              />
-                              <View style={s.nearbyLiveDot} />
-                            </View>
-
-                            <View style={s.nearbyInfoWrap}>
-                              <Text style={s.nearbyTitle} numberOfLines={1}>
-                                {rec.title}
-                              </Text>
-                              <View style={s.nearbyDistanceRow}>
-                                <MaterialIcons
-                                  name="location-on"
-                                  size={13}
-                                  color={T.primary}
-                                  style={{ marginRight: 4 }}
+                        dynamicFacilities
+                          .filter((item) => {
+                            if (selectedDistrictFilter !== "all" && item.district !== selectedDistrictFilter) {
+                              return false;
+                            }
+                            if (facilitySearchQuery.trim()) {
+                              const q = facilitySearchQuery.toLowerCase().trim();
+                              return (
+                                item.title.toLowerCase().includes(q) ||
+                                item.location.toLowerCase().includes(q) ||
+                                (item.district && item.district.toLowerCase().includes(q))
+                              );
+                            }
+                            return true;
+                          })
+                          .map((rec) => (
+                            <TouchableOpacity
+                              key={rec.id}
+                              style={s.nearbyItemCard}
+                              activeOpacity={0.9}
+                              onPress={() => setSelectedFacility(rec.facility)}
+                            >
+                              <View style={s.nearbyThumbnailWrap}>
+                                <Image
+                                  source={{ uri: rec.image }}
+                                  style={s.nearbyThumbnail}
+                                  resizeMode="cover"
                                 />
-                                <Text
-                                  style={s.nearbyDistanceText}
-                                  numberOfLines={1}
-                                >
-                                  {rec.location}
-                                </Text>
+                                <View style={s.nearbyLiveDot} />
                               </View>
 
-                              <View style={s.nearbyBottomRow}>
-                                <Text style={s.nearbyPriceText}>
-                                  {rec.price}
-                                  {rec.priceUnit ? (
-                                    <Text style={s.nearbyPriceUnit}>
-                                      {rec.priceUnit}
-                                    </Text>
-                                  ) : null}
+                              <View style={s.nearbyInfoWrap}>
+                                <Text style={s.nearbyTitle} numberOfLines={1}>
+                                  {rec.title}
                                 </Text>
-                                <TouchableOpacity
-                                  style={s.nearbyActionBtn}
-                                  activeOpacity={0.8}
-                                  onPress={() =>
-                                    setSelectedFacility(rec.facility)
-                                  }
-                                >
-                                  <Text style={s.nearbyActionBtnText}>
-                                    Xem ngay
+
+                                {/* Badge Khoảng cách: GPS thật hoặc fallback Tên Quận */}
+                                <View style={s.distanceBadgeRow}>
+                                  {rec.isNearest ? (
+                                    <View style={s.nearestTag}>
+                                      <MaterialIcons name="navigation" size={11} color="#16a34a" />
+                                      <Text style={s.nearestTagText}>Gần bạn nhất</Text>
+                                    </View>
+                                  ) : null}
+                                  {rec.realDistanceKm ? (
+                                    <View style={s.kmPill}>
+                                      <MaterialIcons name="near-me" size={11} color="#2563eb" />
+                                      <Text style={s.kmPillText}>Cách bạn {rec.realDistanceKm} km</Text>
+                                    </View>
+                                  ) : (
+                                    <View style={[s.kmPill, { backgroundColor: "#f1f5f9" }]}>
+                                      <MaterialIcons name="place" size={11} color="#475569" />
+                                      <Text style={[s.kmPillText, { color: "#475569" }]}>{rec.district || "TP. Hồ Chí Minh"}</Text>
+                                    </View>
+                                  )}
+                                </View>
+
+                                <View style={s.nearbyDistanceRow}>
+                                  <MaterialIcons
+                                    name="location-on"
+                                    size={13}
+                                    color={T.outline}
+                                    style={{ marginRight: 3 }}
+                                  />
+                                  <Text
+                                    style={s.nearbyDistanceText}
+                                    numberOfLines={1}
+                                  >
+                                    {rec.location}
                                   </Text>
-                                </TouchableOpacity>
+                                </View>
+
+                                <View style={s.nearbyBottomRow}>
+                                  {/* Bên trái: Thông tin số buồng còn trống */}
+                                  <View style={s.unitAvailableTag}>
+                                    <MaterialIcons name="check-circle" size={12} color="#16a34a" />
+                                    <Text style={s.unitAvailableText}>{rec.tag || "Còn buồng trống"}</Text>
+                                  </View>
+
+                                  <View style={s.nearbyActionsCluster}>
+                                    {/* Nút Chỉ đường */}
+                                    <TouchableOpacity
+                                      style={s.directionsBtn}
+                                      activeOpacity={0.7}
+                                      onPress={() => handleOpenDirections(rec.location, rec.title)}
+                                      accessibilityLabel="Chỉ đường"
+                                    >
+                                      <MaterialIcons name="directions" size={15} color="#475569" />
+                                    </TouchableOpacity>
+
+                                    {/* Nút Chọn kho */}
+                                    <TouchableOpacity
+                                      style={s.nearbyActionBtn}
+                                      activeOpacity={0.8}
+                                      onPress={() => setSelectedFacility(rec.facility)}
+                                    >
+                                      <Text style={s.nearbyActionBtnText}>
+                                        Chọn kho
+                                      </Text>
+                                      <MaterialIcons name="chevron-right" size={14} color="#ffffff" />
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
                               </View>
-                            </View>
-                          </TouchableOpacity>
-                        ))
+                            </TouchableOpacity>
+                          ))
                       )}
+                    </View>
+                  </View>
+
+                  {/* 8. QUY TRÌNH THUÊ KHO 4 BƯỚC KHÉP KÍN (TỪ FE) */}
+                  <View style={s.homeExtraSection}>
+                    <View style={s.sectionHeaderRow}>
+                      <Text style={s.sectionHeaderTitle}>Quy trình thuê kho 4 bước</Text>
+                    </View>
+                    <View style={s.stepsFlowContainer}>
+                      <View style={s.stepFlowCard}>
+                        <View style={s.stepFlowNumBadge}>
+                          <Text style={s.stepFlowNumText}>01</Text>
+                        </View>
+                        <View style={s.stepFlowContent}>
+                          <Text style={s.stepFlowTitle}>Chọn cơ sở & kích thước</Text>
+                          <Text style={s.stepFlowDesc}>Khám phá kho trống, xem diện tích từ 1 - 25m² và bảng giá niêm yết.</Text>
+                        </View>
+                      </View>
+
+                      <View style={s.stepFlowCard}>
+                        <View style={[s.stepFlowNumBadge, { backgroundColor: "#ea580c" }]}>
+                          <Text style={s.stepFlowNumText}>02</Text>
+                        </View>
+                        <View style={s.stepFlowContent}>
+                          <Text style={s.stepFlowTitle}>Đặt cọc VietQR tự động</Text>
+                          <Text style={s.stepFlowDesc}>Thanh toán cọc giữ chỗ chuẩn VietQR, xác nhận phòng tức thì 100% online.</Text>
+                        </View>
+                      </View>
+
+                      <View style={s.stepFlowCard}>
+                        <View style={[s.stepFlowNumBadge, { backgroundColor: "#16a34a" }]}>
+                          <Text style={s.stepFlowNumText}>03</Text>
+                        </View>
+                        <View style={s.stepFlowContent}>
+                          <Text style={s.stepFlowTitle}>Check-in & nhận mã PIN</Text>
+                          <Text style={s.stepFlowDesc}>Đến kho nhận bàn giao phòng, cấp mã khóa thông minh Smart Key riêng.</Text>
+                        </View>
+                      </View>
+
+                      <View style={s.stepFlowCard}>
+                        <View style={[s.stepFlowNumBadge, { backgroundColor: "#4f46e5" }]}>
+                          <Text style={s.stepFlowNumText}>04</Text>
+                        </View>
+                        <View style={s.stepFlowContent}>
+                          <Text style={s.stepFlowTitle}>Tự do ra vào 24/7</Text>
+                          <Text style={s.stepFlowDesc}>Mở cửa bằng mã PIN bất kỳ lúc nào, kể cả ban đêm hoặc ngày nghỉ lễ.</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* 9. NHU CẦU LƯU TRỮ PHỔ BIẾN (USE CASES TỪ FE) */}
+                  <View style={s.homeExtraSection}>
+                    <View style={s.sectionHeaderRow}>
+                      <Text style={s.sectionHeaderTitle}>Nhu cầu lưu trữ phổ biến</Text>
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+                      <View style={s.useCaseCard}>
+                        <View style={[s.useCaseIconWrap, { backgroundColor: "#eff6ff" }]}>
+                          <MaterialIcons name="home-work" size={24} color="#2563eb" />
+                        </View>
+                        <Text style={s.useCaseTitle}>Gia đình dọn nhà / Sửa nhà</Text>
+                        <Text style={s.useCaseDesc}>Lưu trữ tạm sofa, nệm, tủ quần áo, đồ gia dụng trong phòng kho riêng máy lạnh chống ẩm mốc.</Text>
+                      </View>
+
+                      <View style={s.useCaseCard}>
+                        <View style={[s.useCaseIconWrap, { backgroundColor: "#fef3c7" }]}>
+                          <MaterialIcons name="storefront" size={24} color="#d97706" />
+                        </View>
+                        <Text style={s.useCaseTitle}>Hàng kinh doanh & E-com</Text>
+                        <Text style={s.useCaseDesc}>Kho trung chuyển cho shop online, xuất nhập hàng linh hoạt 24/7 với xe đẩy hàng có sẵn.</Text>
+                      </View>
+
+                      <View style={s.useCaseCard}>
+                        <View style={[s.useCaseIconWrap, { backgroundColor: "#dcfce7" }]}>
+                          <MaterialIcons name="inventory-2" size={24} color="#16a34a" />
+                        </View>
+                        <Text style={s.useCaseTitle}>Đồ cá nhân & Bộ sưu tập</Text>
+                        <Text style={s.useCaseDesc}>Bảo quản giày hiếm, mô hình anime, tranh ảnh và tài liệu công ty với camera bảo mật đa tầng.</Text>
+                      </View>
+                    </ScrollView>
+                  </View>
+
+                  {/* 10. ĐÁNH GIÁ THỰC TẾ 4.9⭐ (SOCIAL PROOF TỪ FE) */}
+                  <View style={[s.homeExtraSection, { marginBottom: 24 }]}>
+                    <View style={s.sectionHeaderRow}>
+                      <Text style={s.sectionHeaderTitle}>Khách hàng đánh giá</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                        <MaterialIcons name="star" size={16} color="#eab308" />
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: "#131b2e" }}>4.9 / 5.0</Text>
+                      </View>
+                    </View>
+                    <View style={{ paddingHorizontal: 20, gap: 10 }}>
+                      <View style={s.reviewCard}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <View style={[s.reviewAvatarWrap, { backgroundColor: "#2563eb" }]}>
+                              <Text style={s.reviewAvatarText}>H</Text>
+                            </View>
+                            <View>
+                              <Text style={s.reviewName}>Trương Huỳnh Hiếu</Text>
+                              <Text style={s.reviewRole}>Thuê kho cá nhân - Google Review</Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: "row" }}>
+                            {[1, 2, 3, 4, 5].map((st) => (
+                              <MaterialIcons key={st} name="star" size={14} color="#eab308" />
+                            ))}
+                          </View>
+                        </View>
+                        <Text style={s.reviewComment}>
+                          "Quy trình đặt kho và thanh toán cọc qua QR rất nhanh gọn. Mở cửa bằng mã PIN 24/7 cực kỳ tiện lợi!"
+                        </Text>
+                      </View>
+
+                      <View style={s.reviewCard}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                            <View style={[s.reviewAvatarWrap, { backgroundColor: "#ea580c" }]}>
+                              <Text style={s.reviewAvatarText}>P</Text>
+                            </View>
+                            <View>
+                              <Text style={s.reviewName}>Phúc Lê</Text>
+                              <Text style={s.reviewRole}>Chủ shop online - Google Review</Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: "row" }}>
+                            {[1, 2, 3, 4, 5].map((st) => (
+                              <MaterialIcons key={st} name="star" size={14} color="#eab308" />
+                            ))}
+                          </View>
+                        </View>
+                        <Text style={s.reviewComment}>
+                          "Kho máy lạnh sạch sẽ, xuất nhập hàng lúc nào cũng được. Quản lý buồng kho trên điện thoại rất rõ ràng."
+                        </Text>
+                      </View>
                     </View>
                   </View>
                 </View>
@@ -1890,7 +2164,7 @@ export default function BookStorageScreen({
                                   if (!currentUser) {
                                     setPendingUnitToBookAfterLogin(item);
                                     if (onOpenLogin) {
-                                      onOpenLogin();
+                                      onOpenLogin("Vui lòng đăng nhập để tiến hành đặt kho");
                                     } else {
                                       Alert.alert(
                                         "Yêu cầu đăng nhập",
@@ -2863,12 +3137,255 @@ const s = StyleSheet.create({
     width: "100%",
     maxWidth: 500,
     backgroundColor: T.bg,
+    position: "relative",
+  },
+  topToastContainer: {
+    position: "absolute",
+    top: 12,
+    left: 16,
+    right: 16,
+    zIndex: 99999,
+    alignItems: "center",
+  },
+  topToastContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#0f172a",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    width: "100%",
+  },
+  topToastLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 10,
+  },
+  topToastIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 9,
+  },
+  topToastText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#f8fafc",
+    flex: 1,
+  },
+  topToastLoginBtn: {
+    backgroundColor: "rgba(37, 99, 235, 0.25)",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.4)",
+  },
+  topToastLoginBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#60a5fa",
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingBottom: 24,
+  },
+
+  // ─── Home New Sections Styles (Synced with FE) ────────────────────────
+  heroTagBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(37, 99, 235, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    gap: 4,
+  },
+  heroTagText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  keySpecsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  keySpecPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.5)",
+    gap: 8,
+  },
+  keySpecVal: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#131b2e",
+  },
+  keySpecLabel: {
+    fontSize: 10,
+    color: "#737686",
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  quickActionItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 5,
+  },
+  quickActionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickActionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#131b2e",
+    textAlign: "center",
+  },
+  homeExtraSection: {
+    marginTop: 18,
+  },
+  stepsFlowContainer: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  stepFlowCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+    gap: 12,
+  },
+  stepFlowNumBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepFlowNumText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  stepFlowContent: {
+    flex: 1,
+  },
+  stepFlowTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#131b2e",
+    marginBottom: 2,
+  },
+  stepFlowDesc: {
+    fontSize: 11,
+    color: "#737686",
+    lineHeight: 15,
+  },
+  useCaseCard: {
+    width: 220,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+  },
+  useCaseIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  useCaseTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#131b2e",
+    marginBottom: 4,
+  },
+  useCaseDesc: {
+    fontSize: 11,
+    color: "#737686",
+    lineHeight: 16,
+  },
+  reviewCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.4)",
+  },
+  reviewAvatarWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewAvatarText: {
+    color: "#ffffff",
+    fontWeight: "800",
+    fontSize: 12,
+  },
+  reviewName: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#131b2e",
+  },
+  reviewRole: {
+    fontSize: 10,
+    color: "#737686",
+  },
+  reviewComment: {
+    fontSize: 12,
+    color: "#434655",
+    lineHeight: 17,
+    fontStyle: "italic",
   },
 
   // ─── Stitch Explore UI Styles (Matching Web / Stitch Mockup) ──────────────
@@ -2914,6 +3431,15 @@ const s = StyleSheet.create({
     gap: 12,
     flex: 1,
     marginRight: 8,
+  },
+  avatarWrapUnauth: {
+    backgroundColor: "#f1f5f9",
+    borderColor: "#cbd5e1",
+  },
+  loginPromptText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#2563eb",
   },
   avatarWrap: {
     width: 44,
@@ -3003,6 +3529,14 @@ const s = StyleSheet.create({
     fontSize: 13,
     color: "#131b2e",
     paddingVertical: 0,
+  },
+  aiSearchActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterTuneBtn: {
     paddingLeft: 8,
@@ -3166,18 +3700,64 @@ const s = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#eff4ff",
   },
-  chooseFacilityBtn: {
-    backgroundColor: "#eff6ff",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+  featuredBottomActionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  activeStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
     borderWidth: 1,
-    borderColor: "#bfdbfe",
+    borderColor: "#dcfce7",
+  },
+  activeStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#16a34a",
+  },
+  activeStatusText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#16a34a",
+  },
+  unitAvailableTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  unitAvailableText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#15803d",
+  },
+  chooseFacilityBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 10,
+    height: 32,
+    borderRadius: 16,
+    gap: 2,
   },
   chooseFacilityBtnText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#1d4ed8",
+    color: "#ffffff",
   },
   featuredImage: {
     width: "100%",
@@ -3314,10 +3894,92 @@ const s = StyleSheet.create({
   nearbyListWrap: {
     gap: 12,
   },
+  districtChipsScroll: {
+    paddingHorizontal: 20,
+    gap: 8,
+    paddingVertical: 10,
+  },
+  districtChip: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(195, 198, 215, 0.6)",
+  },
+  districtChipActive: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  districtChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  districtChipTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  distanceBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 3,
+    marginBottom: 3,
+  },
+  nearestTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  nearestTagText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#15803d",
+  },
+  kmPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  kmPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#2563eb",
+  },
+  directionsBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  directionsBtnText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  nearbyActionsCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
   nearbyItemCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
     backgroundColor: "#ffffff",
     padding: 12,
     borderRadius: 20,
@@ -3387,15 +4049,18 @@ const s = StyleSheet.create({
     fontWeight: "400",
   },
   nearbyActionBtn: {
-    backgroundColor: "rgba(29, 78, 216, 0.1)",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 10,
+    height: 32,
+    borderRadius: 16,
+    gap: 2,
   },
   nearbyActionBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
-    color: "#1d4ed8",
+    color: "#ffffff",
   },
   loadWrap: {
     flex: 1,
