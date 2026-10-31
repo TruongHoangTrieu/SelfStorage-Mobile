@@ -493,9 +493,12 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           }}
         />
       ) : loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.centerText}>Đang tải danh sách kho...</Text>
+        <View style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={{ width: 260, height: 76 }}
+            resizeMode="contain"
+          />
         </View>
       ) : (
         /* MY RESERVATIONS */

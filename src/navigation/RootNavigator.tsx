@@ -1,5 +1,6 @@
 import React from 'react';
-import { StatusBar, Platform, View } from 'react-native';
+import { Platform, View, StatusBar as RNStatusBar } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppMode } from '../context/AppModeContext';
 import { useAuth } from '../context/AuthContext';
@@ -21,7 +22,7 @@ export default function RootNavigator() {
   // Đảm bảo không bị che bởi StatusBar (thanh thông báo) và Bottom Navigation (thanh chuyển tab / điều hướng điện thoại)
   const topInset = Math.max(
     insets.top,
-    Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0
+    Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0
   );
   const bottomInset = Math.max(
     insets.bottom,
@@ -34,16 +35,12 @@ export default function RootNavigator() {
         styles.safeArea,
         {
           backgroundColor: '#FFFFFF',
-          paddingTop: topInset,
-          paddingBottom: bottomInset,
+          paddingTop: 0,
+          paddingBottom: 0,
         },
       ]}
     >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#FFFFFF"
-        translucent={Platform.OS === 'android'}
-      />
+      <StatusBar style="dark" />
       {appMode === 'staff' ? (
         <StaffNavigator staffAppointmentsState={staffAppointmentsState} />
       ) : (

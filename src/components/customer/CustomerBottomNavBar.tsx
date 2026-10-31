@@ -169,7 +169,7 @@ const s = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 8,
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 14 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
     backgroundColor: T.surfaceLowest,
     borderTopWidth: 1,
     borderTopColor: T.outlineVariant,
