@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Keyboard,
   KeyboardAvoidingView,
   Image,
   Animated,
@@ -66,6 +67,20 @@ export default function LoginScreen({
   toastMessage,
 }: LoginScreenProps) {
   const [currentToast, setCurrentToast] = useState<string | null>(toastMessage || null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTranslateY = useRef(new Animated.Value(-16)).current;
 
@@ -301,10 +316,7 @@ export default function LoginScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={s.container}
-    >
+    <View style={s.container}>
       {/* Absolute close button if present */}
       {onClose && (
         <TouchableOpacity onPress={onClose} style={s.closeBtn} activeOpacity={0.7}>
@@ -334,7 +346,17 @@ export default function LoginScreen({
         </Animated.View>
       )}
 
-      <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets={true}
+        contentContainerStyle={[
+          s.scrollContent,
+          isKeyboardVisible ? s.scrollContentKeyboard : s.scrollContentCentered,
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
         <View style={s.centerWrapper}>
           {/* Prominent Logo */}
           <View style={s.topBrand}>
@@ -523,7 +545,7 @@ export default function LoginScreen({
           </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -534,10 +556,17 @@ const s = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingBottom: 36,
+  },
+  scrollContentCentered: {
+    justifyContent: 'center',
     paddingVertical: 24,
+  },
+  scrollContentKeyboard: {
+    justifyContent: 'flex-start',
+    paddingTop: Platform.OS === 'ios' ? 56 : 28,
   },
   centerWrapper: {
     width: '100%',

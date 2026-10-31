@@ -189,11 +189,7 @@ export default function CustomerAccountScreen({
       {/* Top Header Bar */}
       <View style={s.topBar}>
         <View style={s.topBarLeft}>
-          {onOpenSidebar && (
-            <TouchableOpacity onPress={onOpenSidebar} style={s.menuBtn}>
-              <MaterialIcons name="menu" size={24} color={T.onSurface} />
-            </TouchableOpacity>
-          )}
+          
           <Image
             source={require('../../../assets/logo.png')}
             style={s.topLogoImg}
@@ -201,10 +197,7 @@ export default function CustomerAccountScreen({
           />
         </View>
 
-        <TouchableOpacity onPress={handleLogout} style={s.logoutHeaderBtn} activeOpacity={0.8}>
-          <MaterialIcons name="logout" size={16} color={T.error} />
-          <Text style={s.logoutHeaderText}>Đăng xuất</Text>
-        </TouchableOpacity>
+        
       </View>
 
       <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
@@ -415,7 +408,8 @@ const s = StyleSheet.create({
     backgroundColor: T.bg,
   },
   topBar: {
-    height: 56,
+    paddingTop: Platform.OS === 'ios' ? 50 : 14,
+    paddingBottom: 12,
     backgroundColor: '#ffffff',
     flexDirection: 'row',
     alignItems: 'center',

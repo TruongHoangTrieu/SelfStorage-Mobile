@@ -188,44 +188,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Thanh Sidebar (Drawer) Cổng Khách Hàng */}
-      <CustomerSidebar
-        visible={isCustomerSidebarVisible}
-        onClose={() => setIsCustomerSidebarVisible(false)}
-        activeTab={customerNavTab}
-        onSelectTab={(tab) => {
-          setIsCustomerSidebarVisible(false);
-          if ((tab === 'my_units' || tab === 'payments' || tab === 'documents') && (!isLoggedIn || !currentUser)) {
-            handleOpenAuthModal('Vui lòng đăng nhập để xem buồng kho & mã PIN của bạn');
-            return;
-          }
-          if (tab === 'support' && (!isLoggedIn || !currentUser)) {
-            handleOpenAuthModal('Vui lòng đăng nhập để gửi yêu cầu hỗ trợ kỹ thuật');
-            return;
-          }
-          setCustomerNavTab(tab);
-          if (tab === 'my_units') {
-            setCustomerTab('my_units');
-            setCustomerFlowStep('dashboard');
-          } else {
-            setCustomerTab('my_units');
-          }
-        }}
-        rentedUnitsCount={rentedUnits.length}
-        onOpenAiAssistant={() => {
-          setAiInitialPrompt('');
-          setShowAiModal(true);
-        }}
-        onOpenNotifications={() => {
-          if (!isLoggedIn || !currentUser) {
-            setAuthModalToast('Vui lòng đăng nhập để xem thông báo');
-            setShowAuthModal(true);
-            return;
-          }
-          setShowNotifModal(true);
-        }}
-        unreadNotifCount={customerNotifState.unreadCount}
-      />
+      
 
       {/* Nội dung theo Tab chính: Kiểm tra nếu chưa đăng nhập thì buộc đăng nhập */}
       {customerTab === 'my_units' && (!isLoggedIn || !currentUser) ? (
@@ -365,10 +328,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
                 setShowChangePinModal(true);
               }}
               onRentMoreUnits={() => setCustomerTab('book')}
-              onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+              
               onRefresh={loadCustomerContracts}
               isRefreshing={isCustomerLoading}
-              customerName={currentUser?.fullName || CURRENT_CUSTOMER_USER.fullName}
+              customerName={currentUser?.fullName || 'Khách hàng'}
               onOpenLogin={handleOpenAuthModal}
               onLogout={handleLogout}
               currentUser={currentUser}
@@ -403,7 +366,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setCustomerNavTab('my_units');
               setCustomerFlowStep('dashboard');
             }}
-            onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+            
           />
         ) : customerNavTab === 'documents' ? (
           /* TAB 3: Tài liệu & Hợp đồng */
@@ -413,7 +376,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setCustomerNavTab('my_units');
               setCustomerFlowStep('dashboard');
             }}
-            onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+            
           />
         ) : customerNavTab === 'support' ? (
           /* TAB 4: Hỗ trợ & Trợ giúp */
@@ -423,7 +386,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setCustomerNavTab('my_units');
               setCustomerFlowStep('dashboard');
             }}
-            onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+            
             onOpenReportIssue={(u) => {
               setSelectedRentedUnit(u);
               setShowReportIssueModal(true);
@@ -440,7 +403,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         ) : (
           /* TAB 5: Quản lý tài khoản & Đổi thông tin */
           <CustomerAccountScreen
-            currentUser={currentUser || CURRENT_CUSTOMER_USER}
+            currentUser={currentUser}
             onUpdateUser={(updated) => {
               setCurrentUser(updated);
             }}
@@ -448,7 +411,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               handleLogout();
               setCustomerTab('book');
             }}
-            onOpenSidebar={() => setIsCustomerSidebarVisible(true)}
+            
             onNavigateBottomTab={handleNavigateBottomTab}
           />
         )

@@ -359,7 +359,7 @@ export default function Step1ExploreAndDetail({
                   {/* 6. SECTION KHO NỔI BẬT & CAROUSEL (Dữ liệu động từ Backend) */}
                   <View style={s.featuredSection}>
                     <View style={s.sectionHeaderRow}>
-                      <Text style={s.sectionHeaderTitle}>Hệ thống cơ sở kho</Text>
+                      <Text style={s.sectionHeaderTitle}>Hệ Thống Cơ Sở Kho </Text>
                       <TouchableOpacity
                         onPress={() => {
                           setFacilitySearchQuery("");
@@ -926,7 +926,7 @@ export default function Step1ExploreAndDetail({
                     <View style={s.unitListHeaderRow}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <View style={s.livePulseDot} />
-                        <Text style={s.unitListSectionTitle}>Chọn buồng kho phù hợp</Text>
+                        <Text style={s.unitListSectionTitle}>Chọn loại kho phù hợp</Text>
                       </View>
                       <View style={s.unitCountBadge}>
                         <Text style={s.unitCountBadgeText}>{filteredItems.length} loại khả dụng</Text>
@@ -968,7 +968,7 @@ export default function Step1ExploreAndDetail({
                             ]}
                             onPress={() => {
                               if (!isOutOfStock) {
-                                setSelectedUnit(item);
+                                setSelectedUnit(isSelected ? null : item);
                               }
                             }}
                             disabled={isOutOfStock}
@@ -989,13 +989,7 @@ export default function Step1ExploreAndDetail({
                                 </Text>
                               </View>
 
-                              {!isOutOfStock ? (
-                                <View style={[s.fullSpecRadio, isSelected && s.fullSpecRadioActive]}>
-                                  {isSelected ? (
-                                    <MaterialIcons name="check" size={13} color="#ffffff" />
-                                  ) : null}
-                                </View>
-                              ) : null}
+                              
                             </View>
 
                             {/* 2. Hàng Thông Số: Trạng thái buồng và tiền cọc thực tế từ API */}

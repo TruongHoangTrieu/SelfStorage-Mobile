@@ -403,7 +403,7 @@ export default function BookStorageScreen({
         image: facImg,
         availableCount,
         unitTypesCount: facUnits.length,
-        tag: facUnits.length > 0 ? `${facUnits.length} loại buồng` : "Cho thuê",
+        tag: facUnits.length > 0 ? `${facUnits.length} loại kho` : "Cho thuê",
         tagType: hasBusiness ? ("business" as const) : ("primary" as const),
         hasPersonal,
         hasFamily,
