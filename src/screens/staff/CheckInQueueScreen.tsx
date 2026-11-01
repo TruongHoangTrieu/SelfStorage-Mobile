@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckInAppointment, StaffReturnOrder } from '../../types/handover';
 import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
 import { MaterialIcons } from '@expo/vector-icons';
+import SimpleReturnInspectionModal from '../../components/staff/SimpleReturnInspectionModal';
 
 // Mục lịch hợp nhất bao gồm cả Nhận kho và Trả kho
 export interface UnifiedScheduleItem {
@@ -131,6 +132,18 @@ export default function CheckInQueueScreen({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'checkin' | 'checkout'>(initialTypeFilter);
 
+  // Quản lý Modal Nghiệm Thu Trả Kho (MỞ THẲNG MODAL TẠI CHỖ, KHÔNG CHUYỂN UI CŨ)
+  const [localReturnOrders, setLocalReturnOrders] = useState<StaffReturnOrder[]>(returnOrders);
+  const [selectedReturnOrder, setSelectedReturnOrder] = useState<StaffReturnOrder | null>(null);
+  const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
+
+  // Đồng bộ returnOrders khi props thay đổi
+  React.useEffect(() => {
+    if (returnOrders && returnOrders.length > 0) {
+      setLocalReturnOrders(returnOrders);
+    }
+  }, [returnOrders]);
+
   // Tính 7 ngày trong tuần
   const weekDays = useMemo(() => getWeekDays(selectedMonday), [selectedMonday]);
   const sunday = useMemo(() => weekDays[6], [weekDays]);
@@ -181,7 +194,7 @@ export default function CheckInQueueScreen({
     }));
 
     // 2. Chuyển đổi các đơn Trả kho (gộp chung vào lịch với màu card khác biệt)
-    const checkoutList: UnifiedScheduleItem[] = returnOrders.map((ord, idx) => {
+    const checkoutList: UnifiedScheduleItem[] = localReturnOrders.map((ord, idx) => {
       // Gán ngày trả kho: nếu có endDate thì dùng, hoặc phân bổ vào hôm nay / ngày mai của tuần
       let returnDateStr = ord.returnType === 'today' ? todayFormatted : normalizeAppointmentDate(ord.endDate);
       if (!returnDateStr) {
@@ -205,7 +218,7 @@ export default function CheckInQueueScreen({
     });
 
     return [...checkinList, ...checkoutList];
-  }, [appointments, returnOrders]);
+  }, [appointments, localReturnOrders]);
 
   // Lọc theo tìm kiếm và bộ lọc loại đơn (Tất cả / Nhận kho / Trả kho)
   const filteredItems = useMemo(() => {
@@ -261,8 +274,12 @@ export default function CheckInQueueScreen({
 
     const handleCardPress = () => {
       if (isCheckout) {
-        if (onOpenReturnOrder && item.rawReturnOrder) {
-          onOpenReturnOrder(item.rawReturnOrder);
+        // VÀO THẲNG MODAL NGHIỆM THU TRẢ KHO NGAY TẠI CHỖ (KHÔNG CHUYỂN UI CŨ)
+        if (item.rawReturnOrder) {
+          setSelectedReturnOrder(item.rawReturnOrder);
+          setIsInspectionModalVisible(true);
+        } else if (onOpenReturnOrder) {
+          onOpenReturnOrder(item.rawReturnOrder!);
         }
       } else {
         if (item.rawCheckIn) {
@@ -628,6 +645,18 @@ export default function CheckInQueueScreen({
           );
         })}
       </ScrollView>
+
+      {/* ─── MODAL NGHIỆM THU TRẢ KHO TRỰC TIẾP (TINH GỌN, ÍT CHỮ) ─── */}
+      <SimpleReturnInspectionModal
+        visible={isInspectionModalVisible}
+        onClose={() => setIsInspectionModalVisible(false)}
+        order={selectedReturnOrder}
+        onSuccess={(updatedOrder) => {
+          setLocalReturnOrders((prev) =>
+            prev.map((ord) => (ord.id === updatedOrder.id ? updatedOrder : ord))
+          );
+        }}
+      />
     </View>
   );
 }
