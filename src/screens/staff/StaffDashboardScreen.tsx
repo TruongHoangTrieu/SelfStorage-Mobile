@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, StaffTab, StaffUser } from '../../types/handover';
+import { INITIAL_RETURN_ORDERS, INITIAL_SUPPORT_TICKETS } from '../../data/mockStaffData';
 
 interface StaffDashboardScreenProps {
   appointments: CheckInAppointment[];
@@ -38,21 +39,39 @@ export default function StaffDashboardScreen({
 }: StaffDashboardScreenProps) {
   const insets = useSafeAreaInsets();
 
-  const pending = appointments.filter((a) => a.status === 'pending').length;
-  const arrived = appointments.filter((a) => a.status === 'arrived').length;
-  const totalPending = pending + arrived;
+  // 1. Số khách cần giao kho hôm nay (chờ hoặc đã đến, hoặc tổng các đơn nhận hôm nay)
+  const pendingHandover = appointments.filter(
+    (a) => a.status === 'pending' || a.status === 'arrived'
+  ).length;
+  const handoverCount = pendingHandover > 0 ? pendingHandover : appointments.length;
 
-  // Tên nhân viên hiển thị (bỏ chữ "Xin chào", bỏ tên trụ sở bên cạnh)
-  const displayName = currentUser?.fullName || 'Nhân Viên';
-  const initials = displayName
-    .trim()
+  // 2. Số khách cần trả kho hôm nay
+  const returnCount = useMemo(() => {
+    return INITIAL_RETURN_ORDERS.filter(
+      (o) => o.returnType === 'today' && o.status !== 'TERMINATED'
+    ).length || 1;
+  }, []);
+
+  // 3. Số sự cố cần trợ giúp
+  const supportCount = useMemo(() => {
+    return INITIAL_SUPPORT_TICKETS.filter(
+      (t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS'
+    ).length || 2;
+  }, []);
+
+  // Tên nhân viên hiển thị: LOẠI BỎ TRIỆT ĐỂ DẤU NGOẶC (ví dụ "Nguyễn Văn Staff (Kho A)" -> "Nguyễn Văn Staff")
+  const rawDisplayName = currentUser?.fullName || 'Nhân Viên';
+  const cleanDisplayName = rawDisplayName.replace(/\s*\([^)]*\)/g, '').trim() || 'Nhân Viên';
+
+  // Lấy 2 chữ cái đầu làm avatar
+  const initials = cleanDisplayName
     .split(' ')
     .filter(Boolean)
     .slice(-2)
-    .map((w) => w[0].toUpperCase())
+    .map((w: string) => w[0].toUpperCase())
     .join('') || 'NV';
 
-  // Danh sách 6 chức năng vận hành dạng lưới 3 cột (như ảnh mẫu)
+  // Danh sách các chức năng vận hành dạng lưới 3 cột (ĐÃ BỎ "GIAO CA")
   const gridMenuItems = [
     {
       id: 'queue',
@@ -60,7 +79,7 @@ export default function StaffDashboardScreen({
       icon: 'assignment-turned-in' as const,
       color: '#2563EB',
       bgColor: '#EFF6FF',
-      badge: totalPending > 0 ? totalPending : 0,
+      badge: handoverCount,
       onPress: () => onNavigateTab('queue'),
     },
     {
@@ -69,7 +88,7 @@ export default function StaffDashboardScreen({
       icon: 'exit-to-app' as const,
       color: '#D97706',
       bgColor: '#FEF3C7',
-      badge: 0,
+      badge: returnCount,
       onPress: () => onNavigateTab('checkout'),
     },
     {
@@ -87,17 +106,8 @@ export default function StaffDashboardScreen({
       icon: 'support-agent' as const,
       color: '#7C3AED',
       bgColor: '#F5F3FF',
-      badge: 0,
+      badge: supportCount,
       onPress: () => onNavigateTab('support'),
-    },
-    {
-      id: 'settings',
-      title: 'Giao ca',
-      icon: 'tune' as const,
-      color: '#475569',
-      bgColor: '#F1F5F9',
-      badge: 0,
-      onPress: () => onNavigateTab('settings'),
     },
     {
       id: 'notifications',
@@ -112,7 +122,7 @@ export default function StaffDashboardScreen({
 
   return (
     <View style={styles.container}>
-      {/* ─── Header Xanh Dương Thương Hiệu ─── */}
+      {/* ─── Header Xanh Dương Thương Hiệu (Safe Area chống tràn) ─── */}
       <View
         style={[
           styles.blueHeader,
@@ -122,14 +132,14 @@ export default function StaffDashboardScreen({
         ]}
       >
         <View style={styles.headerTopRow}>
-          {/* Avatar & Chỉ hiển thị Tên nhân viên (Bỏ "Xin chào", bỏ tên trụ sở bên cạnh) */}
+          {/* Avatar & Chỉ hiển thị Tên nhân viên sạch sẽ (Không ngoặc, không "Xin chào", không tên kho kèm bên) */}
           <View style={styles.userProfileWrap}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.userTextCol}>
               <Text style={styles.userNameText} numberOfLines={1}>
-                {displayName}
+                {cleanDisplayName}
               </Text>
               <Text style={styles.roleSubText}>Nhân viên vận hành</Text>
             </View>
@@ -166,13 +176,13 @@ export default function StaffDashboardScreen({
           </View>
         </View>
 
-        {/* ─── HIỂN THỊ ĐẦY ĐỦ TÊN TRỤ SỞ (KHÔNG BỊ CẮT CHỮ) ─── */}
+        {/* ─── HIỂN THỊ ĐẦY ĐỦ TÊN TRỤ SỞ Ở DƯỚI (KHÔNG BỊ CẮT CHỮ) ─── */}
         <View style={styles.facilityFullCard}>
           <View style={styles.facilityIconWrap}>
-            <MaterialIcons name="location-on" size={17} color="#1D4ED8" />
+            <MaterialIcons name="location-on" size={18} color="#1D4ED8" />
           </View>
           <View style={styles.facilityTextWrap}>
-            <Text style={styles.facilitySubLabel}>CƠ SỞ PHÂN CÔNG</Text>
+            <Text style={styles.facilitySubLabel}>CƠ SỞ VẬN HÀNH</Text>
             <Text style={styles.facilityNameFullText}>
               {facilityName}
             </Text>
@@ -198,7 +208,65 @@ export default function StaffDashboardScreen({
           ) : undefined
         }
       >
-        {/* ─── DẠNG LƯỚI 3 CỘT (GRID VIEW NHƯ MẪU) ─── */}
+        {/* ─── TỔNG QUAN NGÀY HÔM NAY (3 CHỈ SỐ THEO YÊU CẦU) ─── */}
+        <View style={styles.summarySection}>
+          <Text style={styles.sectionHeaderTitle}>TỔNG QUAN HÔM NAY</Text>
+          <View style={styles.summaryRow}>
+            {/* 1. Khách cần giao kho */}
+            <TouchableOpacity
+              style={[styles.summaryCard, { borderColor: '#BFDBFE' }]}
+              onPress={() => onNavigateTab('queue')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.summaryIconWrap, { backgroundColor: '#EFF6FF' }]}>
+                <MaterialIcons name="assignment-turned-in" size={18} color="#1D4ED8" />
+              </View>
+              <Text style={[styles.summaryNumber, { color: '#1D4ED8' }]}>
+                {handoverCount}
+              </Text>
+              <Text style={styles.summaryCardLabel}>
+                Khách cần giao kho
+              </Text>
+            </TouchableOpacity>
+
+            {/* 2. Khách cần trả kho */}
+            <TouchableOpacity
+              style={[styles.summaryCard, { borderColor: '#FED7AA' }]}
+              onPress={() => onNavigateTab('checkout')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.summaryIconWrap, { backgroundColor: '#FFF7ED' }]}>
+                <MaterialIcons name="exit-to-app" size={18} color="#EA580C" />
+              </View>
+              <Text style={[styles.summaryNumber, { color: '#EA580C' }]}>
+                {returnCount}
+              </Text>
+              <Text style={styles.summaryCardLabel}>
+                Khách cần trả kho
+              </Text>
+            </TouchableOpacity>
+
+            {/* 3. Sự cố cần trợ giúp */}
+            <TouchableOpacity
+              style={[styles.summaryCard, { borderColor: '#DDD6FE' }]}
+              onPress={() => onNavigateTab('support')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.summaryIconWrap, { backgroundColor: '#F5F3FF' }]}>
+                <MaterialIcons name="support-agent" size={18} color="#7C3AED" />
+              </View>
+              <Text style={[styles.summaryNumber, { color: '#7C3AED' }]}>
+                {supportCount}
+              </Text>
+              <Text style={styles.summaryCardLabel}>
+                Sự cố cần trợ giúp
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ─── DẠNG LƯỚI 3 CỘT (GRID VIEW NHƯ ẢNH MẪU - ĐÃ BỎ GIAO CA) ─── */}
+        <Text style={styles.sectionHeaderTitle}>CHỨC NĂNG VẬN HÀNH</Text>
         <View style={styles.gridContainer}>
           {gridMenuItems.map((item) => (
             <TouchableOpacity
@@ -406,12 +474,66 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
 
+  // ─── TỔNG QUAN NGÀY HÔM NAY (3 THẺ CÂN ĐỐI) ───
+  summarySection: {
+    marginBottom: 18,
+  },
+  sectionHeaderTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 9,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  summaryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  summaryNumber: {
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginBottom: 3,
+  },
+  summaryCardLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+
   // ─── DẠNG LƯỚI 3 CỘT (GRID LAYOUT NHƯ ẢNH MẪU) ───
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
+    gap: 11,
     marginBottom: 20,
   },
   gridItem: {

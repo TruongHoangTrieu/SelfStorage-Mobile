@@ -489,7 +489,7 @@ export default function HandoverDetailScreen({
   return (
     <View style={s.container}>
       {/* ─── Top Bar ─── */}
-      <View style={s.topBar}>
+      <View style={[s.topBar, { paddingTop: insets.top > 0 ? insets.top + 8 : 14 }]}>
         <TouchableOpacity style={s.backBtn} onPress={onBackToQueue}>
           <MaterialIcons name="arrow-back" size={22} color={T.textMain} />
         </TouchableOpacity>
