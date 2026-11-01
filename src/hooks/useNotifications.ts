@@ -130,9 +130,9 @@ export function useNotifications(role: 'customer' | 'staff' = 'customer') {
 
       const token = getAuthToken();
       if (!token) {
-        // Dùng danh sách mẫu phong phú cho role tương ứng nếu chưa login
-        setNotifications(fallbackList);
-        setUnreadCount(fallbackList.filter((n) => !n.isRead).length);
+        // Chưa đăng nhập -> Không hiển thị thông báo và không hiện chấm đỏ
+        setNotifications([]);
+        setUnreadCount(0);
         setLoading(false);
         setRefreshing(false);
         return;

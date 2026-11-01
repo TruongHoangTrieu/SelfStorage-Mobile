@@ -79,7 +79,7 @@ export default function AiAssistantModal({
   const [inputText, setInputText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [conversationId, setConversationId] = useState<string>('');
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
 
   // Auto scroll down when messages change
   useEffect(() => {

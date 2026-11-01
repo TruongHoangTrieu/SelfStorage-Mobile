@@ -267,11 +267,7 @@ export default function CustomerSupportScreen({
       {/* ─── Top Header Đồng bộ Logo Web ─── */}
       <View style={s.topBar}>
         <View style={s.topBarLeft}>
-          {onOpenSidebar && (
-            <TouchableOpacity onPress={onOpenSidebar} style={s.iconBtn}>
-              <MaterialIcons name="menu" size={22} color={T.textMain} />
-            </TouchableOpacity>
-          )}
+          
           <Image
             source={require('../../../assets/logo.png')}
             style={s.topLogoImg}
@@ -283,25 +279,22 @@ export default function CustomerSupportScreen({
           <TouchableOpacity onPress={loadTickets} style={s.iconBtn}>
             <MaterialIcons name="refresh" size={20} color={isLoading ? T.primary : T.textMuted} />
           </TouchableOpacity>
-          {(onOpenLogin || onLogout) && (
+          {!currentUser && onOpenLogin && (
             <TouchableOpacity
-              style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+              style={s.loginHeaderBtn}
               onPress={handleAuthAction}
               activeOpacity={0.8}
             >
               <MaterialIcons
-                name={currentUser ? 'logout' : 'login'}
+                name="login"
                 size={15}
-                color={currentUser ? '#DC2626' : T.textMain}
+                color={T.textMain}
               />
               <Text
-                style={[
-                  s.loginHeaderText,
-                  currentUser && { color: '#DC2626', fontWeight: '700' },
-                ]}
+                style={s.loginHeaderText}
                 numberOfLines={1}
               >
-                {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
+                Đăng nhập
               </Text>
             </TouchableOpacity>
           )}

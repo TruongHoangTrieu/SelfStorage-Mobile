@@ -17,7 +17,7 @@ import { formatVND } from '../../utils/formatters';
 interface CustomerPaymentsScreenProps {
   units: CustomerRentedUnit[];
   onBackToUnits: () => void;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
 }
 
 export function CustomerPaymentsScreen({
@@ -41,9 +41,7 @@ export function CustomerPaymentsScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        
         <View style={{ flex: 1 }}>
           <Text style={styles.headerSubtitle}>TÀI CHÍNH & HÓA ĐƠN</Text>
           <Text style={styles.headerTitle}>Lịch Sử Thanh Toán</Text>
@@ -136,7 +134,7 @@ export function CustomerPaymentsScreen({
 interface CustomerAccessScreenProps {
   units: CustomerRentedUnit[];
   onBackToUnits: () => void;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
   onOpenGuestPin: (unit: CustomerRentedUnit) => void;
   onOpenChangePin: (unit: CustomerRentedUnit) => void;
 }
@@ -157,9 +155,7 @@ export function CustomerAccessScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        
         <View style={{ flex: 1 }}>
           <Text style={styles.headerSubtitle}>AN NINH & KHÓA ĐIỆN TỬ</Text>
           <Text style={styles.headerTitle}>Truy Cập & Smart Key</Text>
@@ -256,7 +252,7 @@ export function CustomerAccessScreen({
 interface CustomerDocumentsScreenProps {
   units: CustomerRentedUnit[];
   onBackToUnits: () => void;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
 }
 
 export function CustomerDocumentsScreen({
@@ -273,9 +269,7 @@ export function CustomerDocumentsScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        
         <View style={{ flex: 1 }}>
           <Text style={styles.headerSubtitle}>HỒ SƠ PHÁP LÝ</Text>
           <Text style={styles.headerTitle}>Tài Liệu & Hợp Đồng</Text>
@@ -340,7 +334,7 @@ export function CustomerDocumentsScreen({
 interface CustomerSupportScreenProps {
   units: CustomerRentedUnit[];
   onBackToUnits: () => void;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
   onOpenReportIssue: (unit: CustomerRentedUnit) => void;
 }
 
@@ -357,9 +351,7 @@ export function CustomerSupportScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        
         <View style={{ flex: 1 }}>
           <Text style={styles.headerSubtitle}>TRUNG TÂM CSKH 24/7</Text>
           <Text style={styles.headerTitle}>Hỗ Trợ & Sự Cố</Text>
@@ -457,7 +449,7 @@ export function CustomerSupportScreen({
 interface CustomerProfileScreenProps {
   currentUser: CustomerUser;
   onBackToUnits: () => void;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
 }
 
 export function CustomerProfileScreen({
@@ -468,9 +460,7 @@ export function CustomerProfileScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
+        
         <View style={{ flex: 1 }}>
           <Text style={styles.headerSubtitle}>CÀI ĐẶT TÀI KHOẢN</Text>
           <Text style={styles.headerTitle}>Hồ Sơ Cá Nhân</Text>

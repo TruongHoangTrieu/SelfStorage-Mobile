@@ -13,6 +13,7 @@ import {
   TextInput,
   Platform,
   Image,
+  Linking,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
@@ -133,6 +134,47 @@ export default function MyUnitsDashboardScreen({
 
   const maskedPin = masterPin ? `•••• ${masterPin.slice(-4)}` : '••••';
 
+  // Format zone to prevent duplicate "Khu Khu M"
+  const formatZoneLabel = (zone?: string) => {
+    if (!zone) return '';
+    const trimmed = zone.trim();
+    return trimmed.toLowerCase().startsWith('khu') ? trimmed : `Khu ${trimmed}`;
+  };
+
+  // Copied PIN feedback state
+  const [copiedPin, setCopiedPin] = useState<boolean>(false);
+
+  const handleCopyPin = async () => {
+    if (!masterPin) return;
+    let copied = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(masterPin);
+        copied = true;
+      }
+    } catch (e) {
+      console.warn('Clipboard writeText error:', e);
+    }
+    setCopiedPin(true);
+    if (!copied && Platform.OS !== 'web') {
+      Alert.alert('Mã PIN buồng kho', `Mã PIN của bạn là: ${masterPin}\n(Bấm phím # trên khóa sau khi nhập PIN)`);
+    }
+    setTimeout(() => setCopiedPin(false), 2000);
+  };
+
+  const handleOpenDirections = () => {
+    const address = activeUnit?.facilityAddress || 'SelfStorage Việt Nam';
+    const query = encodeURIComponent(address);
+    const url = Platform.select({
+      ios: `maps:0,0?q=${query}`,
+      android: `geo:0,0?q=${query}`,
+      default: `https://www.google.com/maps/search/?api=1&query=${query}`,
+    });
+    if (url) {
+      Linking.openURL(url).catch((err) => console.warn('Could not open map:', err));
+    }
+  };
+
 
 
   const handleAuthAction = () => {
@@ -165,11 +207,6 @@ export default function MyUnitsDashboardScreen({
         {/* TOP APP BAR (ĐỒNG BỘ 100% VỚI LOGO WEB VÀ STITCH UI) */}
         <View style={s.topAppBar}>
           <View style={s.brandRow}>
-            {onOpenSidebar && (
-              <TouchableOpacity onPress={onOpenSidebar} style={s.brandIconBtn}>
-                <MaterialIcons name="menu" size={22} color={T.primary} />
-              </TouchableOpacity>
-            )}
             <Image
               source={require('../../../assets/logo.png')}
               style={s.topLogoImg}
@@ -178,29 +215,23 @@ export default function MyUnitsDashboardScreen({
           </View>
 
           <View style={s.topActionsRow}>
-            {(onOpenLogin || onLogout) && (
+            {!currentUser && onOpenLogin && (
               <TouchableOpacity
-                style={[s.loginHeaderBtn, currentUser && s.logoutHeaderBtn]}
+                style={s.loginHeaderBtn}
                 onPress={handleAuthAction}
                 activeOpacity={0.8}
               >
                 <MaterialIcons
-                  name={currentUser ? 'logout' : 'login'}
+                  name="login"
                   size={16}
-                  color={currentUser ? '#DC2626' : T.onSurface}
+                  color={T.onSurface}
                 />
                 <Text
-                  style={[
-                    s.loginHeaderText,
-                    currentUser && {
-                      color: '#DC2626',
-                      fontWeight: '700',
-                    },
-                  ]}
+                  style={s.loginHeaderText}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
+                  Đăng nhập
                 </Text>
               </TouchableOpacity>
             )}
@@ -235,28 +266,15 @@ export default function MyUnitsDashboardScreen({
             />
           }
         >
-          {/* USER GREETING & STATUS CARD */}
-          <View style={s.greetingCard}>
-            <View style={s.greetingLeft}>
-              <View style={s.avatarWrap}>
-                <MaterialIcons name="person" size={24} color={T.primary} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.greetingSub}>Xin chào,</Text>
-                <Text style={s.greetingName} numberOfLines={1} ellipsizeMode="tail">
-                  {currentUser?.fullName || customerName || 'Khách hàng'}
-                </Text>
-              </View>
-            </View>
-            <View style={s.greetingBadge}>
-              <MaterialIcons name="verified" size={14} color="#16a34a" />
-              <Text style={s.greetingBadgeText}>{units.length} buồng kích hoạt</Text>
-            </View>
-          </View>
           {/* 1. UNIT SELECTOR */}
           <View style={s.sectionWrap}>
             <View style={s.unitCarouselHeader}>
-              <Text style={s.unitCarouselTitle}>KHO ĐANG KÍCH HOẠT</Text>
+              <View style={s.carouselTitleWrap}>
+                <Text style={s.unitCarouselTitle}>KHO ĐANG KÍCH HOẠT</Text>
+                <View style={s.unitCountBadge}>
+                  <Text style={s.unitCountBadgeText}>{units.length} buồng</Text>
+                </View>
+              </View>
               <TouchableOpacity
                 style={s.rentMoreBtn}
                 activeOpacity={0.7}
@@ -264,8 +282,8 @@ export default function MyUnitsDashboardScreen({
                   onRentMoreUnits ? onRentMoreUnits() : onNavigateBottomTab?.('search')
                 }
               >
-                <MaterialIcons name="add-circle" size={16} color={T.primary} />
-                <Text style={s.rentMoreBtnText}>Thuê thêm buồng</Text>
+                <MaterialIcons name="add-circle-outline" size={16} color={T.primary} />
+                <Text style={s.rentMoreBtnText}>Thuê thêm</Text>
               </TouchableOpacity>
             </View>
 
@@ -313,16 +331,17 @@ export default function MyUnitsDashboardScreen({
                           color={isActive ? T.primary : T.outline}
                         />
                       </View>
-                      <View>
+                      <View style={{ flex: 1, minWidth: 125 }}>
                         <Text
                           style={[
                             s.unitTabCode,
                             isActive ? s.unitTabCodeActive : s.unitTabCodeInactive,
                           ]}
+                          numberOfLines={1}
                         >
                           Buồng #{unit.unitCode}
                         </Text>
-                        <Text style={s.unitTabSub}>
+                        <Text style={s.unitTabSub} numberOfLines={1}>
                           {unit.facilityName.split(' ')[0]} • {unit.size}
                         </Text>
                       </View>
@@ -333,122 +352,152 @@ export default function MyUnitsDashboardScreen({
             )}
           </View>
 
-          {/* 2. SMART ACCESS CONTROL PANEL (Đã bỏ BLE Unlock button) */}
-          <View style={s.smartPanelCard}>
-            <View style={s.panelHeaderRow}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <View style={s.facilityLocRow}>
-                  <MaterialIcons name="location-on" size={15} color={T.primary} />
-                  <Text style={s.facilityLocText} numberOfLines={1}>
-                    {activeUnit?.facilityAddress || 'Tầng 2 - Lô B, Tòa Tân Thuận, Q.7'}
-                  </Text>
-                </View>
-                
+          {/* 2. THẺ KHÓA THÔNG MINH (SMART PASS HERO CARD - LIGHT THEME) */}
+          <View style={s.smartPassHeroCard}>
+            {/* Địa chỉ cơ sở - Full width không bị chèn ép */}
+            <View style={s.passHeaderRow}>
+              <View style={s.passLocationRow}>
+                <MaterialIcons name="location-on" size={16} color={T.primary} />
+                <Text style={s.passLocationText} numberOfLines={1} ellipsizeMode="tail">
+                  {activeUnit?.facilityAddress || '375 Võ Nguyên Giáp, P. An Khánh, TP. Thủ Đức'}
+                </Text>
               </View>
-              
             </View>
 
-            {/* 3 SHORTCUT BUTTONS */}
-            <View style={s.shortcutsGrid}>
-              <TouchableOpacity
-                style={s.shortcutBtn}
-                activeOpacity={0.8}
-                onPress={() => onOpenChangePin?.(activeUnit)}
-              >
-                <View style={s.shortcutIconWrap}>
-                  <MaterialIcons name="pin" size={18} color={T.primary} />
+            {/* Thông tin Buồng kho - Bố cục dọc thông thoáng, chuẩn tỉ lệ */}
+            <View style={s.passMainSection}>
+              <View style={s.passBadgeRow}>
+                <Text style={s.passUnitPrefix}>THẺ KHÓA ĐIỆN TỬ</Text>
+                <View style={s.passSizePill}>
+                  <Text style={s.passSizePillText}>{activeUnit?.size || 'Tiêu chuẩn'}</Text>
                 </View>
-                <Text style={s.shortcutTitle}>Đổi mã PIN</Text>
-                <Text style={s.shortcutSub}>4-8 Chữ số</Text>
-              </TouchableOpacity>
+              </View>
+              <Text style={s.passUnitTitle} numberOfLines={1}>
+                Buồng #{activeUnit?.unitCode || '—'}
+              </Text>
+              <View style={s.passLocationMetaRow}>
+                <MaterialIcons name="layers" size={14} color="#64748b" />
+                <Text style={s.passLocationMetaText}>
+                  {activeUnit?.floor ? `Tầng ${activeUnit.floor}` : 'Tầng 1'} • {formatZoneLabel(activeUnit?.zone) || 'Khu Tiêu Chuẩn'}
+                </Text>
+                <Text style={s.passLocationMetaDot}>•</Text>
+                <Text style={s.passLocationMetaSub}>{activeUnit?.unitName || 'Kho tự quản'}</Text>
+              </View>
+            </View>
 
-              <TouchableOpacity
-                style={s.shortcutBtn}
-                activeOpacity={0.8}
-                onPress={() => setIsPinVisible((prev) => !prev)}
-              >
-                <View style={s.shortcutIconWrap}>
-                  <MaterialIcons
-                    name={isPinVisible ? 'visibility-off' : 'visibility'}
-                    size={18}
-                    color={T.primary}
-                  />
+            {/* Hộp PIN - Tỉ lệ chuẩn, thông thoáng */}
+            <View style={s.passPinBox}>
+              <View style={s.passPinHeaderRow}>
+                <View style={s.passPinLabelWrap}>
+                  <MaterialIcons name="lock" size={15} color={T.primary} />
+                  <Text style={s.passPinLabel}>MÃ PIN MỞ KHÓA</Text>
                 </View>
-                <Text style={s.shortcutTitle}>Xem mã PIN</Text>
-                <Text
-                  style={[
-                    s.shortcutSub,
-                    { color: T.emeraldText, fontWeight: '700' },
-                  ]}
-                >
+
+                <View style={s.passPinActionsRow}>
+                  <TouchableOpacity
+                    style={s.passPinActionBtn}
+                    activeOpacity={0.7}
+                    onPress={() => setIsPinVisible((prev) => !prev)}
+                  >
+                    <MaterialIcons
+                      name={isPinVisible ? 'visibility-off' : 'visibility'}
+                      size={14}
+                      color="#475569"
+                    />
+                    <Text style={s.passPinActionBtnText}>
+                      {isPinVisible ? 'Ẩn' : 'Xem'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[s.passPinActionBtn, copiedPin && s.passPinActionBtnSuccess]}
+                    activeOpacity={0.7}
+                    onPress={handleCopyPin}
+                  >
+                    <MaterialIcons
+                      name={copiedPin ? 'check' : 'content-copy'}
+                      size={13}
+                      color={copiedPin ? '#047857' : '#475569'}
+                    />
+                    <Text
+                      style={[
+                        s.passPinActionBtnText,
+                        copiedPin && { color: '#047857', fontWeight: '700' },
+                      ]}
+                    >
+                      {copiedPin ? 'Đã chép' : 'Sao chép'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={s.passPinCodeRow}>
+                <Text style={s.passPinCodeValue}>
                   {loadingSmartLock
                     ? 'Đang tải...'
                     : isPinVisible
                     ? masterPin || '—'
                     : maskedPin}
                 </Text>
-              </TouchableOpacity>
-
-
-            </View>
-          </View>
-
-          {/* 2.1 THÔNG SỐ VÀ TIỆN ÍCH BUỒNG KHO */}
-          <View style={s.unitSpecsCard}>
-            <View style={s.specsHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                <MaterialIcons name="tune" size={16} color={T.primary} />
-                <Text style={s.specsTitle} numberOfLines={1}>THÔNG SỐ BUỒNG KHO</Text>
               </View>
-              <View style={s.unitTypePill}>
-                <Text style={s.unitTypePillText} numberOfLines={1}>
-                  {activeUnit?.unitName || 'Kho Tiêu Chuẩn'}
+
+              <View style={s.passPinTipRow}>
+                <MaterialIcons name="info-outline" size={13} color="#64748b" />
+                <Text style={s.passPinTipText}>
+                  Nhập mã PIN rồi nhấn # trên ổ khóa điện tử để mở cửa
                 </Text>
-              </View>
-            </View>
-
-            <View style={s.specsGrid}>
-              <View style={s.specItem}>
-                <Text style={s.specLabel}>Kích thước (D x R x C)</Text>
-                <Text style={s.specVal}>{activeUnit?.dimensions || '2.0m x 1.5m x 2.8m'}</Text>
-              </View>
-              <View style={s.specItem}>
-                <Text style={s.specLabel}>Thể tích lưu trữ</Text>
-                <Text style={[s.specVal, { color: T.primary, fontWeight: '800' }]}>
-                  {activeUnit?.size || '8.4 m³ (Tiêu chuẩn)'}
-                </Text>
-              </View>
-              <View style={s.specItem}>
-                <Text style={s.specLabel}>Vị trí mặt bằng</Text>
-                <Text style={s.specVal}>{activeUnit?.floor || 'Tầng 2'} • {activeUnit?.zone || 'Zone A'}</Text>
-              </View>
-              <View style={s.specItem}>
-                <Text style={s.specLabel}>Nhiệt độ bảo quản</Text>
-                <Text style={[s.specVal, { color: '#059669' }]}>22°C - 25°C (24/7)</Text>
-              </View>
-            </View>
-
-            <View style={s.amenitiesList}>
-              <View style={s.amenityTag}>
-                <MaterialIcons name="ac-unit" size={12} color="#0284C7" />
-                <Text style={s.amenityText}>Máy lạnh 24/7</Text>
-              </View>
-              <View style={s.amenityTag}>
-                <MaterialIcons name="videocam" size={12} color="#0284C7" />
-                <Text style={s.amenityText}>CCTV 24/7</Text>
-              </View>
-              <View style={s.amenityTag}>
-                <MaterialIcons name="local-fire-department" size={12} color="#0284C7" />
-                <Text style={s.amenityText}>PCCC Tự Động</Text>
-              </View>
-              <View style={s.amenityTag}>
-                <MaterialIcons name="lock" size={12} color="#0284C7" />
-                <Text style={s.amenityText}>Khóa Thông Minh</Text>
               </View>
             </View>
           </View>
 
-          {/* 3. CHI TIẾT HỢP ĐỒNG */}
+          {/* 3. 4-PILL QUICK ACTIONS ROW */}
+          <View style={s.quickActionsRow}>
+            <TouchableOpacity
+              style={s.quickActionPill}
+              activeOpacity={0.8}
+              onPress={() => onOpenChangePin?.(activeUnit)}
+            >
+              <View style={[s.quickActionIconWrap, { backgroundColor: '#eff6ff' }]}>
+                <MaterialIcons name="pin" size={18} color="#2563eb" />
+              </View>
+              <Text style={s.quickActionLabel}>Đổi PIN</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.quickActionPill}
+              activeOpacity={0.8}
+              onPress={() => onOpenRenew(activeUnit)}
+            >
+              <View style={[s.quickActionIconWrap, { backgroundColor: '#f0fdf4' }]}>
+                <MaterialCommunityIcons name="autorenew" size={18} color="#16a34a" />
+              </View>
+              <Text style={s.quickActionLabel}>Gia hạn</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.quickActionPill}
+              activeOpacity={0.8}
+              onPress={() => onOpenReportIssue(activeUnit)}
+            >
+              <View style={[s.quickActionIconWrap, { backgroundColor: '#fef2f2' }]}>
+                <MaterialIcons name="build" size={18} color="#dc2626" />
+              </View>
+              <Text style={s.quickActionLabel}>Báo sự cố</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.quickActionPill}
+              activeOpacity={0.8}
+              onPress={handleOpenDirections}
+            >
+              <View style={[s.quickActionIconWrap, { backgroundColor: '#f8fafc' }]}>
+                <MaterialIcons name="directions" size={18} color="#475569" />
+              </View>
+              <Text style={s.quickActionLabel}>Chỉ đường</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 4. CHI TIẾT HỢP ĐỒNG (THÔNG SỐ CHÍNH XÁC TỪ HỆ THỐNG) */}
           <View style={s.contractCard}>
             <View style={s.contractHeaderRow}>
               <View style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
@@ -473,56 +522,40 @@ export default function MyUnitsDashboardScreen({
             </View>
 
             <View style={s.contractStatsGrid}>
-              <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={s.contractStatCol}>
+                <Text style={s.contractStatLabel}>Diện tích buồng</Text>
+                <Text style={s.contractStatValBold}>
+                  {activeUnit?.size || 'Tiêu chuẩn'}
+                </Text>
+                <Text style={s.contractStatDates} numberOfLines={1}>
+                  {activeUnit?.unitName || 'Kho tự quản'}
+                </Text>
+              </View>
+
+              <View style={s.contractStatCol}>
                 <Text style={s.contractStatLabel}>Thời hạn hợp đồng</Text>
                 <Text style={s.contractStatValBold}>
                   {activeUnit?.totalDays
                     ? `${Math.round(activeUnit.totalDays / 30)} Tháng`
                     : '—'}
                 </Text>
-                <Text style={s.contractStatDates} numberOfLines={1}>
-                  {activeUnit?.startDate || '—'} - {activeUnit?.endDate || '—'}
-                </Text>
+                <Text style={s.contractStatDates} numberOfLines={1}>{activeUnit?.startDate || '—'}</Text>
+                <Text style={s.contractStatDates} numberOfLines={1}>đến {activeUnit?.endDate || '—'}</Text>
               </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.contractStatLabel}>Thời gian còn lại</Text>
+
+              <View style={s.contractStatCol}>
+                <Text style={s.contractStatLabel}>Còn lại</Text>
                 <Text style={[
                   s.contractStatValBold,
                   { color: activeUnit?.status === 'overdue' ? '#DC2626' : (activeUnit?.status === 'expiring_soon' ? '#D97706' : T.primary) }
                 ]}>
                   {activeUnit?.daysRemaining ?? 0} Ngày
                 </Text>
-                <View style={[
-                  s.statusPillSmall,
-                  activeUnit?.status === 'overdue' ? s.statusPillRed : (activeUnit?.status === 'expiring_soon' ? s.statusPillYellow : s.statusPillGreen)
-                ]}>
-                  <Text style={[
-                    s.statusPillSmallText,
-                    activeUnit?.status === 'overdue' ? { color: '#B91C1C' } : (activeUnit?.status === 'expiring_soon' ? { color: '#B45309' } : { color: '#047857' })
-                  ]} numberOfLines={1}>
-                    {activeUnit?.status === 'expiring_soon'
-                      ? 'Sắp hết hạn'
-                      : activeUnit?.status === 'overdue'
-                      ? 'Đã quá hạn'
-                      : 'Đang an toàn'}
-                  </Text>
-                </View>
               </View>
-            </View>
-
-            <View style={{ marginTop: 6 }}>
-              <TouchableOpacity
-                style={s.renewBtn}
-                activeOpacity={0.85}
-                onPress={() => onOpenRenew(activeUnit)}
-              >
-                <MaterialCommunityIcons name="autorenew" size={20} color="#FFFFFF" />
-                <Text style={s.renewBtnText}>Gia hạn trực tuyến</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
-          {/* 5. QUICK SUPPORT (chỉ giữ "Báo sự cố" — có API) */}
+          {/* 5. QUICK SUPPORT */}
           <View style={s.sectionWrap}>
             <Text style={s.sectionHeading}>Hỗ trợ</Text>
             <TouchableOpacity
@@ -542,6 +575,7 @@ export default function MyUnitsDashboardScreen({
               <MaterialIcons name="chevron-right" size={22} color={T.outline} />
             </TouchableOpacity>
           </View>
+        
         </ScrollView>
 
         {/* BOTTOM NAVIGATION BAR */}
@@ -574,7 +608,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    height: 56,
+    paddingTop: Platform.OS === 'ios' ? 52 : 14,
+    paddingBottom: 12,
     backgroundColor: T.surfaceContainerLowest,
     borderBottomWidth: 1,
     borderBottomColor: T.surfaceContainerHigh,
@@ -768,6 +803,7 @@ const s = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    minWidth: 185,
     borderRadius: 14,
     backgroundColor: T.surfaceContainerLowest,
     position: 'relative',
@@ -1368,5 +1404,228 @@ const s = StyleSheet.create({
   statusPillSmallText: {
     fontSize: 9,
     fontWeight: '700',
+  },
+
+  carouselTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  unitCountBadge: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  unitCountBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  smartPassHeroCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    shadowColor: '#1e293b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  passHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  passLocationText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 17,
+  },
+  passMainSection: {
+    gap: 4,
+    paddingVertical: 2,
+  },
+  passBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passUnitPrefix: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#2563eb',
+  },
+  passSizePill: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  passSizePillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  passUnitTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: -0.5,
+  },
+  passLocationMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  passLocationMetaText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  passLocationMetaDot: {
+    fontSize: 12,
+    color: '#cbd5e1',
+  },
+  passLocationMetaSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  passPinBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+  },
+  passPinHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  passPinLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  passPinLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    color: '#334155',
+  },
+  passPinActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  passPinActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  passPinActionBtnSuccess: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
+  passPinActionBtnText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  passPinCodeRow: {
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  passPinCodeValue: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 7,
+    color: '#1d4ed8',
+    fontVariant: ['tabular-nums'],
+  },
+  passPinTipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 8,
+    justifyContent: 'center',
+  },
+  passPinTipText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  quickActionPill: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: 4,
+  },
+  quickActionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickActionLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  contractStatCol: {
+    flex: 1,
+    minWidth: 0,
   },
 });

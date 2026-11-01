@@ -22,6 +22,7 @@ export interface Facility {
   image?: string;
   imageUrl?: string;
   rating?: number;
+  description?: string;
 }
 
 export interface UnitType {
