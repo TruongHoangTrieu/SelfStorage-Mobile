@@ -114,10 +114,11 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
         />
       ) : staffTab === 'queue' ? (
         flowStep === 'queue' ? (
-          /* MỤC 1: Hàng đợi Nhận kho trong ngày */
+          /* MỤC 1: Lịch nhận & trả kho hợp nhất */
           <CheckInQueueScreen
             appointments={appointments}
             onStartHandover={handleStartHandover}
+            onOpenReturnOrder={(order) => setStaffTab('checkout')}
             onRefresh={loadStaffData}
             isRefreshing={isStaffLoading}
             onOpenSidebar={handleBackToHome}

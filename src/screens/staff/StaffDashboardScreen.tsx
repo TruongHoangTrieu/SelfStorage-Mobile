@@ -71,25 +71,18 @@ export default function StaffDashboardScreen({
     .map((w: string) => w[0].toUpperCase())
     .join('') || 'NV';
 
-  // Danh sách các chức năng vận hành dạng lưới 3 cột (ĐÃ BỎ "GIAO CA")
+  // Danh sách các chức năng vận hành dạng lưới (Đã gộp Trả kho vào Lịch nhận - trả)
+  const totalScheduleBadge = handoverCount + returnCount;
+
   const gridMenuItems = [
     {
       id: 'queue',
-      title: 'Nhận kho',
-      icon: 'assignment-turned-in' as const,
+      title: 'Lịch nhận - trả',
+      icon: 'sync-alt' as const,
       color: '#2563EB',
       bgColor: '#EFF6FF',
-      badge: handoverCount,
+      badge: totalScheduleBadge,
       onPress: () => onNavigateTab('queue'),
-    },
-    {
-      id: 'checkout',
-      title: 'Trả kho',
-      icon: 'exit-to-app' as const,
-      color: '#D97706',
-      bgColor: '#FEF3C7',
-      badge: returnCount,
-      onPress: () => onNavigateTab('checkout'),
     },
     {
       id: 'facility',
