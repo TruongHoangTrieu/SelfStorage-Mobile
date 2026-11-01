@@ -8,6 +8,7 @@ import {
   Alert,
   Platform,
   Clipboard,
+  Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment } from '../../types/handover';
@@ -49,23 +50,13 @@ export default function HandoverSuccessScreen({
   onBackToQueue,
   onPrintAgain,
 }: HandoverSuccessScreenProps) {
-  const [hasSentNotify, setHasSentNotify] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [showPinModal, setShowPinModal] = useState<boolean>(true);
 
   const handleCopy = (text: string, fieldName: string) => {
     Clipboard.setString(text);
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  const handleSendNotification = () => {
-    setHasSentNotify(true);
-    const msg = `Mã PIN [${accessPin}] và thông tin ô kho [${assignedUnitCode}] đã được gửi tự động tới SĐT ${appointment.phone} & Email của khách hàng.`;
-    if (Platform.OS === 'web') {
-      window.alert(`Gửi thông báo thành công\n\n${msg}`);
-    } else {
-      Alert.alert('Gửi thông báo thành công', msg, [{ text: 'Đóng' }]);
-    }
   };
 
   return (
@@ -212,47 +203,82 @@ export default function HandoverSuccessScreen({
           </View>
         </View>
 
-        {/* Các nút hành động */}
+        {/* Thẻ trạng thái thông báo tự động mã PIN */}
+        <View style={styles.autoNotifCard}>
+          <View style={styles.autoNotifHeader}>
+            <View style={styles.autoNotifIconCircle}>
+              <MaterialIcons name="notifications-active" size={18} color="#059669" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.autoNotifTitle}>Hệ thống đã tự động gửi mã PIN</Text>
+              <Text style={styles.autoNotifSub}>Ứng dụng & Tin nhắn SMS tới khách hàng</Text>
+            </View>
+            <View style={styles.autoNotifBadge}>
+              <MaterialIcons name="check" size={12} color="#059669" />
+              <Text style={styles.autoNotifBadgeText}>Đã gửi</Text>
+            </View>
+          </View>
+          <Text style={styles.autoNotifDesc}>
+            Mã PIN mở khóa <Text style={{ fontWeight: '800', color: '#004AC6' }}>{accessPin}</Text> cho ô kho <Text style={{ fontWeight: '800', color: '#0F172A' }}>#{assignedUnitCode}</Text> đã được gửi tự động tới số điện thoại <Text style={{ fontWeight: '700', color: '#0F172A' }}>{appointment.phone}</Text> của khách hàng <Text style={{ fontWeight: '700', color: '#0F172A' }}>{appointment.customerName}</Text>.
+          </Text>
+        </View>
+
+        {/* Nút hành động chính duy nhất: Quay lại danh sách bàn giao */}
         <View style={styles.actionsContainer}>
-          {/* Nút In phiếu */}
           <TouchableOpacity
             style={styles.primaryActionBtn}
-            onPress={onPrintAgain}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons name="print" size={18} color="#FFFFFF" />
-            <Text style={styles.primaryActionText}>In Phiếu Bàn Giao & Hợp Đồng</Text>
-          </TouchableOpacity>
-
-          {/* Nút Gửi SMS/Email */}
-          <TouchableOpacity
-            style={[styles.secondaryActionBtn, hasSentNotify && styles.sentActionBtn]}
-            onPress={handleSendNotification}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons
-              name={hasSentNotify ? 'check-circle' : 'send'}
-              size={17}
-              color={hasSentNotify ? '#FFFFFF' : T.primary}
-            />
-            <Text style={[styles.secondaryActionText, hasSentNotify && { color: '#FFFFFF' }]}>
-              {hasSentNotify
-                ? 'Đã Gửi Mã PIN Tới Khách Hàng'
-                : 'Gửi Thông Báo PIN Cho Khách'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Nút Quay lại hàng đợi */}
-          <TouchableOpacity
-            style={styles.backQueueBtn}
             onPress={onBackToQueue}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="arrow-back" size={17} color={T.textMain} />
-            <Text style={styles.backQueueText}>Quay lại danh sách bàn giao</Text>
+            <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+            <Text style={styles.primaryActionText}>Quay Lại Danh Sách Bàn Giao</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Modal Thông Báo Khi Nhận Mã PIN */}
+      <Modal
+        visible={showPinModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPinModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeaderIconWrap}>
+              <View style={styles.modalHeaderIcon}>
+                <MaterialIcons name="vpn-key" size={28} color="#004AC6" />
+              </View>
+            </View>
+
+            <Text style={styles.modalTitle}>Thông Báo Nhận Mã PIN</Text>
+            <Text style={styles.modalSubTitle}>
+              Ô kho #{assignedUnitCode} • {appointment.customerName}
+            </Text>
+
+            {/* Dãy mã PIN lớn */}
+            <View style={styles.modalPinContainer}>
+              <Text style={styles.modalPinLabel}>MÃ PIN SMART LOCK</Text>
+              <Text style={styles.modalPinCode}>{accessPin}</Text>
+            </View>
+
+            <View style={styles.modalNotifInfoBox}>
+              <MaterialIcons name="info-outline" size={16} color="#0284C7" />
+              <Text style={styles.modalNotifInfoText}>
+                Hệ thống đã tự động gửi mã PIN này tới SĐT <Text style={{ fontWeight: '700' }}>{appointment.phone}</Text> và thông báo ứng dụng của khách hàng. Khách có thể nhập mã trên khóa để mở kho ngay.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalConfirmBtn}
+              onPress={() => setShowPinModal(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.modalConfirmText}>Đã Hiểu</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -608,4 +634,157 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'center',
   },
+  // Thẻ thông báo tự động mã PIN
+  autoNotifCard: {
+    width: '100%',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+  },
+  autoNotifHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
+  },
+  autoNotifIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoNotifTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  autoNotifSub: {
+    fontSize: 11,
+    color: '#047857',
+  },
+  autoNotifBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  autoNotifBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  autoNotifDesc: {
+    fontSize: 11.5,
+    color: '#166534',
+    lineHeight: 17,
+  },
+
+  // Modal thông báo khi nhận mã PIN
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalHeaderIconWrap: {
+    marginBottom: 10,
+  },
+  modalHeaderIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#BFDBFE',
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  modalSubTitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  modalPinContainer: {
+    width: '100%',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  modalPinLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  modalPinCode: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#38BDF8',
+    letterSpacing: 6,
+  },
+  modalNotifInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    marginBottom: 16,
+  },
+  modalNotifInfoText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#0369A1',
+    lineHeight: 16,
+  },
+  modalConfirmBtn: {
+    width: '100%',
+    backgroundColor: '#004AC6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+
 });

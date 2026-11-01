@@ -143,100 +143,98 @@ export default function CheckInQueueScreen({
     }
   };
 
-  // Helper render card theo phong cách Kanban chuẩn mực (nhỏ gọn, thanh lịch, chống tràn chữ 100%)
+  // Card nhận kho theo thiết kế widget: thanh màu bên trái, nhãn ngày, tiêu đề lớn, pill giờ + tiến độ chấm
   const renderAppointmentCard = (app: CheckInAppointment) => {
+    const now = new Date();
+    const todayStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    const dayLabel = app.startDate === todayStr ? 'TODAY' : (app.startDate ? `NGÀY ${app.startDate}` : 'TODAY');
+
+    // Tách giờ '1:00' và 'PM' (hoặc '09:00' và 'SA')
+    const timeParts = (app.slotTime || '1:00 PM').trim().split(/\s+/);
+    const timeMain = timeParts[0] || '1:00';
+    const timePeriod = timeParts[1] || 'PM';
+
+    // Cỡ kích thước kho
+    const unitSizeLabel = app.unitSize ? app.unitSize.split(' ')[0] : (app.unitType ? app.unitType.replace('Kho ', '') : 'Tiêu chuẩn');
+
     return (
-      <View key={app.id} style={styles.appointmentCard}>
-        {/* Hàng 1: Khung giờ bên trái + Ô kho & Badge trạng thái bên phải */}
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.slotBadge}>
-            <MaterialIcons name="schedule" size={12} color="#1D4ED8" />
-            <Text style={styles.slotBadgeText}>{app.slotTime}</Text>
-          </View>
-          <View style={styles.unitRightGroup}>
-            <Text style={styles.unitNumberText}>#{app.assignedUnit}</Text>
-            {renderStatusBadge(app.status)}
-          </View>
-        </View>
+      <TouchableOpacity
+        key={app.id}
+        style={styles.wCard}
+        onPress={() => onStartHandover(app)}
+        activeOpacity={0.85}
+      >
+        {/* Thanh accent đứng bên trái: vạch màu ấm/vàng hổ phách như mẫu */}
+        <View style={styles.wAccent} />
 
-        {/* Hàng 2: Tên khách hàng & Số điện thoại */}
-        <View style={styles.cardCustomerSection}>
-          <Text style={styles.customerName} numberOfLines={1}>
-            {app.customerName}
-          </Text>
-          <View style={styles.customerPhoneRow}>
-            <MaterialIcons name="phone" size={12} color="#64748B" />
-            <Text style={styles.customerPhoneText}>{app.phone}</Text>
+        <View style={styles.wBody}>
+          {/* Hàng 1: TODAY (Trái) <───────────────────────────> 1:00 PM (Phải) */}
+          <View style={styles.wRow1}>
+            <Text style={styles.wDayLabel}>{dayLabel}</Text>
+            <View style={styles.wTimeRow}>
+              <Text style={styles.wTimeMain}>{timeMain}</Text>
+              <Text style={styles.wTimePeriod}>{timePeriod}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Hàng 3: Hộp thông tin loại kho & thanh toán (chuẩn Kanban FE) */}
-        <View style={styles.unitInfoBox}>
-          <Text style={styles.unitTypeBoxText} numberOfLines={1}>
-            {app.unitType || 'Kho lưu trữ'}
-          </Text>
-          <View style={styles.paymentStatusGroup}>
-            <Text
+          {/* Hàng 2: TÊN KHÁCH (LÊN DÒNG TRÊN) <───────────────> NÚT NHẬN KHO (RÚT GỌN) */}
+          <View style={styles.wRow2}>
+            <Text style={styles.wCustomerName} numberOfLines={1}>
+              {app.customerName}
+            </Text>
+
+            <View
               style={[
-                styles.paymentStatusText,
-                { color: app.depositStatus === 'paid' ? '#15803D' : '#D97706' },
+                styles.wActionButton,
+                app.status === 'completed'
+                  ? styles.wActionButtonDone
+                  : app.status === 'in_progress'
+                  ? styles.wActionButtonInProgress
+                  : null,
               ]}
             >
-              {app.depositStatus === 'paid' ? 'Đã cọc' : 'Chưa cọc'}
-            </Text>
-            <Text style={styles.paymentDot}>•</Text>
-            <Text
-              style={[
-                styles.paymentStatusText,
-                { color: app.rentalStatus === 'paid' ? '#15803D' : '#D97706' },
-              ]}
-            >
-              {app.rentalStatus === 'paid' ? 'Đã thu thuê' : 'Chưa thu thuê'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Ghi chú nhanh (nếu có) */}
-        {app.specialNotes ? (
-          <View style={styles.noteBox}>
-            <MaterialIcons name="notes" size={12} color="#D97706" />
-            <Text style={styles.noteText} numberOfLines={1}>
-              {app.specialNotes}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Hàng 4: Nút hành động */}
-        <View style={styles.cardActionRow}>
-          {app.status === 'completed' ? (
-            <View style={styles.completedTag}>
-              <MaterialIcons name="check" size={13} color="#15803D" />
-              <Text style={styles.completedTagText}>Đã bàn giao</Text>
-            </View>
-          ) : app.status === 'cancelled' ? (
-            <View style={styles.cancelledTag}>
-              <Text style={styles.cancelledTagText}>Đã hủy</Text>
-            </View>
-          ) : app.status === 'expired' ? (
-            <View style={styles.expiredTag}>
-              <Text style={styles.expiredTagText}>Quá hạn</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.startHandoverBtn,
-                app.status === 'in_progress' && styles.startHandoverBtnInProgress,
-              ]}
-              onPress={() => onStartHandover(app)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.startHandoverText}>
-                {app.status === 'in_progress' ? 'Tiếp tục bàn giao →' : 'Bắt đầu nhận kho →'}
+              <Text
+                style={[
+                  styles.wActionText,
+                  app.status === 'completed' && styles.wActionTextDone,
+                ]}
+              >
+                {app.status === 'completed'
+                  ? 'Đã bàn giao'
+                  : app.status === 'in_progress'
+                  ? 'Tiếp tục'
+                  : 'Nhận kho'}
               </Text>
-            </TouchableOpacity>
-          )}
+            </View>
+          </View>
+
+          {/* Hàng 3: TÊN KHO (XUỐNG DƯỚI) <─────────────────────> SĐT TO RÕ (KHÔNG ICON) */}
+          <View style={styles.wRow3}>
+            <View style={styles.wTitleRow}>
+              <Text style={styles.wTitle} numberOfLines={1}>
+                {app.assignedUnit || 'A-101'}
+              </Text>
+              <Text style={styles.wTitleSub} numberOfLines={1}>
+                {unitSizeLabel}
+              </Text>
+            </View>
+
+            <Text style={styles.wBigPhone}>
+              {app.phone}
+            </Text>
+          </View>
+
+          {/* Ghi chú nhanh (nếu có) */}
+          {app.specialNotes ? (
+            <View style={styles.wNoteBox}>
+              <MaterialIcons name="notes" size={11} color="#D97706" />
+              <Text style={styles.wNoteText} numberOfLines={1}>
+                {app.specialNotes}
+              </Text>
+            </View>
+          ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -624,6 +622,145 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
+  },
+  wCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingTop: 13,
+    paddingBottom: 12,
+    paddingLeft: 13,
+    paddingRight: 15,
+    marginBottom: 11,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  wAccent: {
+    width: 3.5,
+    borderRadius: 2,
+    backgroundColor: '#E8A766',
+    marginRight: 11,
+    alignSelf: 'stretch',
+    marginVertical: 1,
+  },
+  wBody: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  wRow1: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  wDayLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+  },
+  wTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  wTimeMain: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#18181B',
+    letterSpacing: -0.5,
+  },
+  wTimePeriod: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#71717A',
+    marginLeft: 3,
+  },
+  wRow2: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  wCustomerName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#18181B',
+    letterSpacing: -0.3,
+    flex: 1,
+    marginRight: 8,
+  },
+  wActionButton: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+  },
+  wActionButtonInProgress: {
+    backgroundColor: '#7C3AED',
+  },
+  wActionButtonDone: {
+    backgroundColor: '#DCFCE7',
+  },
+  wActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  wActionTextDone: {
+    color: '#15803D',
+  },
+  wRow3: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  wTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  wTitle: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#334155',
+    letterSpacing: -0.2,
+  },
+  wTitleSub: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  wBigPhone: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.3,
+  },
+  wNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    marginTop: 6,
+  },
+  wNoteText: {
+    fontSize: 11,
+    color: '#92400E',
+    flex: 1,
   },
   cardHeaderRow: {
     flexDirection: 'row',

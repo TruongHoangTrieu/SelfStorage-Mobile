@@ -338,6 +338,48 @@ export async function logCccdAccessApi(contractId: string, reason: string): Prom
 }
 
 /**
+ * Lấy danh sách hợp đồng cho nhân viên / cơ sở kho (GET /contracts)
+ */
+export async function fetchStaffContractsApi(facilityId?: number | string, status?: string) {
+  let endpoint = '/contracts';
+  const queryParts: string[] = [];
+  if (facilityId) queryParts.push('facilityId=' + encodeURIComponent(String(facilityId)));
+  if (status) queryParts.push('status=' + encodeURIComponent(status));
+  if (queryParts.length > 0) endpoint += '?' + queryParts.join('&');
+  return apiRequest<any[]>(endpoint);
+}
+
+/**
+ * Tra cứu thông tin hợp đồng để nhân viên chuẩn bị Check-out & Nghiệm thu (GET /handovers/contracts/:id/check-out)
+ */
+export async function getContractForCheckOutApi(contractId: string) {
+  return apiRequest<any>('/handovers/contracts/' + contractId + '/check-out');
+}
+
+/**
+ * Thực hiện Check-out & Bàn giao hoàn trả kho (POST /handovers/check-out)
+ */
+export interface CheckOutPayload {
+  contractId: string;
+  condition: string;
+  notes?: string;
+  photos?: any[];
+  actualOverdueDays?: number;
+  actualOverdueFine?: number;
+  unpaidExtraChargesDeducted?: number;
+  damageFineAmount?: number;
+  actualRefundAmount?: number;
+  targetUnitStatus?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
+}
+
+export async function performCheckOutApi(payload: CheckOutPayload) {
+  return apiRequest<any>('/handovers/check-out', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * ==========================================================
  * CÁC HÀM GỌI API CHO LUỒNG 3 (QUẢN LÝ Ô KHO ĐÃ THUÊ - CUSTOMER)
  * ==========================================================
@@ -428,6 +470,33 @@ export async function addTicketNoteApi(ticketId: string, note: string) {
   return apiRequest<any>(`/support/requests/${ticketId}/notes`, {
     method: 'POST',
     body: JSON.stringify({ note }),
+  });
+}
+
+/**
+ * Lấy danh sách yêu cầu hỗ trợ sự cố cho nhân viên / cơ sở (GET /support/requests)
+ */
+export async function fetchStaffSupportRequestsApi(facilityId?: string | number, status?: string, page = 1, limit = 20) {
+  let endpoint = `/support/requests?page=${page}&limit=${limit}`;
+  if (facilityId) endpoint += `&facilityId=${encodeURIComponent(String(facilityId))}`;
+  if (status && status !== 'all') endpoint += `&status=${encodeURIComponent(status)}`;
+  return apiRequest<{ data: any[]; meta: any }>(endpoint);
+}
+
+/**
+ * Xem chi tiết yêu cầu hỗ trợ kèm toàn bộ nhật ký (GET /support/requests/:id)
+ */
+export async function getSupportRequestDetailApi(id: string) {
+  return apiRequest<any>(`/support/requests/${id}`);
+}
+
+/**
+ * Cập nhật tiến độ xử lý và trạng thái sự cố (PATCH /support/requests/:id/progress)
+ */
+export async function updateTicketProgressApi(id: string, status: string, note: string, photos?: string[]) {
+  return apiRequest<any>(`/support/requests/${id}/progress`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, note, photos }),
   });
 }
 

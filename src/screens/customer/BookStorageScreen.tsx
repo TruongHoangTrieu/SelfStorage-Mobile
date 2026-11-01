@@ -265,10 +265,7 @@ export default function BookStorageScreen({
     activeBottomTab || "search",
   );
 
-  // Category Pill & Favorites States for Stitch Explore UI
-  const [activeFilterPill, setActiveFilterPill] = useState<
-    "for-you" | "personal" | "family" | "business" | "ac"
-  >("for-you");
+  // Favorites States for Stitch Explore UI
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
     new Set(["feat-1"]),
   );
@@ -643,41 +640,18 @@ export default function BookStorageScreen({
     });
   }, [facilities, unitTypes]);
 
-  // Filter dynamic facilities based on search query and category filter pill
+  // Filter dynamic facilities based on search query
   const filteredDynamicFacilities = useMemo(() => {
+    if (!facilitySearchQuery.trim()) return dynamicFacilities;
+    const q = facilitySearchQuery.toLowerCase().trim();
     return dynamicFacilities.filter((item) => {
-      if (
-        activeFilterPill === "personal" &&
-        !item.hasPersonal &&
-        item.unitTypesCount > 0
-      )
-        return false;
-      if (
-        activeFilterPill === "family" &&
-        !item.hasFamily &&
-        item.unitTypesCount > 0
-      )
-        return false;
-      if (
-        activeFilterPill === "business" &&
-        !item.hasBusiness &&
-        item.unitTypesCount > 0
-      )
-        return false;
-      if (activeFilterPill === "ac" && !item.hasAC && item.unitTypesCount > 0)
-        return false;
-
-      if (facilitySearchQuery.trim()) {
-        const q = facilitySearchQuery.toLowerCase().trim();
-        return (
-          item.title.toLowerCase().includes(q) ||
-          item.location.toLowerCase().includes(q) ||
-          item.district.toLowerCase().includes(q)
-        );
-      }
-      return true;
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.location.toLowerCase().includes(q) ||
+        item.district.toLowerCase().includes(q)
+      );
     });
-  }, [dynamicFacilities, activeFilterPill, facilitySearchQuery]);
+  }, [dynamicFacilities, facilitySearchQuery]);
 
   // Step 2 -> Step 3: Tạo đơn hẹn và tạo mã VietQR thanh toán cọc giữ chỗ
   const handleSignContract = async () => {
@@ -1122,19 +1096,19 @@ export default function BookStorageScreen({
                         value={facilitySearchQuery}
                         onChangeText={setFacilitySearchQuery}
                       />
-                      <TouchableOpacity
-                        style={s.filterTuneBtn}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          if (facilitySearchQuery) setFacilitySearchQuery("");
-                        }}
-                      >
-                        <MaterialIcons
-                          name={facilitySearchQuery ? "close" : "tune"}
-                          size={21}
-                          color={T.onSurface}
-                        />
-                      </TouchableOpacity>
+                      {facilitySearchQuery ? (
+                        <TouchableOpacity
+                          style={s.filterTuneBtn}
+                          activeOpacity={0.7}
+                          onPress={() => setFacilitySearchQuery("")}
+                        >
+                          <MaterialIcons
+                            name="close"
+                            size={21}
+                            color={T.onSurface}
+                          />
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   </View>
 
@@ -1174,156 +1148,6 @@ export default function BookStorageScreen({
                     </View>
                   </View>
 
-                  {/* 5. CATEGORY FILTER PILLS */}
-                  <View style={s.categoryPillsSection}>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={s.categoryPillsScroll}
-                    >
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "for-you" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("for-you")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="assignment-turned-in"
-                          size={17}
-                          color={
-                            activeFilterPill === "for-you"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "for-you" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Dành cho bạn
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "personal" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("personal")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="inventory-2"
-                          size={17}
-                          color={
-                            activeFilterPill === "personal"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "personal" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Cá nhân (1-3m²)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "family" && s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("family")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="home-work"
-                          size={17}
-                          color={
-                            activeFilterPill === "family"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "family" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Gia đình (4-9m²)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "business" &&
-                            s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("business")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="storefront"
-                          size={17}
-                          color={
-                            activeFilterPill === "business"
-                              ? "#ffffff"
-                              : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "business" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Kho lớn / E-com
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          s.categoryPill,
-                          activeFilterPill === "ac" && s.categoryPillActive,
-                        ]}
-                        onPress={() => setActiveFilterPill("ac")}
-                        activeOpacity={0.8}
-                      >
-                        <MaterialIcons
-                          name="ac-unit"
-                          size={17}
-                          color={
-                            activeFilterPill === "ac" ? "#ffffff" : T.primary
-                          }
-                        />
-                        <Text
-                          style={[
-                            s.categoryPillText,
-                            activeFilterPill === "ac" &&
-                              s.categoryPillTextActive,
-                          ]}
-                        >
-                          Máy lạnh 24/7
-                        </Text>
-                      </TouchableOpacity>
-                    </ScrollView>
-                  </View>
-
                   {/* 6. SECTION KHO NỔI BẬT & CAROUSEL (Dữ liệu động từ Backend) */}
                   <View style={s.featuredSection}>
                     <View style={s.sectionHeaderRow}>
@@ -1331,7 +1155,6 @@ export default function BookStorageScreen({
                       <TouchableOpacity
                         onPress={() => {
                           setFacilitySearchQuery("");
-                          setActiveFilterPill("for-you");
                         }}
                       >
                         <Text style={s.sectionHeaderAction}>
@@ -1351,7 +1174,7 @@ export default function BookStorageScreen({
                           Không tìm thấy cơ sở kho
                         </Text>
                         <Text style={s.emptyFeaturedSub}>
-                          Vui lòng thử tìm kiếm khác hoặc đổi bộ lọc.
+                          Vui lòng thử từ khóa tìm kiếm khác.
                         </Text>
                       </View>
                     ) : (
@@ -1448,93 +1271,6 @@ export default function BookStorageScreen({
                         })}
                       </View>
                     )}
-                  </View>
-
-                  {/* 7. RECOMMENDED / NEARBY LISTING (Dữ liệu động từ Backend) */}
-                  <View style={s.nearbySection}>
-                    <View style={s.sectionHeaderRow}>
-                      <Text style={s.sectionHeaderTitle}>Gợi ý gần bạn</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setFacilitySearchQuery("");
-                          setActiveFilterPill("for-you");
-                        }}
-                      >
-                        <Text style={s.sectionHeaderSort}>
-                          Xem tất cả ({dynamicFacilities.length})
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={s.nearbyListWrap}>
-                      {dynamicFacilities.length === 0 ? (
-                        <View style={s.emptyFeaturedCard}>
-                          <Text style={s.emptyFeaturedSub}>
-                            Đang tải dữ liệu cơ sở kho từ hệ thống...
-                          </Text>
-                        </View>
-                      ) : (
-                        dynamicFacilities.map((rec) => (
-                          <TouchableOpacity
-                            key={rec.id}
-                            style={s.nearbyItemCard}
-                            activeOpacity={0.9}
-                            onPress={() => setSelectedFacility(rec.facility)}
-                          >
-                            <View style={s.nearbyThumbnailWrap}>
-                              <Image
-                                source={{ uri: rec.image }}
-                                style={s.nearbyThumbnail}
-                                resizeMode="cover"
-                              />
-                              <View style={s.nearbyLiveDot} />
-                            </View>
-
-                            <View style={s.nearbyInfoWrap}>
-                              <Text style={s.nearbyTitle} numberOfLines={1}>
-                                {rec.title}
-                              </Text>
-                              <View style={s.nearbyDistanceRow}>
-                                <MaterialIcons
-                                  name="location-on"
-                                  size={13}
-                                  color={T.primary}
-                                  style={{ marginRight: 4 }}
-                                />
-                                <Text
-                                  style={s.nearbyDistanceText}
-                                  numberOfLines={1}
-                                >
-                                  {rec.location}
-                                </Text>
-                              </View>
-
-                              <View style={s.nearbyBottomRow}>
-                                <Text style={s.nearbyPriceText}>
-                                  {rec.price}
-                                  {rec.priceUnit ? (
-                                    <Text style={s.nearbyPriceUnit}>
-                                      {rec.priceUnit}
-                                    </Text>
-                                  ) : null}
-                                </Text>
-                                <TouchableOpacity
-                                  style={s.nearbyActionBtn}
-                                  activeOpacity={0.8}
-                                  onPress={() =>
-                                    setSelectedFacility(rec.facility)
-                                  }
-                                >
-                                  <Text style={s.nearbyActionBtnText}>
-                                    Xem ngay
-                                  </Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        ))
-                      )}
-                    </View>
                   </View>
                 </View>
               ) : (

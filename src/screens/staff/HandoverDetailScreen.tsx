@@ -14,11 +14,13 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { CheckInAppointment, AvailableUnit } from '../../types/handover';
 import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
+  pickMultiplePhotosFromGallery,
   uploadMultipleImagesToStorage,
   CapturedPhoto,
 } from '../../services/imageService';
@@ -26,7 +28,6 @@ import {
   uploadCccdApi,
   createRentalPaymentApi,
   getReservationPaymentSummaryApi,
-  simulatePaymentWebhookApi,
 } from '../../api';
 
 interface HandoverDetailScreenProps {
@@ -96,10 +97,21 @@ export default function HandoverDetailScreen({
   const [identityType, setIdentityType] = useState<'CCCD' | 'PASSPORT'>(
     appointment.identityType === 'PASSPORT' ? 'PASSPORT' : 'CCCD'
   );
-  const [identityNumber, setIdentityNumber] = useState<string>(
-    appointment.identityNumber ||
-    (appointment.idCard && appointment.idCard !== 'Đã đối chiếu tại quầy' ? appointment.idCard : '079095012345')
-  );
+  const [identityNumber, setIdentityNumber] = useState<string>(() => {
+    const raw = appointment.identityNumber ||
+      (appointment.idCard && appointment.idCard !== 'Đã đối chiếu tại quầy' ? appointment.idCard : '079095012345');
+    if (appointment.identityType === 'PASSPORT') return raw;
+    return raw.replace(/\D/g, '').slice(0, 12);
+  });
+
+  const handleIdentityNumberChange = (val: string) => {
+    if (identityType === 'CCCD') {
+      const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
+      setIdentityNumber(digitsOnly);
+    } else {
+      setIdentityNumber(val.slice(0, 15).toUpperCase());
+    }
+  };
   const [identityAddress, setIdentityAddress] = useState<string>(
     appointment.identityAddress || 'Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM'
   );
@@ -154,46 +166,37 @@ export default function HandoverDetailScreen({
     setIsCapturingCccd(false);
   };
 
-  // Bước 2: Hiện trạng ô kho & Chụp ảnh
-  const [photos, setPhotos] = useState<CapturedPhoto[]>([
-    {
-      id: 'photo-1',
-      title: 'Cửa & Khóa',
-      uri: 'https://images.unsplash.com/photo-1595246140625-573b715d11dc?w=400&auto=format&fit=crop&q=80',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'photo-2',
-      title: 'Trong kho',
-      uri: 'https://res.cloudinary.com/micb9okr/image/upload/v1792946232/selfstorage/storage_units/unit_sto1.png',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'photo-3',
-      title: 'Hành lang',
-      uri: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&auto=format&fit=crop&q=80',
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  // Bước 2: Hiện trạng ô kho & Chụp ảnh (Khởi tạo rỗng, hỗ trợ chọn nhiều ảnh)
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
 
   const handleCapturePhoto = async () => {
     setIsCapturing(true);
-    const photo = await takePhotoWithCamera();
-    if (photo) {
-      setPhotos((prev) => [photo, ...prev]);
+    try {
+      const photo = await takePhotoWithCamera();
+      if (photo) {
+        setPhotos((prev) => [photo, ...prev]);
+      }
+    } catch (e) {
+      console.error('Lỗi khi chụp ảnh:', e);
+    } finally {
+      setIsCapturing(false);
     }
-    setIsCapturing(false);
   };
 
   const handlePickPhoto = async () => {
     setIsCapturing(true);
-    const photo = await pickPhotoFromGallery();
-    if (photo) {
-      setPhotos((prev) => [photo, ...prev]);
+    try {
+      const selectedPhotos = await pickMultiplePhotosFromGallery(15);
+      if (selectedPhotos && selectedPhotos.length > 0) {
+        setPhotos((prev) => [...selectedPhotos, ...prev]);
+      }
+    } catch (e) {
+      console.error('Lỗi khi chọn nhiều ảnh:', e);
+    } finally {
+      setIsCapturing(false);
     }
-    setIsCapturing(false);
   };
 
   const handleDeletePhoto = (id: string) => {
@@ -212,6 +215,7 @@ export default function HandoverDetailScreen({
 
   // Bước 3: Hợp đồng thuê
   const [isContractSigned, setIsContractSigned] = useState<boolean>(false);
+  const [contractSignature, setContractSignature] = useState<string[]>([]);
   const [showContractModal, setShowContractModal] = useState<boolean>(false);
 
   // Bước 4: Thu tiền thuê kho
@@ -230,16 +234,12 @@ export default function HandoverDetailScreen({
     transferContent: string;
   } | null>(null);
   const [isLoadingPaymentQr, setIsLoadingPaymentQr] = useState<boolean>(false);
-  const [isSimulatingPayment, setIsSimulatingPayment] = useState<boolean>(false);
+
 
   // Bước 5: Cấp mã PIN Smart Lock
   const [accessPin, setAccessPin] = useState<string>(
     appointment.accessPin || Math.floor(100000 + Math.random() * 900000).toString()
   );
-  const [customRfid, setCustomRfid] = useState<string>(
-    appointment.rfidCard || `RFID-${Math.floor(1000 + Math.random() * 9000)}`
-  );
-  const [customNotes, setCustomNotes] = useState<string>(appointment.specialNotes || '');
 
   // Tính toán tiền tệ
   const durationMonths = appointment.durationMonths || 1;
@@ -320,10 +320,7 @@ export default function HandoverDetailScreen({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleGenerateRandomPin = () => {
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
-    setAccessPin(pin);
-  };
+
 
   const handleSelectStep = (targetStep: number) => {
     if (targetStep === currentStep) return;
@@ -354,11 +351,22 @@ export default function HandoverDetailScreen({
   const handleNext = () => {
     if (currentStep === 1) {
       if (!identityNumber.trim()) {
-        Alert.alert('Thiếu số định danh', 'Vui lòng nhập số CCCD hoặc Hộ chiếu của khách hàng.');
+        Alert.alert('Thiếu số định danh', 'Vui lòng nhập số ' + (identityType === 'CCCD' ? 'CCCD' : 'Hộ chiếu') + ' của khách hàng.');
+        return;
+      }
+      if (identityType === 'CCCD' && identityNumber.trim().length !== 12) {
+        Alert.alert(
+          'Số CCCD không hợp lệ',
+          'Số CCCD/Căn cước công dân Việt Nam phải gồm đúng 12 chữ số.\nHiện tại bạn đã nhập: ' + identityNumber.trim().length + '/12 số.'
+        );
+        return;
+      }
+      if (identityType === 'PASSPORT' && identityNumber.trim().length < 8) {
+        Alert.alert('Số Hộ chiếu không hợp lệ', 'Số Hộ chiếu phải từ 8 ký tự trở lên.');
         return;
       }
       if (!isCccdVerified) {
-        Alert.alert('Chưa đối chiếu CCCD', 'Vui lòng xác nhận đối chiếu CCCD gốc của khách hàng.');
+        Alert.alert('Chưa đối chiếu giấy tờ', 'Vui lòng xác nhận đối chiếu giấy tờ gốc của khách hàng.');
         return;
       }
       setCurrentStep(2);
@@ -410,8 +418,8 @@ export default function HandoverDetailScreen({
       setCurrentStep(1);
       return;
     }
-    if (!identityNumber.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập số CCCD/Hộ chiếu tại Bước 1.');
+    if (!identityNumber.trim() || (identityType === 'CCCD' && identityNumber.trim().length !== 12)) {
+      Alert.alert('Lỗi định danh', 'Vui lòng nhập đúng 12 chữ số CCCD tại Bước 1.');
       setCurrentStep(1);
       return;
     }
@@ -463,7 +471,7 @@ export default function HandoverDetailScreen({
       appointmentId: appointment.id,
       unitCode: selectedUnitCode,
       condition,
-      notes: customNotes,
+      notes: appointment.specialNotes || "",
       photos: uploadedUrls,
       identityType,
       identityNumber: identityNumber.trim(),
@@ -784,20 +792,53 @@ export default function HandoverDetailScreen({
            
             {/* Nhập & Đối chiếu thông tin giấy tờ */}
             <View style={s.kycInputGroup}>
-              <Text style={s.kycInputLabel}>
-                Số {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} đối chiếu: *
-              </Text>
-              <View style={s.kycInputWrap}>
-                <MaterialIcons name="badge" size={18} color={T.textMuted} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={s.kycInputLabel}>
+                  Số {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} đối chiếu: *
+                </Text>
+                {identityType === 'CCCD' && (
+                  <View style={[
+                    s.digitBadge,
+                    identityNumber.length === 12 ? s.digitBadgeValid : s.digitBadgePending
+                  ]}>
+                    <Text style={[
+                      s.digitBadgeText,
+                      identityNumber.length === 12 ? s.digitBadgeTextValid : s.digitBadgeTextPending
+                    ]}>
+                      {identityNumber.length}/12 chữ số
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={[
+                s.kycInputWrap,
+                identityType === 'CCCD' && identityNumber.length > 0 && identityNumber.length !== 12 && { borderColor: '#F59E0B' },
+                identityType === 'CCCD' && identityNumber.length === 12 && { borderColor: '#10B981' }
+              ]}>
+                <MaterialIcons
+                  name={identityType === 'CCCD' ? 'badge' : 'flight'}
+                  size={18}
+                  color={identityType === 'CCCD' && identityNumber.length === 12 ? '#10B981' : T.textMuted}
+                />
                 <TextInput
                   style={s.kycInput}
                   value={identityNumber}
-                  onChangeText={setIdentityNumber}
-                  placeholder={`Nhập số ${identityType}`}
+                  onChangeText={handleIdentityNumberChange}
+                  placeholder={identityType === 'CCCD' ? 'Nhập đúng 12 chữ số CCCD' : 'Nhập số Hộ chiếu'}
                   placeholderTextColor={T.textMuted}
+                  keyboardType={identityType === 'CCCD' ? 'numeric' : 'default'}
+                  maxLength={identityType === 'CCCD' ? 12 : 15}
                   autoCapitalize="characters"
                 />
+                {identityType === 'CCCD' && identityNumber.length === 12 && (
+                  <MaterialIcons name="check-circle" size={18} color="#10B981" />
+                )}
               </View>
+              {identityType === 'CCCD' && identityNumber.length > 0 && identityNumber.length < 12 && (
+                <Text style={{ fontSize: 11, color: '#D97706', marginTop: 4 }}>
+                  Số CCCD phải gồm đúng 12 chữ số (còn thiếu {12 - identityNumber.length} số)
+                </Text>
+              )}
             </View>
 
             <View style={s.kycInputGroup}>
@@ -882,34 +923,90 @@ export default function HandoverDetailScreen({
               </TouchableOpacity>
             </View>
 
-            {/* Danh sách ảnh hiện trạng (Có thể cuộn ngang hoặc dạng lưới) */}
-            <Text style={s.sectionSubtitle}>
-              Ảnh kiểm tra trước bàn giao ({photos.length} ảnh):
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-              <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4 }}>
-                {photos.map((p) => (
-                  <View key={p.id} style={s.photoCard}>
-                    <TouchableOpacity
-                      style={s.photoThumbWrap}
-                      onPress={() => setPreviewImage(p.uri)}
-                      activeOpacity={0.85}
-                    >
-                      <Image source={{ uri: p.uri }} style={s.photoImg} />
-                      <Text style={s.photoTag} numberOfLines={1}>{p.title}</Text>
-                    </TouchableOpacity>
+            {/* Danh sách ảnh hiện trạng */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={s.sectionSubtitle}>
+                Ảnh kiểm tra trước bàn giao ({photos.length} ảnh):
+              </Text>
+              {photos.length > 0 && (
+                <TouchableOpacity onPress={() => setPhotos([])}>
+                  <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '500' }}>Xóa tất cả</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
-                    {/* Nút xóa ảnh */}
-                    <TouchableOpacity
-                      style={s.photoDeleteBtn}
-                      onPress={() => handleDeletePhoto(p.id)}
-                    >
-                      <MaterialIcons name="close" size={14} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
+            {photos.length === 0 ? (
+              <TouchableOpacity
+                style={s.emptyPhotoPlaceholder}
+                onPress={handlePickPhoto}
+                disabled={isCapturing}
+                activeOpacity={0.8}
+              >
+                <View style={s.addPhotoBigIconWrap}>
+                  <MaterialIcons name="add-a-photo" size={32} color={T.primary} />
+                </View>
+                <Text style={s.emptyPhotoTitle}>Chưa có ảnh kiểm tra kho</Text>
+                <Text style={s.emptyPhotoDesc}>
+                  Chạm vào đây để chọn nhiều ảnh từ thư viện hoặc chụp ảnh mới
+                </Text>
+                <View style={s.emptyPhotoBtnRow}>
+                  <TouchableOpacity
+                    style={s.emptyAddBtn}
+                    onPress={handlePickPhoto}
+                    disabled={isCapturing}
+                  >
+                    <MaterialIcons name="photo-library" size={16} color="#fff" />
+                    <Text style={s.emptyAddBtnText}>Chọn nhiều ảnh</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.emptyAddBtn, { backgroundColor: '#10B981' }]}
+                    onPress={handleCapturePhoto}
+                    disabled={isCapturing}
+                  >
+                    <MaterialIcons name="photo-camera" size={16} color="#fff" />
+                    <Text style={s.emptyAddBtnText}>Chụp ảnh</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
+                <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4, alignItems: 'center' }}>
+                  {/* Ô thẻ dấu + to rõ để thêm thêm ảnh */}
+                  <TouchableOpacity
+                    style={s.addPhotoSquareCard}
+                    onPress={handlePickPhoto}
+                    disabled={isCapturing}
+                    activeOpacity={0.8}
+                  >
+                    <View style={s.addSquareIconCircle}>
+                      <MaterialIcons name="add" size={26} color={T.primary} />
+                    </View>
+                    <Text style={s.addSquareText}>Thêm ảnh</Text>
+                  </TouchableOpacity>
+
+                  {photos.map((p) => (
+                    <View key={p.id} style={s.photoCard}>
+                      <TouchableOpacity
+                        style={s.photoThumbWrap}
+                        onPress={() => setPreviewImage(p.uri)}
+                        activeOpacity={0.85}
+                      >
+                        <Image source={{ uri: p.uri }} style={s.photoImg} />
+                        <Text style={s.photoTag} numberOfLines={1}>{p.title}</Text>
+                      </TouchableOpacity>
+
+                      {/* Nút xóa ảnh */}
+                      <TouchableOpacity
+                        style={s.photoDeleteBtn}
+                        onPress={() => handleDeletePhoto(p.id)}
+                      >
+                        <MaterialIcons name="close" size={14} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
 
             {/* Checklist kiểm tra */}
             <View style={s.checklistCard}>
@@ -941,15 +1038,6 @@ export default function HandoverDetailScreen({
                 </TouchableOpacity>
               ))}
             </View>
-
-            {/* Mô tả hiện trạng */}
-            <Text style={[s.sectionSubtitle, { marginTop: 12 }]}>Mô tả ghi vào biên bản:</Text>
-            <TextInput
-              style={s.inputBox}
-              value={condition}
-              onChangeText={setCondition}
-              placeholder="Tình trạng kho..."
-            />
           </View>
         )}
 
@@ -1001,15 +1089,48 @@ export default function HandoverDetailScreen({
               </View>
             </View>
 
-            {/* Nút Xem Toàn Văn Hợp Đồng Điện Tử */}
+            {/* Nút Xem & Ký Hợp Đồng Điện Tử */}
             <TouchableOpacity
               style={s.viewContractFullBtn}
               onPress={() => setShowContractModal(true)}
               activeOpacity={0.85}
             >
-              <MaterialIcons name="visibility" size={18} color="#FFFFFF" />
-              <Text style={s.viewContractFullText}>Xem Toàn Văn Hợp Đồng Điện Tử</Text>
+              <MaterialIcons name={isContractSigned ? "visibility" : "draw"} size={18} color="#FFFFFF" />
+              <Text style={s.viewContractFullText}>
+                {isContractSigned ? "Xem Toàn Văn Hợp Đồng Đã Ký" : "Xem & Ký Hợp Đồng Điện Tử"}
+              </Text>
             </TouchableOpacity>
+
+            {/* Hiển thị chữ ký đã in vào hợp đồng nếu có */}
+            {contractSignature.length > 0 && (
+              <View style={s.contractSignatureCard}>
+                <View style={s.contractSigHeader}>
+                  <MaterialIcons name="verified" size={16} color="#059669" />
+                  <Text style={s.contractSigTitle}>Chữ ký điện tử của khách hàng:</Text>
+                  <View style={s.sigDoneBadge}>
+                    <Text style={s.sigDoneBadgeText}>Đã in vào HĐ</Text>
+                  </View>
+                </View>
+                <View style={s.contractSigDrawWrap}>
+                  <Svg width={130} height={50} viewBox="0 0 320 160">
+                    {contractSignature.map((p, i) => (
+                      <Path
+                        key={i}
+                        d={p}
+                        stroke="#004AC6"
+                        strokeWidth={3}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                  </Svg>
+                </View>
+                <Text style={s.contractSigCustomerName}>
+                  {appointment.customerName} • {appointment.phone}
+                </Text>
+              </View>
+            )}
 
             {/* Checkbox xác nhận ký hợp đồng */}
             <TouchableOpacity
@@ -1115,19 +1236,22 @@ export default function HandoverDetailScreen({
                   </View>
                 )}
 
-                {isPaid && (
-                  <View style={s.sepaySuccessBadge}>
-                    <MaterialIcons name="verified" size={18} color="#15803D" />
-                    <Text style={s.sepaySuccessText}>
-                      Hệ thống SePay đã tự động xác nhận thanh toán thành công!
-                    </Text>
+                {isPaid ? (
+                  <View style={s.paidSuccessBox}>
+                    <View style={s.paidCheckCircleOuter}>
+                      <View style={s.paidCheckCircleInner}>
+                        <MaterialIcons name="check" size={42} color="#FFFFFF" />
+                      </View>
+                    </View>
+                    <Text style={s.paidSuccessTitle}>Thanh toán thành công</Text>
+                    <Text style={s.paidSuccessAmount}>{formatVND(remainingAmount)}</Text>
+                  </View>
+                ) : (
+                  <View style={s.qrBox}>
+                    <Image source={{ uri: qrUrl }} style={s.qrImage} resizeMode="contain" />
+                    <Text style={s.qrHint}>Đưa màn hình cho khách quét bằng App Ngân hàng</Text>
                   </View>
                 )}
-
-                <View style={s.qrBox}>
-                  <Image source={{ uri: qrUrl }} style={s.qrImage} resizeMode="contain" />
-                  <Text style={s.qrHint}>Đưa màn hình cho khách quét bằng App Ngân hàng</Text>
-                </View>
 
                 {/* Thông tin chuyển khoản */}
                 <View style={s.bankDetailList}>
@@ -1187,41 +1311,6 @@ export default function HandoverDetailScreen({
                       </Text>
                     </TouchableOpacity>
                   </View>
-
-                  {/* Nút mô phỏng thanh toán SePay dành cho kiểm thử */}
-                  {!isPaid && (
-                    <TouchableOpacity
-                      style={s.simulateBtn}
-                      onPress={async () => {
-                        try {
-                          setIsSimulatingPayment(true);
-                          await simulatePaymentWebhookApi({
-                            gateway: bankCode,
-                            accountNumber: accountNumber,
-                            content: paymentContent,
-                            transferAmount: displayAmount,
-                          });
-                          setIsPaid(true);
-                          Alert.alert('Thành công', 'Đã mô phỏng thanh toán SePay thành công!');
-                        } catch {
-                          setIsPaid(true);
-                          Alert.alert('Đã xác nhận', 'Đã đánh dấu đã thu tiền thuê kho.');
-                        } finally {
-                          setIsSimulatingPayment(false);
-                        }
-                      }}
-                      disabled={isSimulatingPayment}
-                    >
-                      {isSimulatingPayment ? (
-                        <ActivityIndicator size="small" color="#D97706" />
-                      ) : (
-                        <MaterialIcons name="bolt" size={14} color="#D97706" />
-                      )}
-                      <Text style={s.simulateBtnText}>
-                        {isSimulatingPayment ? 'Đang kích hoạt SePay...' : 'Mô phỏng thanh toán SePay (Test)'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
               </View>
             )}
@@ -1266,13 +1355,7 @@ export default function HandoverDetailScreen({
 
             {/* Mã PIN 6 số */}
             <View style={s.pinSection}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={s.sectionSubtitle}>Mã PIN Smart Lock (6 số):</Text>
-                <TouchableOpacity onPress={handleGenerateRandomPin} style={s.genPinBtn}>
-                  <MaterialIcons name="refresh" size={14} color={T.primary} />
-                  <Text style={s.genPinText}>Sinh mã ngẫu nhiên</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={s.sectionSubtitle}>Mã PIN Smart Lock (6 số):</Text>
               <TextInput
                 style={s.pinInput}
                 value={accessPin}
@@ -1280,28 +1363,6 @@ export default function HandoverDetailScreen({
                 keyboardType="numeric"
                 maxLength={6}
                 placeholder="6 số PIN"
-              />
-            </View>
-
-            {/* Mã RFID phụ */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={s.sectionSubtitle}>Mã thẻ từ RFID phụ (tùy chọn):</Text>
-              <TextInput
-                style={s.inputBox}
-                value={customRfid}
-                onChangeText={setCustomRfid}
-                placeholder="Quẹt thẻ hoặc nhập mã RFID..."
-              />
-            </View>
-
-            {/* Ghi chú */}
-            <View style={{ marginTop: 12 }}>
-              <Text style={s.sectionSubtitle}>Ghi chú dặn dò:</Text>
-              <TextInput
-                style={s.inputBox}
-                value={customNotes}
-                onChangeText={setCustomNotes}
-                placeholder="VD: Đã hướng dẫn khách sử dụng ứng dụng mở khóa..."
               />
             </View>
 
@@ -1416,6 +1477,11 @@ export default function HandoverDetailScreen({
         onClose={() => setShowContractModal(false)}
         appointment={appointment}
         assignedUnitCode={selectedUnitCode}
+        initialSignature={contractSignature}
+        onSignContract={(paths) => {
+          setContractSignature(paths);
+          setIsContractSigned(true);
+        }}
       />
     </View>
   );
@@ -2266,4 +2332,197 @@ const s = StyleSheet.create({
     padding: 16,
   },
   lightboxImg: { width: '100%', height: '80%' },
+  // Style bổ sung cho CCCD Counter & Photo Picker
+  digitBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  digitBadgeValid: {
+    backgroundColor: '#DCFCE7',
+  },
+  digitBadgePending: {
+    backgroundColor: '#FEF3C7',
+  },
+  digitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  digitBadgeTextValid: {
+    color: '#15803D',
+  },
+  digitBadgeTextPending: {
+    color: '#B45309',
+  },
+
+  emptyPhotoPlaceholder: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#93C5FD',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  addPhotoBigIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyPhotoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: T.primary,
+    marginBottom: 4,
+  },
+  emptyPhotoDesc: {
+    fontSize: 12,
+    color: T.textMuted,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  emptyPhotoBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: T.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  emptyAddBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  addPhotoSquareCard: {
+    width: 105,
+    height: 95,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: T.primary,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  addSquareIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addSquareText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: T.primary,
+  },
+
+  // Styles hiển thị chữ ký hợp đồng tại Bước 3
+  contractSignatureCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  contractSigHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    marginBottom: 6,
+  },
+  contractSigTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  sigDoneBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sigDoneBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  contractSigDrawWrap: {
+    width: 130,
+    height: 50,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  contractSigCustomerName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+
+  // Styles hiển thị dấu tick khi thanh toán thành công
+  paidSuccessBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  paidCheckCircleOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  paidCheckCircleInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paidSuccessTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#065F46',
+    marginBottom: 4,
+  },
+  paidSuccessAmount: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#059669',
+  },
+
 });

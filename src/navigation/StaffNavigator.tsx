@@ -7,6 +7,8 @@ import HandoverSuccessScreen from '../screens/staff/HandoverSuccessScreen';
 import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
 import UnitMapScreen from '../screens/staff/UnitMapScreen';
 import StaffSettingsScreen from '../screens/staff/StaffSettingsScreen';
+import StaffReturnQueueScreen from '../screens/staff/StaffReturnQueueScreen';
+import StaffSupportScreen from '../screens/staff/StaffSupportScreen';
 import PrintReceiptModal from '../components/staff/PrintReceiptModal';
 import NotificationsModal from '../components/common/NotificationsModal';
 import { useNotifications } from '../hooks/useNotifications';
@@ -169,6 +171,15 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
           onOpenSidebar={() => setIsSidebarVisible(true)}
           facilityName={dynamicStaffUser.facilityName}
         />
+      ) : staffTab === 'checkout' ? (
+        /* TAB 3: Trả kho & Thanh lý hợp đồng */
+        <StaffReturnQueueScreen
+          facilityId={dynamicStaffUser.facilityId}
+          facilityName={dynamicStaffUser.facilityName}
+          onOpenSidebar={() => setIsSidebarVisible(true)}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+        />
       ) : staffTab === 'settings' ? (
         /* TAB 6: Cài đặt nhân viên */
         <StaffSettingsScreen
@@ -176,43 +187,28 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
           onOpenSidebar={() => setIsSidebarVisible(true)}
           onSwitchToCustomer={handleSwitchToCustomerAndLogout}
         />
+      ) : staffTab === 'support' ? (
+        /* TAB 5: Hỗ trợ & Xử lý sự cố tại chỗ (Tickets) */
+        <StaffSupportScreen
+          facilityId={dynamicStaffUser.facilityId}
+          facilityName={dynamicStaffUser.facilityName}
+          staffUser={dynamicStaffUser}
+          onOpenSidebar={() => setIsSidebarVisible(true)}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+        />
       ) : (
-        /* Các tab khác: Checkout / Support */
-        <View style={styles.otherTabContainer}>
-          <View style={styles.otherTabTopBar}>
-            <TouchableOpacity
-              style={styles.menuIconBtn}
-              onPress={() => setIsSidebarVisible(true)}
-            >
-              <Text style={{ color: '#fff', fontSize: 20 }}>☰</Text>
-            </TouchableOpacity>
-            <Text style={styles.otherTabTitle}>
-              {staffTab === 'checkout' ? '📤 TRẢ KHO / THANH LÝ' : '🛠️ HỖ TRỢ & SỰ CỐ'}
-            </Text>
-          </View>
-          <View style={styles.otherTabBody}>
-            <Text style={{ fontSize: 40, marginBottom: 10 }}>
-              {staffTab === 'checkout' ? '📤' : '🛠️'}
-            </Text>
-            <Text style={styles.otherTabHeadline}>
-              {staffTab === 'checkout'
-                ? 'Phân hệ Trả kho & Nghiệm thu hoàn cọc'
-                : 'Phân hệ Xử lý sự cố tại chỗ (Ticket)'}
-            </Text>
-            <Text style={styles.otherTabDesc}>
-              Tính năng đang kết nối với hệ thống Backend. Bạn có thể chuyển sang Hàng Đợi Nhận Kho (Luồng 2) để tiếp tục thao tác.
-            </Text>
-            <TouchableOpacity
-              style={styles.backToQueueActionBtn}
-              onPress={() => {
-                setStaffTab('queue');
-                setFlowStep('queue');
-              }}
-            >
-              <Text style={styles.backToQueueActionText}>Vào Hàng Đợi Nhận Kho (Luồng 2) →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        /* Fallback về Hàng đợi nhận kho */
+        <CheckInQueueScreen
+          appointments={appointments}
+          onStartHandover={handleStartHandover}
+          onRefresh={loadStaffData}
+          isRefreshing={isStaffLoading}
+          onOpenSidebar={() => setIsSidebarVisible(true)}
+          facilityName={dynamicStaffUser.facilityName}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+        />
       )}
 
       {/* Quick Print Modal khi in lại ở Trang C */}

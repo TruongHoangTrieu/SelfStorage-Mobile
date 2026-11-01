@@ -100,8 +100,9 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
               return 'unpaid';
             })(),
             rentalStatus: (() => {
+              if (backendStatus === 'COMPLETED') return 'paid';
               const paidRental = Array.isArray(item.payments)
-                ? item.payments.find((p: any) => p.paymentType === 'RENTAL' && p.status === 'PAID')
+                ? item.payments.find((p: any) => (p.paymentType === 'RENTAL' || p.paymentType === 'FULL') && p.status === 'PAID')
                 : undefined;
               return paidRental ? 'paid' : 'unpaid';
             })(),
