@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from "react";
 import {
   View,
@@ -45,6 +46,7 @@ export default function Step2ContractConfig({
   handleSignContract,
   onBack,
 }: Step2Props) {
+  const insets = useSafeAreaInsets();
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const minMoveInDate = new Date();
@@ -479,7 +481,7 @@ export default function Step2ContractConfig({
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
-      <View style={s.stickyBottomBar}>
+      <View style={[s.stickyBottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 20 }]}>
         <View style={s.stickyTopRow}>
           <View>
             <Text style={s.stickyLabel}>Tiền cọc thanh toán ngay</Text>

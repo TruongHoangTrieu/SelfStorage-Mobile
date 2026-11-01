@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React from "react";
 import {
   View,
@@ -37,6 +38,7 @@ export default function Step3VietQRPayment({
   handleCheckPaymentStatus,
   onBack,
 }: Step3Props) {
+  const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, position: "relative" }}>
       {/* Header */}
@@ -279,7 +281,7 @@ export default function Step3VietQRPayment({
       </ScrollView>
 
       {/* Sticky Bottom Bar for Step 3 */}
-      <View style={s.stickyBottomBar}>
+      <View style={[s.stickyBottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 20 }]}>
         <TouchableOpacity
           style={[s.signContractBtn, checkingPayment && { opacity: 0.7 }]}
           onPress={handleCheckPaymentStatus}

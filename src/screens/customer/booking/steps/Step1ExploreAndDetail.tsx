@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React from "react";
 import {
   View,
@@ -151,6 +152,7 @@ export default function Step1ExploreAndDetail({
   toggleFavorite,
   loading = false,
 }: Step1Props) {
+  const insets = useSafeAreaInsets();
   const facilityHeroImage = selectedFacilityPhoto;
   const [selectedDistrictFilter, setSelectedDistrictFilter] = React.useState<string>("all");
 
@@ -1077,7 +1079,7 @@ export default function Step1ExploreAndDetail({
 
       {/* Sticky Bottom Bar for Facility Detail */}
       {selectedFacility && (
-        <View style={s.detailStickyBottomBar}>
+        <View style={[s.detailStickyBottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : (Platform.OS === "ios" ? 24 : 12) }]}>
             <TouchableOpacity
               style={s.detailIconCircleAction}
               onPress={() => handleOpenDirections(selectedFacility?.address || "", selectedFacility?.name)}

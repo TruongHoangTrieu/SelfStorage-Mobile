@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -90,6 +91,7 @@ export default function HandoverDetailScreen({
   onCompleteHandover,
   isSubmitting = false,
 }: HandoverDetailScreenProps) {
+  const insets = useSafeAreaInsets();
   // Stepper State 1 -> 5 (giống hệt luồng Web)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
@@ -801,12 +803,7 @@ export default function HandoverDetailScreen({
                     s.digitBadge,
                     identityNumber.length === 12 ? s.digitBadgeValid : s.digitBadgePending
                   ]}>
-                    <Text style={[
-                      s.digitBadgeText,
-                      identityNumber.length === 12 ? s.digitBadgeTextValid : s.digitBadgeTextPending
-                    ]}>
-                      {identityNumber.length}/12 chữ số
-                    </Text>
+                   
                   </View>
                 )}
               </View>
@@ -1392,7 +1389,7 @@ export default function HandoverDetailScreen({
       </ScrollView>
 
       {/* ─── Bottom Navigation Bar ─── */}
-      <View style={s.bottomBar}>
+      <View style={[s.bottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 }]}>
         <TouchableOpacity style={s.navPrevBtn} onPress={handlePrev}>
           <MaterialIcons name="arrow-back" size={16} color={T.textMain} />
           <Text style={s.navPrevText}>{currentStep === 1 ? 'Hàng đợi' : 'Quay lại'}</Text>
