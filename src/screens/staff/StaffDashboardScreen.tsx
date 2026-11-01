@@ -40,11 +40,9 @@ export default function StaffDashboardScreen({
 
   const pending = appointments.filter((a) => a.status === 'pending').length;
   const arrived = appointments.filter((a) => a.status === 'arrived').length;
-  const inProgress = appointments.filter((a) => a.status === 'in_progress').length;
-  const completed = appointments.filter((a) => a.status === 'completed').length;
   const totalPending = pending + arrived;
 
-  // Lấy 2 chữ cái đầu làm avatar
+  // Tên nhân viên hiển thị (bỏ chữ "Xin chào", bỏ tên trụ sở bên cạnh)
   const displayName = currentUser?.fullName || 'Nhân Viên';
   const initials = displayName
     .trim()
@@ -54,10 +52,63 @@ export default function StaffDashboardScreen({
     .map((w) => w[0].toUpperCase())
     .join('') || 'NV';
 
-  // Định dạng thứ ngày hiện tại
-  const now = new Date();
-  const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-  const todayStr = `${dayNames[now.getDay()]}, ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+  // Danh sách 6 chức năng vận hành dạng lưới 3 cột (như ảnh mẫu)
+  const gridMenuItems = [
+    {
+      id: 'queue',
+      title: 'Nhận kho',
+      icon: 'assignment-turned-in' as const,
+      color: '#2563EB',
+      bgColor: '#EFF6FF',
+      badge: totalPending > 0 ? totalPending : 0,
+      onPress: () => onNavigateTab('queue'),
+    },
+    {
+      id: 'checkout',
+      title: 'Trả kho',
+      icon: 'exit-to-app' as const,
+      color: '#D97706',
+      bgColor: '#FEF3C7',
+      badge: 0,
+      onPress: () => onNavigateTab('checkout'),
+    },
+    {
+      id: 'facility',
+      title: 'Ô kho',
+      icon: 'grid-view' as const,
+      color: '#059669',
+      bgColor: '#ECFDF5',
+      badge: 0,
+      onPress: () => onNavigateTab('facility'),
+    },
+    {
+      id: 'support',
+      title: 'Sự cố',
+      icon: 'support-agent' as const,
+      color: '#7C3AED',
+      bgColor: '#F5F3FF',
+      badge: 0,
+      onPress: () => onNavigateTab('support'),
+    },
+    {
+      id: 'settings',
+      title: 'Giao ca',
+      icon: 'tune' as const,
+      color: '#475569',
+      bgColor: '#F1F5F9',
+      badge: 0,
+      onPress: () => onNavigateTab('settings'),
+    },
+    {
+      id: 'notifications',
+      title: 'Thông báo',
+      icon: 'notifications' as const,
+      color: '#E11D48',
+      bgColor: '#FFE4E6',
+      badge: unreadNotifCount,
+      onPress: () => onOpenNotifications && onOpenNotifications(),
+    },
+  ];
 
   return (
     <View style={styles.container}>
@@ -71,22 +122,16 @@ export default function StaffDashboardScreen({
         ]}
       >
         <View style={styles.headerTopRow}>
-          {/* Avatar & Thông tin nhân viên */}
+          {/* Avatar & Chỉ hiển thị Tên nhân viên (Bỏ "Xin chào", bỏ tên trụ sở bên cạnh) */}
           <View style={styles.userProfileWrap}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.userTextCol}>
-              <Text style={styles.greetingText}>Xin chào,</Text>
               <Text style={styles.userNameText} numberOfLines={1}>
                 {displayName}
               </Text>
-              <View style={styles.facilityRow}>
-                <MaterialIcons name="business" size={12} color="#BFDBFE" />
-                <Text style={styles.facilityText} numberOfLines={1}>
-                  {facilityName}
-                </Text>
-              </View>
+              <Text style={styles.roleSubText}>Nhân viên vận hành</Text>
             </View>
           </View>
 
@@ -121,10 +166,17 @@ export default function StaffDashboardScreen({
           </View>
         </View>
 
-        {/* Thanh ngày hôm nay */}
-        <View style={styles.dateBanner}>
-          <MaterialIcons name="event" size={14} color="#93C5FD" />
-          <Text style={styles.dateBannerText}>Ca trực hôm nay: {todayStr}</Text>
+        {/* ─── HIỂN THỊ ĐẦY ĐỦ TÊN TRỤ SỞ (KHÔNG BỊ CẮT CHỮ) ─── */}
+        <View style={styles.facilityFullCard}>
+          <View style={styles.facilityIconWrap}>
+            <MaterialIcons name="location-on" size={17} color="#1D4ED8" />
+          </View>
+          <View style={styles.facilityTextWrap}>
+            <Text style={styles.facilitySubLabel}>CƠ SỞ PHÂN CÔNG</Text>
+            <Text style={styles.facilityNameFullText}>
+              {facilityName}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -146,161 +198,38 @@ export default function StaffDashboardScreen({
           ) : undefined
         }
       >
-        {/* ─── Tóm tắt nhanh số liệu Ca Trực (KPI Cards) ─── */}
-        <Text style={styles.sectionTitle}>TỔNG QUAN CA TRỰC</Text>
-        <View style={styles.kpiGrid}>
-          <TouchableOpacity
-            style={[styles.kpiCard, { borderColor: '#DBEAFE' }]}
-            onPress={() => onNavigateTab('queue')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.kpiIconWrap, { backgroundColor: '#EFF6FF' }]}>
-              <MaterialIcons name="calendar-today" size={17} color="#1D4ED8" />
-            </View>
-            <Text style={[styles.kpiValue, { color: '#1D4ED8' }]}>{appointments.length}</Text>
-            <Text style={styles.kpiLabel}>Hẹn nhận hôm nay</Text>
-          </TouchableOpacity>
+        {/* ─── DẠNG LƯỚI 3 CỘT (GRID VIEW NHƯ MẪU) ─── */}
+        <View style={styles.gridContainer}>
+          {gridMenuItems.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.gridItem}
+              onPress={item.onPress}
+              activeOpacity={0.75}
+            >
+              {/* Badge số lượng ở góc trên bên phải của ô */}
+              {item.badge > 0 && (
+                <View style={styles.gridBadge}>
+                  <Text style={styles.gridBadgeText}>
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </Text>
+                </View>
+              )}
 
-          <TouchableOpacity
-            style={[styles.kpiCard, { borderColor: '#FEF3C7' }]}
-            onPress={() => onNavigateTab('queue')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.kpiIconWrap, { backgroundColor: '#FEF3C7' }]}>
-              <MaterialIcons name="pending-actions" size={17} color="#D97706" />
-            </View>
-            <Text style={[styles.kpiValue, { color: '#D97706' }]}>{totalPending}</Text>
-            <Text style={styles.kpiLabel}>Chờ nhận kho</Text>
-          </TouchableOpacity>
+              {/* Icon tròn nhạt màu */}
+              <View style={[styles.gridIconWrap, { backgroundColor: item.bgColor }]}>
+                <MaterialIcons name={item.icon} size={28} color={item.color} />
+              </View>
 
-          <View style={[styles.kpiCard, { borderColor: '#F3E8FF' }]}>
-            <View style={[styles.kpiIconWrap, { backgroundColor: '#F3E8FF' }]}>
-              <MaterialIcons name="autorenew" size={17} color="#9333EA" />
-            </View>
-            <Text style={[styles.kpiValue, { color: '#9333EA' }]}>{inProgress}</Text>
-            <Text style={styles.kpiLabel}>Đang làm thủ tục</Text>
-          </View>
-
-          <View style={[styles.kpiCard, { borderColor: '#DCFCE7' }]}>
-            <View style={[styles.kpiIconWrap, { backgroundColor: '#DCFCE7' }]}>
-              <MaterialIcons name="check-circle" size={17} color="#15803D" />
-            </View>
-            <Text style={[styles.kpiValue, { color: '#15803D' }]}>{completed}</Text>
-            <Text style={styles.kpiLabel}>Đã bàn giao xong</Text>
-          </View>
+              {/* Nhãn chức năng ngắn gọn ở dưới (không có mô tả) */}
+              <Text style={styles.gridItemTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* ─── CÁC NÚT ĐIỀU HƯỚNG CHÍNH (THAY THẾ TAB MENU) ─── */}
-        <Text style={styles.sectionTitle}>DANH MỤC CHỨC NĂNG VẬN HÀNH</Text>
-
-        <View style={styles.menuCardsContainer}>
-          {/* NÚT 1: HÀNG ĐỢI NHẬN KHO */}
-          <TouchableOpacity
-            style={[styles.actionCard, { borderLeftColor: '#1D4ED8' }]}
-            onPress={() => onNavigateTab('queue')}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.cardIconWrap, { backgroundColor: '#EFF6FF' }]}>
-              <MaterialIcons name="assignment-turned-in" size={26} color="#1D4ED8" />
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Hàng Đợi Nhận Kho</Text>
-                {totalPending > 0 && (
-                  <View style={styles.cardBadge}>
-                    <Text style={styles.cardBadgeText}>{totalPending} chờ</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.cardDesc}>
-                Lịch nhận kho theo ngày, đối chiếu CCCD, bàn giao ô kho & ký hợp đồng điện tử
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
-          </TouchableOpacity>
-
-          {/* NÚT 2: TRẢ KHO & THANH LÝ HỢP ĐỒNG */}
-          <TouchableOpacity
-            style={[styles.actionCard, { borderLeftColor: '#D97706' }]}
-            onPress={() => onNavigateTab('checkout')}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.cardIconWrap, { backgroundColor: '#FEF3C7' }]}>
-              <MaterialIcons name="exit-to-app" size={26} color="#D97706" />
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Trả Kho & Thanh Lý</Text>
-              </View>
-              <Text style={styles.cardDesc}>
-                Tiếp nhận trả kho, chụp ảnh hiện trạng đối chiếu, kiểm tra tài sản & kết thúc hợp đồng
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
-          </TouchableOpacity>
-
-          {/* NÚT 3: SƠ ĐỒ CƠ SỞ & TRẠNG THÁI Ô KHO */}
-          <TouchableOpacity
-            style={[styles.actionCard, { borderLeftColor: '#059669' }]}
-            onPress={() => onNavigateTab('facility')}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.cardIconWrap, { backgroundColor: '#ECFDF5' }]}>
-              <MaterialIcons name="grid-view" size={26} color="#059669" />
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Sơ Đồ Cơ Sở & Ô Kho</Text>
-              </View>
-              <Text style={styles.cardDesc}>
-                Xem trực quan sơ đồ mặt bằng, tình trạng ô kho trống, đang thuê hoặc đang bảo trì
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
-          </TouchableOpacity>
-
-          {/* NÚT 4: HỖ TRỢ & XỬ LÝ SỰ CỐ */}
-          <TouchableOpacity
-            style={[styles.actionCard, { borderLeftColor: '#7C3AED' }]}
-            onPress={() => onNavigateTab('support')}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.cardIconWrap, { backgroundColor: '#F5F3FF' }]}>
-              <MaterialIcons name="support-agent" size={26} color="#7C3AED" />
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Hỗ Trợ & Xử Lý Sự Cố</Text>
-              </View>
-              <Text style={styles.cardDesc}>
-                Tiếp nhận ticket sự cố từ khách hàng, xử lý mã PIN, ổ khóa và hỗ trợ kỹ thuật tại chỗ
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
-          </TouchableOpacity>
-
-          {/* NÚT 5: CÀI ĐẶT & GIAO CA TRỰC */}
-          <TouchableOpacity
-            style={[styles.actionCard, { borderLeftColor: '#475569' }]}
-            onPress={() => onNavigateTab('settings')}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.cardIconWrap, { backgroundColor: '#F1F5F9' }]}>
-              <MaterialIcons name="tune" size={26} color="#475569" />
-            </View>
-            <View style={styles.cardContent}>
-              <View style={styles.cardTitleRow}>
-                <Text style={styles.cardTitle}>Cài Đặt & Giao Ca Trực</Text>
-              </View>
-              <Text style={styles.cardDesc}>
-                Xem thông tin tài khoản nhân viên, cấu hình ứng dụng, tổng kết và bàn giao ca làm việc
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── Nút chuyển đổi chế độ & Đăng xuất ─── */}
+        {/* ─── Nút chuyển sang Khách hàng & Đăng xuất ─── */}
         <View style={styles.footerSection}>
           {onSwitchToCustomer && (
             <TouchableOpacity
@@ -382,27 +311,17 @@ const styles = StyleSheet.create({
   userTextCol: {
     flex: 1,
   },
-  greetingText: {
-    fontSize: 11.5,
-    color: '#BFDBFE',
-    fontWeight: '500',
-  },
   userNameText: {
-    fontSize: 16.5,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.3,
   },
-  facilityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  facilityText: {
-    fontSize: 11,
-    color: '#DBEAFE',
-    fontWeight: '600',
+  roleSubText: {
+    fontSize: 11.5,
+    color: '#BFDBFE',
+    fontWeight: '500',
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',
@@ -437,20 +356,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
-  dateBanner: {
+
+  // Thẻ hiển thị đầy đủ tên trụ sở
+  facilityFullCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
     marginTop: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  dateBannerText: {
-    fontSize: 11.5,
-    color: '#EFF6FF',
-    fontWeight: '600',
+  facilityIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  facilityTextWrap: {
+    flex: 1,
+  },
+  facilitySubLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  facilityNameFullText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    marginTop: 1,
+    lineHeight: 18,
   },
 
   scroll: {
@@ -458,123 +403,71 @@ const styles = StyleSheet.create({
   },
   scrollPadding: {
     padding: 16,
-    paddingTop: 14,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-    marginTop: 6,
+    paddingTop: 16,
   },
 
-  // KPI Grid
-  kpiGrid: {
+  // ─── DẠNG LƯỚI 3 CỘT (GRID LAYOUT NHƯ ẢNH MẪU) ───
+  gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 18,
+    justifyContent: 'space-between',
+    rowGap: 12,
+    marginBottom: 20,
   },
-  kpiCard: {
-    flex: 1,
-    minWidth: '45%',
+  gridItem: {
+    width: '31%',
+    aspectRatio: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    position: 'relative',
   },
-  kpiIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  gridIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
-  kpiValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  kpiLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-
-  // Menu cards list
-  menuCardsContainer: {
-    gap: 10,
-    marginBottom: 18,
-  },
-  actionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderLeftWidth: 4.5,
-    shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cardIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  cardContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  cardTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0F172A',
+  gridItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
     letterSpacing: -0.2,
   },
-  cardBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+  gridBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    zIndex: 10,
   },
-  cardBadgeText: {
-    fontSize: 10,
+  gridBadgeText: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  cardDesc: {
-    fontSize: 11.5,
-    color: '#64748B',
-    lineHeight: 16,
+    color: '#FFFFFF',
   },
 
   // Footer
   footerSection: {
-    marginTop: 6,
+    marginTop: 4,
     gap: 10,
   },
   switchModeCard: {
