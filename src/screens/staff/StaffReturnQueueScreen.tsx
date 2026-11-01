@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -56,6 +57,7 @@ export default function StaffReturnQueueScreen({
   const [backendSynced, setBackendSynced] = useState<boolean>(false);
 
   // Modal nghiệm thu trả kho & Đối chiếu hiện trạng
+  const insets = useSafeAreaInsets();
   const [selectedOrder, setSelectedOrder] = useState<StaffReturnOrder | null>(null);
   const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
   const [isViewingCompleted, setIsViewingCompleted] = useState<boolean>(false);
@@ -510,7 +512,7 @@ export default function StaffReturnQueueScreen({
   return (
     <View style={styles.container}>
       {/* ─── Top Bar Header ─── */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <View style={styles.topBarMainRow}>
           <TouchableOpacity style={styles.sidebarToggleBtn} onPress={onOpenSidebar}>
             <MaterialIcons name="menu" size={24} color="#1E293B" />

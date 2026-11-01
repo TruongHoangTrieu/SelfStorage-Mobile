@@ -21,6 +21,25 @@ export const INITIAL_AVAILABLE_UNITS: AvailableUnit[] = [
   { id: 'u-401', rawId: 21, code: 'CL-401', type: 'Kho Mát Bảo Quản (Climate)', size: '6.5m² (2.5 x 2.6m)', floor: 'Tầng 4', zone: 'Khu Mát', features: 'Nhiệt độ 23-25°C, độ ẩm < 55%', status: 'vacant' },
 ];
 
+function getMondayOfCurrentWeek(): Date {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now);
+  monday.setDate(diff);
+  return monday;
+}
+
+function getWeekDate(dayOffset: number): string {
+  const monday = getMondayOfCurrentWeek();
+  const target = new Date(monday);
+  target.setDate(monday.getDate() + dayOffset);
+  const dd = String(target.getDate()).padStart(2, '0');
+  const mm = String(target.getMonth() + 1).padStart(2, '0');
+  const yyyy = target.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
   {
     id: 'SS-BK-2026-8910',
@@ -43,7 +62,7 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     depositStatus: 'paid',
     depositAmount: '890.000 đ',
     monthlyRent: '890.000 đ/tháng',
-    startDate: '13/10/2026',
+    startDate: getWeekDate(0),
     durationMonths: 6,
     purpose: 'Lưu trữ tài liệu kế toán và hồ sơ doanh nghiệp cá nhân',
     specialNotes: 'Khách yêu cầu ô kho khô ráo, tránh ánh nắng trực tiếp.',
@@ -71,7 +90,7 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     depositStatus: 'paid',
     depositAmount: '1.690.000 đ',
     monthlyRent: '1.690.000 đ/tháng',
-    startDate: '13/10/2026',
+    startDate: getWeekDate(0),
     durationMonths: 12,
     purpose: 'Cất đồ đạc nội thất sửa nhà (sofa, bàn ghế, tủ lạnh)',
     specialNotes: 'Khách cần mượn xe đẩy 4 bánh lúc chuyển đồ vào kho.',
@@ -99,7 +118,7 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     depositStatus: 'paid',
     depositAmount: '2.890.000 đ',
     monthlyRent: '2.890.000 đ/tháng',
-    startDate: '13/10/2026',
+    startDate: getWeekDate(1),
     durationMonths: 12,
     purpose: 'Chứa pallet hàng phụ tùng linh kiện điện tử xuất khẩu',
     specialNotes: 'Yêu cầu cửa cuốn rộng xe nâng vào dễ dàng, xuất hóa đơn VAT.',
@@ -127,7 +146,7 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     depositStatus: 'paid',
     depositAmount: '1.990.000 đ',
     monthlyRent: '1.990.000 đ/tháng',
-    startDate: '13/10/2026',
+    startDate: getWeekDate(2),
     durationMonths: 3,
     purpose: 'Bảo quản mỹ phẩm organic và tinh dầu cao cấp',
     specialNotes: 'Cần kiểm tra nhiệt độ hiển thị trên cảm biến cửa trước khi nhận.',
@@ -156,7 +175,7 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     rentalStatus: 'paid',
     depositAmount: '890.000 đ',
     monthlyRent: '890.000 đ/tháng',
-    startDate: '13/10/2026',
+    startDate: getWeekDate(3),
     durationMonths: 1,
     purpose: 'Gửi tạm đồ đạc sinh viên về quê nghỉ hè',
     accessPin: '746193',
@@ -164,8 +183,118 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
     contractCode: 'CON-20261013-A8F19B',
     completedAt: '08:45 SA',
   },
+  {
+    id: 'SS-BK-2026-8915',
+    rawId: 106,
+    facilityId: 1,
+    facilityName: 'Trụ sở chính Thủ Đức',
+    customerName: 'Đặng Gia Huy',
+    phone: '0945 678 123',
+    email: 'giahuy.dang@gmail.com',
+    idCard: '079094002345',
+    slotTime: '02:00 CH',
+    timeCategory: 'afternoon',
+    unitType: 'Kho Gia đình Tiêu chuẩn',
+    unitTypeId: 2,
+    unitSize: '9.0m² (3.0m x 3.0m x 2.8m)',
+    unitId: 6,
+    assignedUnit: 'B-208',
+    preferredFloor: 'Tầng 2',
+    status: 'in_progress',
+    depositStatus: 'paid',
+    depositAmount: '1.690.000 đ',
+    monthlyRent: '1.690.000 đ/tháng',
+    startDate: getWeekDate(2),
+    durationMonths: 6,
+    purpose: 'Lưu kho máy móc thiết bị cầm tay',
+    specialNotes: 'Khách cần hỗ trợ ổ cắm sạc pin dự phòng.',
+    accessPin: '938210',
+    rfidCard: 'RFID-9925',
+  },
+  {
+    id: 'SS-BK-2026-8916',
+    rawId: 107,
+    facilityId: 1,
+    facilityName: 'Trụ sở chính Thủ Đức',
+    customerName: 'Phạm Đức Trọng',
+    phone: '0981 112 233',
+    email: 'trong.pham@gmail.com',
+    idCard: '079092003344',
+    slotTime: '10:30 SA',
+    timeCategory: 'morning',
+    unitType: 'Kho Doanh nghiệp Lớn',
+    unitTypeId: 3,
+    unitSize: '14.5m² (3.6m x 4.0m x 2.8m)',
+    unitId: 15,
+    assignedUnit: 'C-305',
+    preferredFloor: 'Tầng 3',
+    status: 'arrived',
+    depositStatus: 'paid',
+    depositAmount: '2.890.000 đ',
+    monthlyRent: '2.890.000 đ/tháng',
+    startDate: getWeekDate(3),
+    durationMonths: 12,
+    purpose: 'Chứa tài liệu chứng từ thuế định kỳ',
+    specialNotes: 'Cần hỗ trợ xuất hóa đơn điện tử cho công ty.',
+    accessPin: '472910',
+    rfidCard: 'RFID-9926',
+  },
+  {
+    id: 'SS-BK-2026-8917',
+    rawId: 108,
+    facilityId: 1,
+    facilityName: 'Trụ sở chính Thủ Đức',
+    customerName: 'Ngô Bảo Ngọc',
+    phone: '0918 882 211',
+    email: 'baongoc.ngo@gmail.com',
+    idCard: '079196008899',
+    slotTime: '09:00 SA',
+    timeCategory: 'morning',
+    unitType: 'Kho Cá nhân Mini',
+    unitTypeId: 1,
+    unitSize: '4.9m² (2.1m x 2.3m x 2.8m)',
+    unitId: 4,
+    assignedUnit: 'A-104',
+    preferredFloor: 'Tầng 1',
+    status: 'pending',
+    depositStatus: 'paid',
+    depositAmount: '890.000 đ',
+    monthlyRent: '890.000 đ/tháng',
+    startDate: getWeekDate(5),
+    durationMonths: 3,
+    purpose: 'Cất đồ cá nhân mùa hè',
+    accessPin: '638291',
+    rfidCard: 'RFID-9927',
+  },
+  {
+    id: 'SS-BK-2026-8918',
+    rawId: 109,
+    facilityId: 1,
+    facilityName: 'Trụ sở chính Thủ Đức',
+    customerName: 'Lý Quốc Toàn',
+    phone: '0909 333 444',
+    email: 'toan.ly@gmail.com',
+    idCard: '079089009988',
+    slotTime: '03:00 CH',
+    timeCategory: 'afternoon',
+    unitType: 'Kho Mát Bảo Quản (Climate)',
+    unitTypeId: 4,
+    unitSize: '6.5m² (2.5m x 2.6m x 2.8m)',
+    unitId: 22,
+    assignedUnit: 'CL-402',
+    preferredFloor: 'Tầng 4',
+    status: 'pending',
+    depositStatus: 'paid',
+    depositAmount: '1.990.000 đ',
+    monthlyRent: '1.990.000 đ/tháng',
+    startDate: getWeekDate(5),
+    durationMonths: 6,
+    purpose: 'Bảo quản dược liệu quý và tinh dầu',
+    specialNotes: 'Kiểm tra kỹ cảm biến độ ẩm trước khi bàn giao.',
+    accessPin: '849201',
+    rfidCard: 'RFID-9928',
+  },
 ];
-
 
 export const INITIAL_RETURN_ORDERS: StaffReturnOrder[] = [
   {

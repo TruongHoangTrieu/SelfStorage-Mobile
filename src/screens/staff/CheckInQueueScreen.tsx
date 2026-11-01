@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   TextInput,
   RefreshControl,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckInAppointment } from '../../types/handover';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -22,6 +24,73 @@ interface CheckInQueueScreenProps {
   unreadNotifCount?: number;
 }
 
+// 7 ngày trong tuần theo tiếng Việt
+const DAY_NAMES = ['CN', 'THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7'];
+
+// Lấy thứ Hai đầu tuần của 1 ngày bất kỳ
+function getMonday(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+// Lấy 7 ngày trong tuần bắt đầu từ thứ Hai
+function getWeekDays(monday: Date): Date[] {
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const next = new Date(monday);
+    next.setDate(monday.getDate() + i);
+    days.push(next);
+  }
+  return days;
+}
+
+// Format DD/MM
+function formatDayMonth(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+}
+
+// Format DD/MM/YYYY
+function formatDateKey(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+// Kiểm tra 2 ngày có cùng ngày/tháng/năm
+function isSameDay(d1: Date, d2: Date): boolean {
+  return (
+    d1.getDate() === d2.getDate() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getFullYear() === d2.getFullYear()
+  );
+}
+
+// Chuẩn hóa chuỗi ngày của lịch hẹn về DD/MM/YYYY
+function normalizeAppointmentDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  // Nếu là DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const [d, m, y] = trimmed.split('/');
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+  }
+  // Nếu là ISO YYYY-MM-DD
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return formatDateKey(parsed);
+    }
+  }
+  return trimmed;
+}
+
 export default function CheckInQueueScreen({
   appointments,
   onStartHandover,
@@ -32,276 +101,258 @@ export default function CheckInQueueScreen({
   onOpenNotifications,
   unreadNotifCount = 0,
 }: CheckInQueueScreenProps) {
+  const insets = useSafeAreaInsets();
+  const today = useMemo(() => new Date(), []);
+
+  // Tuần đang chọn (khởi tạo là thứ Hai của tuần hiện tại)
+  const [selectedMonday, setSelectedMonday] = useState<Date>(() => getMonday(new Date()));
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'slots' | 'kanban'>('slots');
+  const [filterMode, setFilterMode] = useState<'all' | 'pending'>('all');
+  const [viewLayout, setViewLayout] = useState<'calendar' | 'slots'>('calendar');
 
-  // Thống kê nhanh
-  const stats = useMemo(() => {
-    return {
-      total: appointments.length,
-      pending: appointments.filter((a) => a.status === 'pending' || a.status === 'confirmed').length,
-      arrived: appointments.filter((a) => a.status === 'arrived').length,
-      in_progress: appointments.filter((a) => a.status === 'in_progress').length,
-      completed: appointments.filter((a) => a.status === 'completed').length,
-      cancelled: appointments.filter((a) => a.status === 'cancelled' || a.status === 'expired').length,
-    };
-  }, [appointments]);
+  // Tính 7 ngày trong tuần đang xem
+  const weekDays = useMemo(() => getWeekDays(selectedMonday), [selectedMonday]);
+  const sunday = useMemo(() => weekDays[6], [weekDays]);
 
-  // Bộ lọc tìm kiếm
-  const filteredAppointments = useMemo(() => {
-    return appointments.filter((app) => {
-      const matchSearch =
-        searchQuery.trim() === '' ||
-        app.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.phone.includes(searchQuery) ||
-        app.assignedUnit.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.id.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchStatus =
-        selectedStatus === 'all'
-          ? true
-          : selectedStatus === 'cancelled'
-          ? app.status === 'cancelled' || app.status === 'expired'
-          : selectedStatus === 'pending'
-          ? app.status === 'pending' || app.status === 'confirmed'
-          : app.status === selectedStatus;
-
-      return matchSearch && matchStatus;
+  // Điều hướng tuần
+  const handlePrevWeek = () => {
+    setSelectedMonday((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() - 7);
+      return next;
     });
-  }, [appointments, searchQuery, selectedStatus]);
-
-  // Nhóm theo khung giờ
-  const groupedBySlot = useMemo(() => {
-    const groups: Record<string, CheckInAppointment[]> = {};
-    filteredAppointments.forEach((app) => {
-      const slot = app.slotTime || 'Khung giờ khác';
-      if (!groups[slot]) groups[slot] = [];
-      groups[slot].push(app);
-    });
-    return groups;
-  }, [filteredAppointments]);
-
-  // Helper render Badge (Tối giản, chuyên nghiệp, không dùng emoji thô)
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#D97706' }]} />
-            <Text style={[styles.badgeText, { color: '#B45309' }]}>Chờ xử lý</Text>
-          </View>
-        );
-      case 'confirmed':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#0284C7' }]} />
-            <Text style={[styles.badgeText, { color: '#0369A1' }]}>Đã xác nhận</Text>
-          </View>
-        );
-      case 'arrived':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#2563EB' }]} />
-            <Text style={[styles.badgeText, { color: '#1D4ED8' }]}>Đã đến quầy</Text>
-          </View>
-        );
-      case 'in_progress':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#9333EA' }]} />
-            <Text style={[styles.badgeText, { color: '#7E22CE' }]}>Đang xử lý</Text>
-          </View>
-        );
-      case 'completed':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#16A34A' }]} />
-            <Text style={[styles.badgeText, { color: '#15803D' }]}>Đã bàn giao</Text>
-          </View>
-        );
-      case 'cancelled':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#DC2626' }]} />
-            <Text style={[styles.badgeText, { color: '#DC2626' }]}>Đã hủy</Text>
-          </View>
-        );
-      case 'expired':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#64748B' }]} />
-            <Text style={[styles.badgeText, { color: '#64748B' }]}>Hết hạn</Text>
-          </View>
-        );
-      default:
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
-            <Text style={[styles.badgeText, { color: '#475569' }]}>{status}</Text>
-          </View>
-        );
-    }
   };
 
-  // Card nhận kho theo thiết kế widget: thanh màu bên trái, nhãn ngày, tiêu đề lớn, pill giờ + tiến độ chấm
-  const renderAppointmentCard = (app: CheckInAppointment) => {
-    const now = new Date();
-    const todayStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-    const dayLabel = app.startDate === todayStr ? 'TODAY' : (app.startDate ? `NGÀY ${app.startDate}` : 'TODAY');
+  const handleNextWeek = () => {
+    setSelectedMonday((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + 7);
+      return next;
+    });
+  };
 
-    // Tách giờ '1:00' và 'PM' (hoặc '09:00' và 'SA')
-    const timeParts = (app.slotTime || '1:00 PM').trim().split(/\s+/);
-    const timeMain = timeParts[0] || '1:00';
-    const timePeriod = timeParts[1] || 'PM';
+  const handleGoToday = () => {
+    setSelectedMonday(getMonday(new Date()));
+  };
 
-    // Cỡ kích thước kho
-    const unitSizeLabel = app.unitSize ? app.unitSize.split(' ')[0] : (app.unitType ? app.unitType.replace('Kho ', '') : 'Tiêu chuẩn');
+  // Lọc danh sách lịch hẹn theo tìm kiếm và chế độ lọc
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter((app) => {
+      const query = searchQuery.trim().toLowerCase();
+      const matchSearch =
+        !query ||
+        app.customerName.toLowerCase().includes(query) ||
+        app.phone.includes(query) ||
+        app.assignedUnit.toLowerCase().includes(query) ||
+        app.id.toLowerCase().includes(query);
 
-    return (
-      <TouchableOpacity
-        key={app.id}
-        style={styles.wCard}
-        onPress={() => onStartHandover(app)}
-        activeOpacity={0.85}
-      >
-        {/* Thanh accent đứng bên trái: vạch màu ấm/vàng hổ phách như mẫu */}
-        <View style={styles.wAccent} />
+      const matchFilter =
+        filterMode === 'all'
+          ? true
+          : app.status === 'pending' || app.status === 'arrived' || app.status === 'in_progress';
 
-        <View style={styles.wBody}>
-          {/* Hàng 1: TODAY (Trái) <───────────────────────────> 1:00 PM (Phải) */}
-          <View style={styles.wRow1}>
-            <Text style={styles.wDayLabel}>{dayLabel}</Text>
-            <View style={styles.wTimeRow}>
-              <Text style={styles.wTimeMain}>{timeMain}</Text>
-              <Text style={styles.wTimePeriod}>{timePeriod}</Text>
-            </View>
-          </View>
+      return matchSearch && matchFilter;
+    });
+  }, [appointments, searchQuery, filterMode]);
 
-          {/* Hàng 2: TÊN KHÁCH (LÊN DÒNG TRÊN) <───────────────> NÚT NHẬN KHO (RÚT GỌN) */}
-          <View style={styles.wRow2}>
-            <Text style={styles.wCustomerName} numberOfLines={1}>
-              {app.customerName}
-            </Text>
+  // Nhóm lịch hẹn theo từng ngày trong tuần đang chọn
+  const appointmentsByDay = useMemo(() => {
+    const map = new Map<string, CheckInAppointment[]>();
 
-            <View
-              style={[
-                styles.wActionButton,
-                app.status === 'completed'
-                  ? styles.wActionButtonDone
-                  : app.status === 'in_progress'
-                  ? styles.wActionButtonInProgress
-                  : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.wActionText,
-                  app.status === 'completed' && styles.wActionTextDone,
-                ]}
-              >
-                {app.status === 'completed'
-                  ? 'Đã bàn giao'
-                  : app.status === 'in_progress'
-                  ? 'Tiếp tục'
-                  : 'Nhận kho'}
-              </Text>
-            </View>
-          </View>
+    weekDays.forEach((d) => {
+      map.set(formatDateKey(d), []);
+    });
 
-          {/* Hàng 3: TÊN KHO (XUỐNG DƯỚI) <─────────────────────> SĐT TO RÕ (KHÔNG ICON) */}
-          <View style={styles.wRow3}>
-            <View style={styles.wTitleRow}>
-              <Text style={styles.wTitle} numberOfLines={1}>
-                {app.assignedUnit || 'A-101'}
-              </Text>
-              <Text style={styles.wTitleSub} numberOfLines={1}>
-                {unitSizeLabel}
-              </Text>
-            </View>
+    filteredAppointments.forEach((app) => {
+      const dateKey = normalizeAppointmentDate(app.startDate);
+      if (map.has(dateKey)) {
+        map.get(dateKey)!.push(app);
+      }
+    });
 
-            <Text style={styles.wBigPhone}>
-              {app.phone}
-            </Text>
-          </View>
+    return map;
+  }, [weekDays, filteredAppointments]);
 
-          {/* Ghi chú nhanh (nếu có) */}
-          {app.specialNotes ? (
-            <View style={styles.wNoteBox}>
-              <MaterialIcons name="notes" size={11} color="#D97706" />
-              <Text style={styles.wNoteText} numberOfLines={1}>
-                {app.specialNotes}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </TouchableOpacity>
-    );
+  // Định dạng màu sắc thẻ theo trạng thái (như ảnh mẫu: xanh dương nhẹ, vàng hổ phách, xanh lá)
+  const getCardStyle = (status: string) => {
+    switch (status) {
+      case 'in_progress':
+        return {
+          bg: '#FEF3C7',
+          border: '#FDE68A',
+          badgeText: 'Đang bàn giao',
+          badgeColor: '#B45309',
+        };
+      case 'completed':
+        return {
+          bg: '#F0FDF4',
+          border: '#BBF7D0',
+          badgeText: 'Đã nhận kho',
+          badgeColor: '#15803D',
+        };
+      case 'arrived':
+        return {
+          bg: '#E0F2FE',
+          border: '#BAE6FD',
+          badgeText: 'Đã đến cơ sở',
+          badgeColor: '#0369A1',
+        };
+      case 'pending':
+      default:
+        return {
+          bg: '#EFF6FF',
+          border: '#BFDBFE',
+          badgeText: 'Chờ nhận',
+          badgeColor: '#1D4ED8',
+        };
+    }
   };
 
   return (
     <View style={styles.container}>
-      {/* ─── Top Bar Header (Gọn gàng, loại bỏ các thanh phụ cồng kềnh) ─── */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarMainRow}>
+      {/* ─── Top Bar Header (Màu xanh lá đậm chuẩn nhận diện như ảnh mẫu) ─── */}
+      <View
+        style={[
+          styles.greenHeader,
+          {
+            paddingTop: insets.top > 0 ? insets.top + 6 : 14,
+          },
+        ]}
+      >
+        <View style={styles.headerRow}>
           <TouchableOpacity
-            style={styles.sidebarToggleBtn}
+            style={styles.headerIconButton}
             onPress={onOpenSidebar}
             activeOpacity={0.7}
           >
-            <MaterialIcons name="menu" size={22} color="#0F172A" />
+            <MaterialIcons name="menu" size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <View style={styles.topBarTitleCol}>
-            <Text style={styles.topBarFacility} numberOfLines={1}>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitleText}>Lịch nhận kho</Text>
+            <Text style={styles.headerSubFacility} numberOfLines={1}>
               {facilityName}
-            </Text>
-            <Text style={styles.topBarTitle} numberOfLines={1}>
-              Hàng đợi nhận kho
             </Text>
           </View>
 
-          {/* Nút chuyển đổi giao diện Khung Giờ / Kanban ngay trên TopBar */}
-          <TouchableOpacity
-            style={styles.viewModeTopBtn}
-            onPress={() => setViewMode(viewMode === 'slots' ? 'kanban' : 'slots')}
-            activeOpacity={0.75}
-          >
-            <MaterialIcons
-              name={viewMode === 'slots' ? 'view-kanban' : 'schedule'}
-              size={18}
-              color="#1D4ED8"
-            />
-            <Text style={styles.viewModeTopText}>
-              {viewMode === 'slots' ? 'Kanban' : 'Khung giờ'}
-            </Text>
-          </TouchableOpacity>
-
-          {onOpenNotifications && (
+          <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={onOpenNotifications}
+              style={styles.headerIconButton}
+              onPress={() => setViewLayout(viewLayout === 'calendar' ? 'slots' : 'calendar')}
               activeOpacity={0.7}
             >
-              <MaterialIcons name="notifications-none" size={20} color="#0F172A" />
-              {unreadNotifCount > 0 ? (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>
-                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                  </Text>
-                </View>
-              ) : null}
+              <MaterialIcons
+                name={viewLayout === 'calendar' ? 'view-agenda' : 'calendar-today'}
+                size={22}
+                color="#FFFFFF"
+              />
             </TouchableOpacity>
-          )}
+
+            {onOpenNotifications && (
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={onOpenNotifications}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="notifications-none" size={24} color="#FFFFFF" />
+                {unreadNotifCount > 0 && (
+                  <View style={styles.headerBadge}>
+                    <Text style={styles.headerBadgeText}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* Thanh Tìm Kiếm Tối Giản */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBox}>
-          <MaterialIcons name="search" size={18} color="#64748B" />
+      {/* ─── Thanh điều hướng Tuần & Tháng (Giống 100% mẫu người dùng gửi) ─── */}
+      <View style={styles.navBarCard}>
+        <View style={styles.navBarInner}>
+          {/* Nút Hôm nay */}
+          <TouchableOpacity
+            style={styles.todayButton}
+            onPress={handleGoToday}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.todayButtonText}>Hôm nay</Text>
+          </TouchableOpacity>
+
+          {/* Mũi tên tiến / lùi tuần */}
+          <View style={styles.arrowGroup}>
+            <TouchableOpacity
+              style={styles.arrowBtn}
+              onPress={handlePrevWeek}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="chevron-left" size={22} color="#475569" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.arrowBtn}
+              onPress={handleNextWeek}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="chevron-right" size={22} color="#475569" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Tiêu đề Tháng & Dải ngày của tuần */}
+          <View style={styles.monthCenterCol}>
+            <Text style={styles.monthTitle}>
+              Tháng {selectedMonday.getMonth() + 1} {selectedMonday.getFullYear()}
+            </Text>
+            <Text style={styles.dateRangeSubtitle}>
+              ({formatDayMonth(selectedMonday)} - {formatDayMonth(sunday)})
+            </Text>
+          </View>
+
+          {/* Nút lọc Tất cả / Chờ nhận */}
+          <View style={styles.filterToggleWrap}>
+            <TouchableOpacity
+              style={[
+                styles.filterToggleBtn,
+                filterMode === 'all' && styles.filterToggleBtnActive,
+              ]}
+              onPress={() => setFilterMode('all')}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.filterToggleText,
+                  filterMode === 'all' && styles.filterToggleTextActive,
+                ]}
+              >
+                Tất cả
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterToggleBtn,
+                filterMode === 'pending' && styles.filterToggleBtnActive,
+              ]}
+              onPress={() => setFilterMode('pending')}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.filterToggleText,
+                  filterMode === 'pending' && styles.filterToggleTextActive,
+                ]}
+              >
+                Chờ nhận
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Thanh tìm kiếm nhanh */}
+        <View style={styles.searchRow}>
+          <MaterialIcons name="search" size={17} color="#64748B" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm tên khách, SĐT, số ô kho..."
+            placeholder="Tìm theo tên khách, SĐT hoặc số ô kho..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -314,120 +365,176 @@ export default function CheckInQueueScreen({
         </View>
       </View>
 
-      {/* Thống kê / Bộ lọc trạng thái tinh gọn */}
-      <View style={styles.filterBarWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statContainer}>
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'all' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('all')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'all' && styles.statLabelActive]}>
-              Tất cả ({stats.total})
-            </Text>
-          </TouchableOpacity>
+      {/* ─── DẠNG 1: LỊCH THEO NGÀY (CHÍNH - GIỐNG ẢNH MẪU) ─── */}
+      {viewLayout === 'calendar' ? (
+        <ScrollView
+          style={styles.calendarScrollView}
+          contentContainerStyle={[
+            styles.calendarContent,
+            { paddingBottom: insets.bottom > 0 ? insets.bottom + 24 : 36 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#16A34A"
+              colors={['#16A34A']}
+            />
+          }
+        >
+          {weekDays.map((dayDate) => {
+            const dateKey = formatDateKey(dayDate);
+            const dayAppointments = appointmentsByDay.get(dateKey) || [];
+            const isTodayDay = isSameDay(dayDate, today);
+            const dayIndex = dayDate.getDay();
+            const dayNameLabel = DAY_NAMES[dayIndex];
+            const dayNumberStr = String(dayDate.getDate());
 
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'pending' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('pending')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'pending' && styles.statLabelActive]}>
-              Chờ ({stats.pending})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'arrived' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('arrived')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'arrived' && styles.statLabelActive]}>
-              Đã đến ({stats.arrived})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'in_progress' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('in_progress')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'in_progress' && styles.statLabelActive]}>
-              Đang xử lý ({stats.in_progress})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'completed' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('completed')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'completed' && styles.statLabelActive]}>
-              Hoàn tất ({stats.completed})
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* Danh Sách Hàng Đợi */}
-      <ScrollView
-        style={styles.listScroll}
-        contentContainerStyle={styles.listPadding}
-        refreshControl={
-          onRefresh ? <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} /> : undefined
-        }
-      >
-        {filteredAppointments.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <MaterialIcons name="inbox" size={40} color="#CBD5E1" style={{ marginBottom: 6 }} />
-            <Text style={styles.emptyTitle}>Không có đơn hẹn</Text>
-            <Text style={styles.emptyDesc}>
-              {searchQuery ? 'Thử tìm với từ khóa khác' : 'Hôm nay chưa có đơn hẹn nhận kho mới.'}
-            </Text>
-          </View>
-        ) : viewMode === 'slots' ? (
-          // CHẾ ĐỘ XEM THEO KHUNG GIỜ
-          Object.entries(groupedBySlot).map(([slot, items]) => (
-            <View key={slot} style={styles.slotGroup}>
-              <View style={styles.slotHeader}>
-                <View style={styles.slotTimeBadge}>
-                  <MaterialIcons name="schedule" size={12} color="#64748B" />
-                  <Text style={styles.slotTimeText}>{slot}</Text>
+            return (
+              <View key={dateKey} style={styles.dayTimelineRow}>
+                {/* Cột trái: Thứ & Số ngày (Hôm nay có vòng tròn xanh lá) */}
+                <View style={styles.dayLeftCol}>
+                  <Text style={styles.dayOfWeekText}>{dayNameLabel}</Text>
+                  {isTodayDay ? (
+                    <View style={styles.todayCircle}>
+                      <Text style={styles.todayCircleText}>{dayNumberStr}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.normalDayNumber}>{dayNumberStr}</Text>
+                  )}
                 </View>
-                <Text style={styles.slotCountText}>{items.length} khách</Text>
+
+                {/* Cột phải: Danh sách đơn nhận kho trong ngày hoặc "Trống lịch hẹn" */}
+                <View style={styles.dayRightCol}>
+                  {dayAppointments.length === 0 ? (
+                    <View style={styles.emptyDayWrap}>
+                      <Text style={styles.emptyDayText}>Trống lịch hẹn</Text>
+                    </View>
+                  ) : (
+                    dayAppointments.map((app) => {
+                      const cardVisual = getCardStyle(app.status);
+                      return (
+                        <TouchableOpacity
+                          key={app.id}
+                          style={[
+                            styles.appointmentCard,
+                            {
+                              backgroundColor: cardVisual.bg,
+                              borderColor: cardVisual.border,
+                            },
+                          ]}
+                          onPress={() => onStartHandover(app)}
+                          activeOpacity={0.85}
+                        >
+                          {/* Dòng 1: Tiêu đề ô kho + Tên khách + Giờ hẹn */}
+                          <View style={styles.cardHeaderRow}>
+                            <Text style={styles.cardUnitText} numberOfLines={1}>
+                              1x Kho #{app.assignedUnit || 'A-101'} - {app.customerName}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.cardStatusTag,
+                                { color: cardVisual.badgeColor },
+                              ]}
+                            >
+                              {app.slotTime || '09:00'}
+                            </Text>
+                          </View>
+
+                          {/* Dòng 2: Kích thước kho & SĐT */}
+                          <Text style={styles.cardDetailText} numberOfLines={1}>
+                            {app.unitSize || app.unitType} • SĐT: {app.phone}
+                          </Text>
+
+                          {/* Dòng 3 (nếu có ghi chú) */}
+                          {app.specialNotes ? (
+                            <View style={styles.cardNoteRow}>
+                              <MaterialIcons name="notes" size={12} color="#D97706" />
+                              <Text style={styles.cardNoteText} numberOfLines={1}>
+                                {app.specialNotes}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
               </View>
-
-              {items.map((app) => renderAppointmentCard(app))}
+            );
+          })}
+        </ScrollView>
+      ) : (
+        /* ─── DẠNG 2: XEM THEO KHUNG GIỜ (FALLBACK) ─── */
+        <ScrollView
+          style={styles.calendarScrollView}
+          contentContainerStyle={[
+            styles.calendarContent,
+            { padding: 16, paddingBottom: insets.bottom > 0 ? insets.bottom + 24 : 36 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#16A34A"
+              colors={['#16A34A']}
+            />
+          }
+        >
+          {filteredAppointments.length === 0 ? (
+            <View style={styles.emptyListWrap}>
+              <MaterialIcons name="event-busy" size={40} color="#94A3B8" />
+              <Text style={styles.emptyListTitle}>Không có lịch hẹn nhận kho</Text>
+              <Text style={styles.emptyListSub}>
+                Chưa có đơn bàn giao nào khớp với bộ lọc tìm kiếm.
+              </Text>
             </View>
-          ))
-        ) : (
-          // CHẾ ĐỘ KANBAN THEO CỘT
-          <View style={styles.kanbanContainer}>
-            {['pending', 'arrived', 'in_progress', 'completed'].map((colStatus) => {
-              const colItems = filteredAppointments.filter((a) => {
-                if (colStatus === 'pending') return a.status === 'pending' || a.status === 'confirmed';
-                return a.status === colStatus;
-              });
-              const colTitle =
-                colStatus === 'pending' ? 'Chờ xử lý' :
-                colStatus === 'arrived' ? 'Đã đến quầy' :
-                colStatus === 'in_progress' ? 'Đang xử lý' : 'Đã bàn giao';
-
+          ) : (
+            filteredAppointments.map((app) => {
+              const cardVisual = getCardStyle(app.status);
               return (
-                <View key={colStatus} style={styles.kanbanCol}>
-                  <View style={styles.kanbanColHeader}>
-                    <Text style={styles.kanbanColTitle}>{colTitle}</Text>
-                    <View style={styles.kanbanColCount}>
-                      <Text style={styles.kanbanColCountText}>{colItems.length}</Text>
+                <TouchableOpacity
+                  key={app.id}
+                  style={[
+                    styles.slotModeCard,
+                    {
+                      backgroundColor: cardVisual.bg,
+                      borderColor: cardVisual.border,
+                    },
+                  ]}
+                  onPress={() => onStartHandover(app)}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={styles.cardUnitText} numberOfLines={1}>
+                      #{app.assignedUnit} • {app.customerName}
+                    </Text>
+                    <View style={styles.timeBadgeSlot}>
+                      <MaterialIcons name="schedule" size={12} color={cardVisual.badgeColor} />
+                      <Text style={[styles.timeBadgeSlotText, { color: cardVisual.badgeColor }]}>
+                        {app.slotTime || '09:00'}
+                      </Text>
                     </View>
                   </View>
 
-                  {colItems.length === 0 ? (
-                    <Text style={styles.kanbanColEmpty}>Không có đơn nào</Text>
-                  ) : (
-                    colItems.map((app) => renderAppointmentCard(app))
-                  )}
-                </View>
+                  <Text style={styles.cardDetailText}>
+                    Ngày bắt đầu: {app.startDate} • {app.unitSize || app.unitType}
+                  </Text>
+                  <Text style={styles.cardDetailText}>SĐT: {app.phone}</Text>
+
+                  <View style={styles.slotBtnRow}>
+                    <Text style={[styles.slotActionBtn, { color: cardVisual.badgeColor }]}>
+                      Bắt đầu bàn giao →
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               );
-            })}
-          </View>
-        )}
-      </ScrollView>
+            })
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -437,78 +544,53 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  topBar: {
-    backgroundColor: '#FFFFFF',
+
+  // Header xanh lá theo mẫu
+  greenHeader: {
+    backgroundColor: '#16A34A',
     paddingHorizontal: 16,
-    paddingTop: 12,
     paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
   },
-  topBarMainRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
   },
-  sidebarToggleBtn: {
+  headerIconButton: {
     width: 38,
     height: 38,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topBarTitleCol: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  topBarFacility: {
-    color: '#1D4ED8',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  topBarTitle: {
-    color: '#0F172A',
-    fontSize: 17,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-    marginTop: 1,
-  },
-  viewModeTopBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  viewModeTopText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  notifBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     position: 'relative',
   },
-  notifBadge: {
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  headerSubFacility: {
+    fontSize: 11,
+    color: '#DCFCE7',
+    marginTop: 1,
+    fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerBadge: {
     position: 'absolute',
-    top: -3,
-    right: -3,
+    top: -2,
+    right: -2,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -519,485 +601,255 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  notifBadgeText: {
+  headerBadgeText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
   },
-  searchSection: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    backgroundColor: '#FFFFFF',
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 38,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  filterBarWrapper: {
+
+  // Thanh điều hướng tuần
+  navBarCard: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  statContainer: {
-    paddingHorizontal: 16,
-    gap: 6,
+  navBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  statPill: {
+  todayButton: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingVertical: 6,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
   },
-  statPillActive: {
-    borderColor: '#1D4ED8',
-    backgroundColor: '#1D4ED8',
-  },
-  statLabel: {
-    fontSize: 11,
+  todayButtonText: {
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#334155',
   },
-  statLabelActive: {
-    color: '#FFFFFF',
-  },
-  listScroll: {
-    flex: 1,
-  },
-  listPadding: {
-    padding: 14,
-    paddingBottom: 40,
-  },
-  slotGroup: {
-    marginBottom: 16,
-  },
-  slotHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 2,
-  },
-  slotTimeBadge: {
+  arrowGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginLeft: 4,
   },
-  slotTimeText: {
-    color: '#475569',
-    fontSize: 12,
-    fontWeight: '800',
+  arrowBtn: {
+    padding: 3,
   },
-  slotCountText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  appointmentCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  wCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingTop: 13,
-    paddingBottom: 12,
-    paddingLeft: 13,
-    paddingRight: 15,
-    marginBottom: 11,
-    shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  wAccent: {
-    width: 3.5,
-    borderRadius: 2,
-    backgroundColor: '#E8A766',
-    marginRight: 11,
-    alignSelf: 'stretch',
-    marginVertical: 1,
-  },
-  wBody: {
+  monthCenterCol: {
     flex: 1,
-    minWidth: 0,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  wRow1: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-  },
-  wDayLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-  },
-  wTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  wTimeMain: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#18181B',
-    letterSpacing: -0.5,
-  },
-  wTimePeriod: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#71717A',
-    marginLeft: 3,
-  },
-  wRow2: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  wCustomerName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#18181B',
-    letterSpacing: -0.3,
-    flex: 1,
-    marginRight: 8,
-  },
-  wActionButton: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: 8,
-  },
-  wActionButtonInProgress: {
-    backgroundColor: '#7C3AED',
-  },
-  wActionButtonDone: {
-    backgroundColor: '#DCFCE7',
-  },
-  wActionText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  wActionTextDone: {
-    color: '#15803D',
-  },
-  wRow3: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-  wTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-    flex: 1,
-    marginRight: 8,
-  },
-  wTitle: {
-    fontSize: 15.5,
-    fontWeight: '700',
-    color: '#334155',
-    letterSpacing: -0.2,
-  },
-  wTitleSub: {
-    fontSize: 12.5,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  wBigPhone: {
-    fontSize: 16.5,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: 0.3,
-  },
-  wNoteBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FEF3C7',
-    marginTop: 6,
-  },
-  wNoteText: {
-    fontSize: 11,
-    color: '#92400E',
-    flex: 1,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  slotBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  slotBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  unitRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  unitNumberText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#1D4ED8',
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  badgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  badgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  cardCustomerSection: {
-    marginBottom: 8,
-  },
-  customerName: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-  },
-  customerPhoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  customerPhoneText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  unitInfoBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    marginBottom: 8,
-  },
-  unitTypeBoxText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#334155',
-    flex: 1,
-    marginRight: 8,
-  },
-  paymentStatusGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  paymentStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  paymentDot: {
-    fontSize: 10,
-    color: '#CBD5E1',
-  },
-  noteBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FEF3C7',
-    marginBottom: 8,
-  },
-  noteText: {
-    fontSize: 11,
-    color: '#92400E',
-    flex: 1,
-  },
-  cardActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F8FAFC',
-    paddingTop: 8,
-  },
-  startHandoverBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  startHandoverBtnInProgress: {
-    backgroundColor: '#7E22CE',
-  },
-  startHandoverText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 11.5,
-  },
-  completedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  completedTagText: {
-    color: '#15803D',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cancelledTag: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  cancelledTagText: {
-    color: '#DC2626',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  expiredTag: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  expiredTagText: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  kanbanContainer: {
-    gap: 12,
-  },
-  kanbanCol: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  kanbanColHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  kanbanColTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  kanbanColCount: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  kanbanColCountText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#475569',
-  },
-  kanbanColEmpty: {
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-    paddingVertical: 14,
-  },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 28,
-    alignItems: 'center',
-    marginTop: 30,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  emptyTitle: {
+  monthTitle: {
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
   },
-  emptyDesc: {
-    fontSize: 11.5,
+  dateRangeSubtitle: {
+    fontSize: 10.5,
     color: '#64748B',
-    textAlign: 'center',
-    marginTop: 2,
+    marginTop: 1,
+  },
+  filterToggleWrap: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 2,
+  },
+  filterToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  filterToggleBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  filterToggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  filterToggleTextActive: {
+    color: '#16A34A',
+    fontWeight: '800',
+  },
+
+  // Thanh tìm kiếm
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 36,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+
+  // Danh sách lịch theo ngày (Daily timeline)
+  calendarScrollView: {
+    flex: 1,
+  },
+  calendarContent: {
+    paddingTop: 4,
+  },
+  dayTimelineRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 1,
+  },
+  dayLeftCol: {
+    width: 54,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  dayOfWeekText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  normalDayNumber: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  todayCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayCircleText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Cột phải: danh sách đơn hẹn
+  dayRightCol: {
+    flex: 1,
+    paddingLeft: 8,
+  },
+  emptyDayWrap: {
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  emptyDayText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  appointmentCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 7,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  cardUnitText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  cardStatusTag: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cardDetailText: {
+    fontSize: 11.5,
+    color: '#475569',
+    marginTop: 3,
+  },
+  cardNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  cardNoteText: {
+    fontSize: 11,
+    color: '#B45309',
+  },
+
+  // Dạng khung giờ
+  slotModeCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  timeBadgeSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  timeBadgeSlotText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  slotBtnRow: {
+    marginTop: 8,
+    alignItems: 'flex-end',
+  },
+  slotActionBtn: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  emptyListWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+    gap: 8,
+  },
+  emptyListTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  emptyListSub: {
+    fontSize: 12,
+    color: '#64748B',
   },
 });

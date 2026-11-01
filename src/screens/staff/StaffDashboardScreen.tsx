@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -26,6 +27,7 @@ export default function StaffDashboardScreen({
   onOpenNotifications,
   unreadNotifCount = 0,
 }: StaffDashboardScreenProps) {
+  const insets = useSafeAreaInsets();
   const pending = appointments.filter((a) => a.status === 'pending').length;
   const arrived = appointments.filter((a) => a.status === 'arrived').length;
   const inProgress = appointments.filter((a) => a.status === 'in_progress').length;
@@ -34,7 +36,7 @@ export default function StaffDashboardScreen({
   return (
     <View style={styles.container}>
       {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
           <MaterialIcons name="menu" size={22} color="#0F172A" />
         </TouchableOpacity>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -46,6 +47,7 @@ export default function StaffSupportScreen({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const insets = useSafeAreaInsets();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [backendSynced, setBackendSynced] = useState<boolean>(false);
 
@@ -418,7 +420,7 @@ export default function StaffSupportScreen({
   return (
     <View style={styles.container}>
       {/* ─── Top Bar Header ─── */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <View style={styles.topBarMainRow}>
           <TouchableOpacity style={styles.sidebarToggleBtn} onPress={onOpenSidebar}>
             <MaterialIcons name="menu" size={24} color="#1E293B" />

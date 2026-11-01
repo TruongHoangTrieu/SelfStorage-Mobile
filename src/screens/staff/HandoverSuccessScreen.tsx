@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -54,6 +55,7 @@ export default function HandoverSuccessScreen({
   onBackToQueue,
   onPrintAgain,
 }: HandoverSuccessScreenProps) {
+  const insets = useSafeAreaInsets();
   const [showContractPreview, setShowContractPreview] = useState<boolean>(false);
   const activeSignature = signature || appointment.signature || [];
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -66,7 +68,16 @@ export default function HandoverSuccessScreen({
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentPadding}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[
+        styles.contentPadding,
+        {
+          paddingTop: insets.top > 0 ? insets.top + 10 : 20,
+          paddingBottom: insets.bottom > 0 ? insets.bottom + 20 : 30,
+        },
+      ]}
+    >
       <View style={styles.mainCard}>
         {/* Biểu tượng trạng thái thành công */}
         <View style={styles.successIconWrapper}>
