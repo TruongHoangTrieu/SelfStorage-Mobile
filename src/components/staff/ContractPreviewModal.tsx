@@ -245,7 +245,7 @@ export default function ContractPreviewModal({
                   </Text>
                   <Text style={styles.paragraph}>
                     <Text style={styles.clauseNum}>4.2. Mã số mở khóa ban đầu: </Text>
-                    <Text style={[styles.boldText, styles.pinHighlight]}>{appointment.accessPin || '682914'}</Text>. Bên B có toàn quyền chủ động tự thay đổi mã số này trên ứng dụng bất kỳ lúc nào.
+                    Để đảm bảo an toàn bảo mật, mã số mở khóa điện tử sẽ được hệ thống tự động kích hoạt và gửi riêng đến tài khoản của Bên B trên ứng dụng/website ngay sau khi Hợp đồng này được hai Bên hoàn tất ký kết. Bên B có toàn quyền chủ động tự thay đổi mã số này trên ứng dụng bất kỳ lúc nào.
                   </Text>
                   <Text style={styles.paragraph}>
                     <Text style={styles.clauseNum}>4.3. </Text>
