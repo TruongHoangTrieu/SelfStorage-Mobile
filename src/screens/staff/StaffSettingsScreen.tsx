@@ -34,7 +34,7 @@ export default function StaffSettingsScreen({
       {/* Top Bar (Dàn trải rộng, bỏ icon, thiết kế thanh lịch) */}
       <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
-          <MaterialIcons name="menu" size={22} color="#0F172A" />
+          <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
         </TouchableOpacity>
         <View style={styles.topBarTitleCol}>
           <Text style={styles.subTitle} numberOfLines={1}>

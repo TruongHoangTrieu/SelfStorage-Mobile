@@ -23,7 +23,7 @@ import { formatSlotTime } from '../data/mockCustomerData';
 import { formatVND, formatVietnameseDate } from '../utils/formatters';
 
 export function useStaffAppointments(staffFacilityId?: number | string) {
-  const [staffTab, setStaffTab] = useState<StaffTab>('queue');
+  const [staffTab, setStaffTab] = useState<StaffTab>('dashboard');
   const [flowStep, setFlowStep] = useState<FlowStep>('queue');
   const [isSidebarVisible, setIsSidebarVisible] = useState<boolean>(false);
   const [appointments, setAppointments] = useState<CheckInAppointment[]>(INITIAL_APPOINTMENTS);

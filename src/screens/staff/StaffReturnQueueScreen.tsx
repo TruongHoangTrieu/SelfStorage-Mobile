@@ -515,7 +515,7 @@ export default function StaffReturnQueueScreen({
       <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <View style={styles.topBarMainRow}>
           <TouchableOpacity style={styles.sidebarToggleBtn} onPress={onOpenSidebar}>
-            <MaterialIcons name="menu" size={24} color="#1E293B" />
+            <MaterialIcons name="arrow-back" size={24} color="#1E293B" />
           </TouchableOpacity>
 
           <View style={styles.topBarTitleWrap}>

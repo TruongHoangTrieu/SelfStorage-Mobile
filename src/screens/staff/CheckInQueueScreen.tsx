@@ -284,7 +284,7 @@ export default function CheckInQueueScreen({
             onPress={onOpenSidebar}
             activeOpacity={0.7}
           >
-            <MaterialIcons name="menu" size={24} color="#FFFFFF" />
+            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
           <View style={styles.headerTitleWrap}>

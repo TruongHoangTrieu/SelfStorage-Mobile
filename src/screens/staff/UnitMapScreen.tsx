@@ -35,7 +35,7 @@ export default function UnitMapScreen({
       {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
       <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
-          <MaterialIcons name="menu" size={22} color="#0F172A" />
+          <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
         </TouchableOpacity>
         <View style={styles.topBarTitleCol}>
           <Text style={styles.subTitle} numberOfLines={1}>
