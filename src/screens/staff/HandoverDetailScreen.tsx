@@ -580,7 +580,7 @@ export default function HandoverDetailScreen({
 
             {/* Chụp 2 mặt Căn cước công dân có đóng dấu Watermark */}
             <Text style={[s.sectionSubtitle, { marginTop: 16 }]}>
-              Ảnh chụp Căn cước công dân (CCCD) gốc (Watermark bảo mật):
+              Ảnh chụp Căn cước công dân gốc:
             </Text>
             <View style={s.cccdGrid}>
               {/* Mặt trước CCCD */}
@@ -1120,27 +1120,6 @@ export default function HandoverDetailScreen({
               <Text style={s.cardTitle}>Bước 4: Quyết Toán Tiền Thuê Kho</Text>
             </View>
 
-            {/* Bảng số tiền */}
-            <View style={s.priceBox}>
-              <View style={s.priceCol}>
-                <Text style={s.priceLabel}>Tiền thuê ({durationMonths}T)</Text>
-                <Text style={s.priceVal}>{formatVND(totalRent)}</Text>
-              </View>
-              <View style={s.priceCol}>
-                <Text style={s.priceLabel}>Đã cọc</Text>
-                <Text style={[s.priceVal, { color: T.emeraldText }]}>
-                  {appointment.depositAmount || formatVND(depositNum)}
-                </Text>
-              </View>
-              <View style={[s.priceCol, { borderRightWidth: 0, backgroundColor: T.amberBg }]}>
-                <Text style={[s.priceLabel, { color: T.amberText, fontWeight: '700' }]}>
-                  CẦN THU
-                </Text>
-                <Text style={[s.priceVal, { color: T.amberText, fontWeight: '800' }]}>
-                  {formatVND(remainingAmount)}
-                </Text>
-              </View>
-            </View>
 
             {/* Chọn hình thức */}
             <View style={s.payMethodRow}>
@@ -1243,6 +1222,29 @@ export default function HandoverDetailScreen({
                   <View style={s.bankRow}>
                     <Text style={s.bankLabel}>Chủ tài khoản:</Text>
                     <Text style={[s.bankVal, { fontWeight: '700' }]}>{accountName}</Text>
+                  </View>
+
+                  <View style={s.bankRow}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={s.bankLabel}>Số tiền cần thanh toán:</Text>
+                      <Text style={[s.bankVal, { color: '#004AC6', fontWeight: '800', fontSize: 16 }]}>
+                        {formatVND(remainingAmount)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleCopy(String(remainingAmount), 'TIEN')}
+                      style={s.copyBtn}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialIcons
+                        name={copiedField === 'TIEN' ? 'check' : 'content-copy'}
+                        size={12}
+                        color={T.primary}
+                      />
+                      <Text style={s.copyBtnText}>
+                        {copiedField === 'TIEN' ? 'Đã chép' : 'Sao chép'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* Khung nội dung chuyển khoản riêng biệt, không bị lồi ra ngoài */}

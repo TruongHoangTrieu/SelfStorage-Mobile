@@ -250,6 +250,9 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             isIdentityVerified: updatedData.isIdentityVerified,
             identityFrontUrl: updatedData.identityFrontUrl,
             identityBackUrl: updatedData.identityBackUrl,
+            customerSignature: updatedData.signature && updatedData.signature.length > 0
+              ? JSON.stringify(updatedData.signature)
+              : undefined,
           });
 
           if (checkInResponse?.contract) {

@@ -202,11 +202,13 @@ export async function performCheckInApi(payload: {
   isIdentityVerified?: boolean;
   identityFrontUrl?: string;
   identityBackUrl?: string;
+  customerSignature?: string;
 }) {
   // Chỉ gửi các trường thuộc CheckInDto hợp lệ
   const cleanBody: any = {
     reservationId: String(payload.reservationId),
     condition: payload.condition,
+    ...(payload.customerSignature ? { customerSignature: payload.customerSignature } : {}),
   };
   if (payload.notes) cleanBody.notes = payload.notes;
   if (payload.photos && Array.isArray(payload.photos) && payload.photos.length > 0) {
