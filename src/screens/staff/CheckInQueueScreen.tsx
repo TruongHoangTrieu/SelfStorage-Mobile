@@ -73,17 +73,6 @@ function isTodayDate(d: Date): boolean {
   );
 }
 
-// Format chuỗi ngày hôm nay đầy đủ: "Thứ X, DD/MM/YYYY"
-function getTodayFullText(): string {
-  const now = new Date();
-  const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-  const dayName = dayNames[now.getDay()];
-  const dd = String(now.getDate()).padStart(2, '0');
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const yyyy = now.getFullYear();
-  return `${dayName}, ${dd}/${mm}/${yyyy}`;
-}
-
 // Chuẩn hóa chuỗi ngày của lịch hẹn về DD/MM/YYYY
 function normalizeAppointmentDate(dateStr?: string): string {
   if (!dateStr) return '';
@@ -338,45 +327,35 @@ export default function CheckInQueueScreen({
         </View>
       </View>
 
-      {/* ─── Thanh điều hướng Tuần & UI NHẬN BIẾT HÔM NAY ─── */}
+      {/* ─── Thanh điều hướng Tuần & Nút về hôm nay gọn gàng ─── */}
       <View style={styles.navBarCard}>
-        {/* Banner hiển thị hôm nay là ngày nào */}
-        <View style={styles.todayBannerRow}>
-          <View style={styles.todayBannerLeft}>
-            <View style={styles.todayIndicatorDot} />
-            <MaterialIcons name="event" size={15} color="#1D4ED8" />
-            <Text style={styles.todayBannerText}>
-              Hôm nay: <Text style={styles.todayBannerBold}>{getTodayFullText()}</Text>
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.todayJumpBtn}
-            onPress={handleGoToday}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="today" size={14} color="#1D4ED8" />
-            <Text style={styles.todayJumpText}>Về hôm nay</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Thanh tuần: Mũi tên < > & Tiêu đề Tháng (BỎ FILTER TẤT CẢ/CHỜ NHẬN) */}
+        {/* Thanh tuần: Nút [Hôm nay] + Mũi tên < > & Tiêu đề Tháng */}
         <View style={styles.weekNavInner}>
-          <View style={styles.arrowGroup}>
+          <View style={styles.leftNavGroup}>
             <TouchableOpacity
-              style={styles.arrowBtn}
-              onPress={handlePrevWeek}
-              activeOpacity={0.7}
+              style={styles.todayPillBtn}
+              onPress={handleGoToday}
+              activeOpacity={0.8}
             >
-              <MaterialIcons name="chevron-left" size={24} color="#1D4ED8" />
+              <Text style={styles.todayPillText}>Hôm nay</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.arrowBtn}
-              onPress={handleNextWeek}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="chevron-right" size={24} color="#1D4ED8" />
-            </TouchableOpacity>
+
+            <View style={styles.arrowGroup}>
+              <TouchableOpacity
+                style={styles.arrowBtn}
+                onPress={handlePrevWeek}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="chevron-left" size={22} color="#1D4ED8" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.arrowBtn}
+                onPress={handleNextWeek}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="chevron-right" size={22} color="#1D4ED8" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.monthCenterCol}>
@@ -384,12 +363,12 @@ export default function CheckInQueueScreen({
               Tháng {selectedMonday.getMonth() + 1} {selectedMonday.getFullYear()}
             </Text>
             <Text style={styles.dateRangeSubtitle}>
-              Tuần từ {formatDayMonth(selectedMonday)} đến {formatDayMonth(sunday)}
+              {formatDayMonth(selectedMonday)} - {formatDayMonth(sunday)}
             </Text>
           </View>
 
-          {/* Khoảng trống cân đối sau khi bỏ filter */}
-          <View style={{ width: 68 }} />
+          {/* Khoảng trống cân đối đối xứng với leftNavGroup */}
+          <View style={styles.rightNavPlaceholder} />
         </View>
 
         {/* Thanh tìm kiếm nhanh */}
@@ -587,83 +566,52 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // Thanh điều hướng tuần & Banner Hôm nay
+  // Thanh điều hướng tuần
   navBarCard: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     paddingHorizontal: 14,
     paddingTop: 8,
-    paddingBottom: 10,
+    paddingBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 2,
   },
-  todayBannerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: 8,
-  },
-  todayBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  todayIndicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#1D4ED8',
-  },
-  todayBannerText: {
-    fontSize: 12,
-    color: '#1E40AF',
-    fontWeight: '500',
-  },
-  todayBannerBold: {
-    fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  todayJumpBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#93C5FD',
-  },
-  todayJumpText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-
   weekNavInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  leftNavGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  todayPillBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 12,
+  },
+  todayPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
   arrowGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
   },
   arrowBtn: {
-    padding: 4,
+    padding: 3,
   },
   monthCenterCol: {
     flex: 1,
@@ -671,14 +619,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   monthTitle: {
-    fontSize: 14.5,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#0F172A',
   },
   dateRangeSubtitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#64748B',
     marginTop: 1,
+  },
+  rightNavPlaceholder: {
+    width: 90,
   },
 
   // Thanh tìm kiếm
@@ -688,7 +639,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
     paddingHorizontal: 10,
-    height: 36,
+    height: 34,
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -696,7 +647,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#0F172A',
   },
 
@@ -705,12 +656,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   calendarContent: {
-    paddingTop: 4,
+    paddingTop: 2,
   },
   dayTimelineRow: {
     flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
     backgroundColor: '#FFFFFF',
@@ -722,15 +673,15 @@ const styles = StyleSheet.create({
     borderLeftColor: '#1D4ED8',
   },
   dayLeftCol: {
-    width: 60,
+    width: 54,
     alignItems: 'center',
     paddingTop: 2,
   },
   dayOfWeekText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: '700',
     color: '#64748B',
-    marginBottom: 4,
+    marginBottom: 3,
     textTransform: 'uppercase',
   },
   dayOfWeekTextToday: {
@@ -738,32 +689,32 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   normalDayNumber: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#1E293B',
   },
   todayBlueCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#1D4ED8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   todayCircleText: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   todayBadgePill: {
-    marginTop: 4,
+    marginTop: 3,
     backgroundColor: '#DBEAFE',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 1.5,
     borderRadius: 4,
   },
   todayBadgePillText: {
-    fontSize: 8.5,
+    fontSize: 7.5,
     fontWeight: '900',
     color: '#1D4ED8',
     letterSpacing: 0.3,
@@ -772,41 +723,41 @@ const styles = StyleSheet.create({
   // Cột phải: chứa các card
   dayRightCol: {
     flex: 1,
-    paddingLeft: 8,
+    paddingLeft: 6,
   },
   emptyDayWrap: {
-    paddingVertical: 14,
+    paddingVertical: 12,
     justifyContent: 'center',
   },
   emptyDayText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#94A3B8',
     fontStyle: 'italic',
   },
 
-  // ─── STYLES CHUẨN CỦA WIDGET CARD GỐC (GIỮ NGUYÊN 100%) ───
+  // ─── STYLES CHUẨN CỦA WIDGET CARD GỐC (ĐÃ THU NHỎ FONT VỪA VẶN) ───
   wCard: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingTop: 12,
-    paddingBottom: 11,
-    paddingLeft: 12,
-    paddingRight: 14,
-    marginBottom: 8,
+    borderRadius: 14,
+    paddingTop: 8,
+    paddingBottom: 7,
+    paddingLeft: 9,
+    paddingRight: 10,
+    marginBottom: 6,
     shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
     elevation: 2,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   wAccent: {
-    width: 3.5,
-    borderRadius: 2,
+    width: 3,
+    borderRadius: 1.5,
     backgroundColor: '#E8A766',
-    marginRight: 11,
+    marginRight: 9,
     alignSelf: 'stretch',
     marginVertical: 1,
   },
@@ -821,9 +772,9 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   wDayLabel: {
-    fontSize: 10.5,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     color: '#8E8E93',
     textTransform: 'uppercase',
   },
@@ -832,36 +783,36 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   wTimeMain: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: '800',
     color: '#18181B',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   wTimePeriod: {
-    fontSize: 11,
+    fontSize: 9.5,
     fontWeight: '700',
     color: '#71717A',
-    marginLeft: 3,
+    marginLeft: 2.5,
   },
   wRow2: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: 1.5,
   },
   wCustomerName: {
-    fontSize: 16,
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#18181B',
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
   },
   wActionButton: {
     backgroundColor: '#2563EB',
-    paddingVertical: 5,
-    paddingHorizontal: 11,
-    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
   },
   wActionButtonInProgress: {
     backgroundColor: '#7C3AED',
@@ -871,7 +822,7 @@ const styles = StyleSheet.create({
   },
   wActionText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: '700',
   },
   wActionTextDone: {
@@ -881,46 +832,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 5,
+    marginTop: 3,
   },
   wTitleRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 6,
+    gap: 5,
     flex: 1,
-    marginRight: 8,
+    marginRight: 6,
   },
   wTitle: {
-    fontSize: 15,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#334155',
     letterSpacing: -0.2,
   },
   wTitleSub: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '500',
     color: '#64748B',
   },
   wBigPhone: {
-    fontSize: 15.5,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   wNoteBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: '#FFFBEB',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#FEF3C7',
-    marginTop: 6,
+    marginTop: 4,
   },
   wNoteText: {
-    fontSize: 11,
+    fontSize: 9.5,
     color: '#92400E',
     flex: 1,
   },
