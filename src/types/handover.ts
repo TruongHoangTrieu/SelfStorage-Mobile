@@ -35,6 +35,7 @@ export interface CheckInAppointment {
   accessPin?: string;
   rfidCard?: string;
   contractCode?: string;
+  signature?: string[];
   completedAt?: string;
   cancelReason?: string;
   rescheduledAt?: string;

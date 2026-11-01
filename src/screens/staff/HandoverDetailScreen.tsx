@@ -47,6 +47,7 @@ interface HandoverDetailScreenProps {
     isIdentityVerified?: boolean;
     identityFrontUrl?: string;
     identityBackUrl?: string;
+    signature?: string[];
   }) => void;
   isSubmitting?: boolean;
 }
@@ -95,24 +96,17 @@ export default function HandoverDetailScreen({
   // Stepper State 1 -> 5 (giống hệt luồng Web)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
-  // Bước 1: KYC Định danh & Ô kho
-  const [identityType, setIdentityType] = useState<'CCCD' | 'PASSPORT'>(
-    appointment.identityType === 'PASSPORT' ? 'PASSPORT' : 'CCCD'
-  );
+  // Bước 1: KYC Định danh & Ô kho (Chuẩn hóa duy nhất CCCD 12 số)
+  const identityType = 'CCCD';
   const [identityNumber, setIdentityNumber] = useState<string>(() => {
     const raw = appointment.identityNumber ||
       (appointment.idCard && appointment.idCard !== 'Đã đối chiếu tại quầy' ? appointment.idCard : '079095012345');
-    if (appointment.identityType === 'PASSPORT') return raw;
     return raw.replace(/\D/g, '').slice(0, 12);
   });
 
   const handleIdentityNumberChange = (val: string) => {
-    if (identityType === 'CCCD') {
-      const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
-      setIdentityNumber(digitsOnly);
-    } else {
-      setIdentityNumber(val.slice(0, 15).toUpperCase());
-    }
+    const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
+    setIdentityNumber(digitsOnly);
   };
   const [identityAddress, setIdentityAddress] = useState<string>(
     appointment.identityAddress || 'Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM'
@@ -216,8 +210,10 @@ export default function HandoverDetailScreen({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Bước 3: Hợp đồng thuê
-  const [isContractSigned, setIsContractSigned] = useState<boolean>(false);
-  const [contractSignature, setContractSignature] = useState<string[]>([]);
+  const [contractSignature, setContractSignature] = useState<string[]>(appointment.signature || []);
+  const [isContractSigned, setIsContractSigned] = useState<boolean>(
+    Boolean(appointment.signature && appointment.signature.length > 0)
+  );
   const [showContractModal, setShowContractModal] = useState<boolean>(false);
 
   // Bước 4: Thu tiền thuê kho
@@ -363,10 +359,7 @@ export default function HandoverDetailScreen({
         );
         return;
       }
-      if (identityType === 'PASSPORT' && identityNumber.trim().length < 8) {
-        Alert.alert('Số Hộ chiếu không hợp lệ', 'Số Hộ chiếu phải từ 8 ký tự trở lên.');
-        return;
-      }
+
       if (!isCccdVerified) {
         Alert.alert('Chưa đối chiếu giấy tờ', 'Vui lòng xác nhận đối chiếu giấy tờ gốc của khách hàng.');
         return;
@@ -481,6 +474,7 @@ export default function HandoverDetailScreen({
       isIdentityVerified: isCccdVerified,
       identityFrontUrl: frontUrl,
       identityBackUrl: backUrl,
+      signature: contractSignature,
     });
   };
 
@@ -584,50 +578,16 @@ export default function HandoverDetailScreen({
               </View>
             </View>
 
-            {/* Chọn loại giấy tờ: CCCD vs Passport */}
-            <Text style={[s.sectionSubtitle, { marginTop: 14 }]}>Loại giấy tờ định danh:</Text>
-            <View style={s.kycTypeRow}>
-              <TouchableOpacity
-                style={[s.kycTypeBtn, identityType === 'CCCD' && s.kycTypeBtnActive]}
-                onPress={() => setIdentityType('CCCD')}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons
-                  name="badge"
-                  size={18}
-                  color={identityType === 'CCCD' ? '#fff' : T.textMuted}
-                />
-                <Text style={[s.kycTypeText, identityType === 'CCCD' && s.kycTypeTextActive]}>
-                  CCCD / Căn cước
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[s.kycTypeBtn, identityType === 'PASSPORT' && s.kycTypeBtnActive]}
-                onPress={() => setIdentityType('PASSPORT')}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons
-                  name="flight"
-                  size={18}
-                  color={identityType === 'PASSPORT' ? '#fff' : T.textMuted}
-                />
-                <Text style={[s.kycTypeText, identityType === 'PASSPORT' && s.kycTypeTextActive]}>
-                  Hộ chiếu (Passport)
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Chụp 2 mặt CCCD / Trang Hộ chiếu có đóng dấu Watermark */}
+            {/* Chụp 2 mặt Căn cước công dân có đóng dấu Watermark */}
             <Text style={[s.sectionSubtitle, { marginTop: 16 }]}>
-              Ảnh chụp {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} gốc (Watermark bảo mật):
+              Ảnh chụp Căn cước công dân (CCCD) gốc (Watermark bảo mật):
             </Text>
             <View style={s.cccdGrid}>
-              {/* Mặt trước / Trang thông tin */}
+              {/* Mặt trước CCCD */}
               <View style={s.cccdBox}>
                 <View style={s.cccdHeaderRow}>
                   <Text style={s.cccdBoxTitle} numberOfLines={1}>
-                    {identityType === 'CCCD' ? '1. Mặt trước CCCD' : '1. Trang thông tin Hộ chiếu'}
+                    1. Mặt trước CCCD
                   </Text>
                   {frontCccdPhoto && (
                     <View style={s.cccdStatusBadge}>
@@ -711,7 +671,7 @@ export default function HandoverDetailScreen({
               <View style={s.cccdBox}>
                 <View style={s.cccdHeaderRow}>
                   <Text style={s.cccdBoxTitle} numberOfLines={1}>
-                    {identityType === 'CCCD' ? '2. Mặt sau CCCD' : '2. Thị thực / Bìa Hộ chiếu'}
+                    '2. Mặt sau CCCD'
                   </Text>
                   {backCccdPhoto && (
                     <View style={s.cccdStatusBadge}>
@@ -761,13 +721,13 @@ export default function HandoverDetailScreen({
                   <View style={s.cccdPlaceholder}>
                     <View style={s.cccdIconCircle}>
                       <MaterialIcons
-                        name={identityType === 'CCCD' ? 'flip-to-back' : 'flight'}
+                        name="flip-to-back"
                         size={22}
                         color={T.primary}
                       />
                     </View>
                     <Text style={s.cccdPlaceholderTitle}>
-                      {identityType === 'CCCD' ? 'Chưa chụp mặt sau' : 'Chưa chụp thị thực'}
+                      'Chưa chụp mặt sau CCCD'
                     </Text>
                     <View style={s.cccdActionCol}>
                       <TouchableOpacity
@@ -796,7 +756,7 @@ export default function HandoverDetailScreen({
             <View style={s.kycInputGroup}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <Text style={s.kycInputLabel}>
-                  Số {identityType === 'CCCD' ? 'CCCD / Căn cước' : 'Hộ chiếu'} đối chiếu: *
+                  Số Căn cước công dân (CCCD) đối chiếu: *
                 </Text>
                 {identityType === 'CCCD' && (
                   <View style={[
@@ -813,7 +773,7 @@ export default function HandoverDetailScreen({
                 identityType === 'CCCD' && identityNumber.length === 12 && { borderColor: '#10B981' }
               ]}>
                 <MaterialIcons
-                  name={identityType === 'CCCD' ? 'badge' : 'flight'}
+                  name="badge"
                   size={18}
                   color={identityType === 'CCCD' && identityNumber.length === 12 ? '#10B981' : T.textMuted}
                 />
@@ -821,7 +781,7 @@ export default function HandoverDetailScreen({
                   style={s.kycInput}
                   value={identityNumber}
                   onChangeText={handleIdentityNumberChange}
-                  placeholder={identityType === 'CCCD' ? 'Nhập đúng 12 chữ số CCCD' : 'Nhập số Hộ chiếu'}
+                  placeholder="Nhập đúng 12 chữ số CCCD"
                   placeholderTextColor={T.textMuted}
                   keyboardType={identityType === 'CCCD' ? 'numeric' : 'default'}
                   maxLength={identityType === 'CCCD' ? 12 : 15}

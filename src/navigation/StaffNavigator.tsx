@@ -132,6 +132,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             assignedUnitCode={selectedAppointment.assignedUnit}
             contractCode={selectedAppointment.contractCode}
             accessPin={selectedAppointment.accessPin}
+            signature={selectedAppointment.signature}
             onBackToQueue={() => {
               setFlowStep('queue');
               setStaffTab('queue');

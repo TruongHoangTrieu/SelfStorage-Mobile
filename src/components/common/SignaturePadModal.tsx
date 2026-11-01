@@ -21,8 +21,13 @@ interface SignaturePadModalProps {
   title?: string;
 }
 
-const CANVAS_WIDTH = 320;
-const CANVAS_HEIGHT = 160;
+const CANVAS_WIDTH = 340;
+const CANVAS_HEIGHT = 180;
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 export default function SignaturePadModal({
   visible,
@@ -34,6 +39,7 @@ export default function SignaturePadModal({
   const [paths, setPaths] = useState<string[]>([]);
   const currentPathRef = useRef<string>('');
   const [currentPathState, setCurrentPathState] = useState<string>('');
+  const lastPointRef = useRef<Point | null>(null);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -43,24 +49,41 @@ export default function SignaturePadModal({
         const { locationX, locationY } = evt.nativeEvent;
         const x = Math.round(locationX);
         const y = Math.round(locationY);
-        const newD = `M ${x} ${y}`;
-        currentPathRef.current = newD;
-        setCurrentPathState(newD);
+        lastPointRef.current = { x, y };
+        const startPath = `M ${x} ${y}`;
+        currentPathRef.current = startPath;
+        setCurrentPathState(startPath);
       },
       onPanResponderMove: (evt: GestureResponderEvent) => {
+        if (!lastPointRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
         const x = Math.round(locationX);
         const y = Math.round(locationY);
-        const updatedD = `${currentPathRef.current} L ${x} ${y}`;
-        currentPathRef.current = updatedD;
-        setCurrentPathState(updatedD);
+
+        const prev = lastPointRef.current;
+        const dx = x - prev.x;
+        const dy = y - prev.y;
+
+        // Bộ lọc khử rung tay: chỉ vẽ khi ngón tay di chuyển ít nhất 2.5px
+        if (dx * dx + dy * dy < 6) return;
+
+        // Thuật toán làm mịn Bezier bậc 2 (Quadratic Curve qua trung điểm)
+        const midX = Math.round((prev.x + x) / 2);
+        const midY = Math.round((prev.y + y) / 2);
+
+        const segment = ` Q ${prev.x} ${prev.y} ${midX} ${midY}`;
+        currentPathRef.current += segment;
+        setCurrentPathState(currentPathRef.current);
+        lastPointRef.current = { x, y };
       },
       onPanResponderRelease: () => {
-        if (currentPathRef.current.length > 5) {
-          setPaths((prev) => [...prev, currentPathRef.current]);
+        if (lastPointRef.current && currentPathRef.current.length > 5) {
+          const finalStroke = `${currentPathRef.current} L ${lastPointRef.current.x} ${lastPointRef.current.y}`;
+          setPaths((prev) => [...prev, finalStroke]);
         }
         currentPathRef.current = '';
         setCurrentPathState('');
+        lastPointRef.current = null;
       },
     })
   ).current;
@@ -69,6 +92,7 @@ export default function SignaturePadModal({
     setPaths([]);
     currentPathRef.current = '';
     setCurrentPathState('');
+    lastPointRef.current = null;
   };
 
   const handleConfirm = () => {
@@ -130,7 +154,7 @@ export default function SignaturePadModal({
                   key={index}
                   d={p}
                   stroke="#004AC6"
-                  strokeWidth={2.8}
+                  strokeWidth={3.2}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -140,7 +164,7 @@ export default function SignaturePadModal({
                 <Path
                   d={currentPathState}
                   stroke="#004AC6"
-                  strokeWidth={2.8}
+                  strokeWidth={3.2}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -151,8 +175,9 @@ export default function SignaturePadModal({
             {/* Dòng kẻ chữ ký Baseline & Placeholder */}
             {paths.length === 0 && !currentPathState && (
               <View style={styles.placeholderWrap} pointerEvents="none">
-                <MaterialIcons name="edit" size={24} color="#94A3B8" />
+                <MaterialIcons name="edit" size={26} color="#94A3B8" />
                 <Text style={styles.placeholderText}>Ký tên tại đây</Text>
+                <Text style={styles.placeholderSubText}>Nét ký mượt mà tự nhiên</Text>
               </View>
             )}
 
@@ -191,11 +216,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    padding: 14,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 370,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 16,
@@ -276,12 +301,16 @@ const styles = StyleSheet.create({
     bottom: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
   },
   placeholderText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  placeholderSubText: {
+    fontSize: 10.5,
+    color: '#CBD5E1',
   },
   baseline: {
     position: 'absolute',
@@ -330,4 +359,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-

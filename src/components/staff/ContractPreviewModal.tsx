@@ -40,15 +40,16 @@ export default function ContractPreviewModal({
   const cleanId = (appointment.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
   const contractNumber = appointment.contractCode || `SS-HĐ-${cleanId}/${yearStr}`;
 
-  const [customerSignature, setCustomerSignature] = useState<string[]>(initialSignature || []);
+  const [customerSignature, setCustomerSignature] = useState<string[]>(initialSignature || appointment.signature || []);
   const [showSignPad, setShowSignPad] = useState<boolean>(false);
   const [signedTime, setSignedTime] = useState<string>('');
 
   useEffect(() => {
-    if (initialSignature && initialSignature.length > 0) {
-      setCustomerSignature(initialSignature);
+    const sig = initialSignature || appointment.signature;
+    if (sig && sig.length > 0) {
+      setCustomerSignature(sig);
     }
-  }, [initialSignature]);
+  }, [initialSignature, appointment.signature]);
 
   const handleSaveSignature = (paths: string[]) => {
     setCustomerSignature(paths);

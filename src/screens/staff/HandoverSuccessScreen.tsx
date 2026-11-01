@@ -11,6 +11,8 @@ import {
   Modal,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
+import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
 import { CheckInAppointment } from '../../types/handover';
 
 interface HandoverSuccessScreenProps {
@@ -18,8 +20,9 @@ interface HandoverSuccessScreenProps {
   assignedUnitCode: string;
   contractCode?: string;
   accessPin?: string;
+  signature?: string[];
   onBackToQueue: () => void;
-  onPrintAgain: () => void;
+  onPrintAgain?: () => void;
 }
 
 const T = {
@@ -47,9 +50,12 @@ export default function HandoverSuccessScreen({
   assignedUnitCode,
   contractCode = 'CON-20261013-8910AB',
   accessPin = '682914',
+  signature,
   onBackToQueue,
   onPrintAgain,
 }: HandoverSuccessScreenProps) {
+  const [showContractPreview, setShowContractPreview] = useState<boolean>(false);
+  const activeSignature = signature || appointment.signature || [];
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showPinModal, setShowPinModal] = useState<boolean>(true);
 
@@ -203,6 +209,40 @@ export default function HandoverSuccessScreen({
           </View>
         </View>
 
+        {/* Chữ ký điện tử đã lưu vào hồ sơ hợp đồng */}
+        {activeSignature.length > 0 && (
+          <View style={styles.signatureSavedBox}>
+            <View style={styles.signatureSavedHeader}>
+              <MaterialIcons name="verified" size={16} color="#059669" />
+              <Text style={styles.signatureSavedTitle}>Chữ ký điện tử đã lưu vào hợp đồng:</Text>
+              <TouchableOpacity
+                onPress={() => setShowContractPreview(true)}
+                style={styles.viewContractPill}
+              >
+                <Text style={styles.viewContractPillText}>Xem HĐ</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.signatureSavedDrawWrap}>
+              <Svg width={140} height={52} viewBox="0 0 340 180">
+                {activeSignature.map((p, i) => (
+                  <Path
+                    key={i}
+                    d={p}
+                    stroke="#004AC6"
+                    strokeWidth={3.2}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ))}
+              </Svg>
+            </View>
+            <Text style={styles.signatureSavedName}>
+              Đã ký bởi: {appointment.customerName} ({appointment.phone})
+            </Text>
+          </View>
+        )}
+
         {/* Thẻ trạng thái thông báo tự động mã PIN */}
         <View style={styles.autoNotifCard}>
           <View style={styles.autoNotifHeader}>
@@ -279,6 +319,15 @@ export default function HandoverSuccessScreen({
           </View>
         </View>
       </Modal>
+
+      {/* Modal Xem lại hợp đồng có chữ ký */}
+      <ContractPreviewModal
+        visible={showContractPreview}
+        onClose={() => setShowContractPreview(false)}
+        appointment={appointment}
+        assignedUnitCode={assignedUnitCode}
+        initialSignature={activeSignature}
+      />
     </ScrollView>
   );
 }
@@ -785,6 +834,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13.5,
     fontWeight: '800',
+  },
+
+  // Styles hiển thị chữ ký đã lưu trong HandoverSuccessScreen
+  signatureSavedBox: {
+    width: '100%',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+  signatureSavedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    marginBottom: 6,
+  },
+  signatureSavedTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  viewContractPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  viewContractPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  signatureSavedDrawWrap: {
+    width: 140,
+    height: 52,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  signatureSavedName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginTop: 2,
   },
 
 });

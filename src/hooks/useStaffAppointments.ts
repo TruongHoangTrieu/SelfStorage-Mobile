@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import {
@@ -121,9 +122,22 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           return app.depositStatus === 'paid';
         });
 
-        setAppointments(mappedAppointments);
-        if (mappedAppointments.length > 0 && !selectedAppointment) {
-          setSelectedAppointment(mappedAppointments[0]);
+        // Khôi phục chữ ký đã ký từ bộ nhớ máy
+        const appointmentsWithSig = await Promise.all(
+          mappedAppointments.map(async (a: CheckInAppointment) => {
+            try {
+              const stored = await AsyncStorage.getItem(`handover_sig_${a.id}`);
+              if (stored) {
+                return { ...a, signature: JSON.parse(stored) };
+              }
+            } catch {}
+            return a;
+          })
+        );
+
+        setAppointments(appointmentsWithSig);
+        if (appointmentsWithSig.length > 0 && !selectedAppointment) {
+          setSelectedAppointment(appointmentsWithSig[0]);
         }
       }
 
@@ -203,6 +217,7 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     isIdentityVerified?: boolean;
     identityFrontUrl?: string;
     identityBackUrl?: string;
+    signature?: string[];
   }) => {
     setIsSubmittingHandover(true);
     try {
@@ -268,8 +283,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         status: 'completed',
         contractCode: generatedContract,
         accessPin: generatedPin,
+        signature: updatedData.signature,
         completedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       };
+
+      // Lưu chữ ký cục bộ persistent
+      if (updatedData.signature && updatedData.signature.length > 0) {
+        AsyncStorage.setItem(`handover_sig_${app.id}`, JSON.stringify(updatedData.signature)).catch(() => null);
+      }
 
       setAppointments((prev) =>
         prev.map((item) => (item.id === app.id ? completedRecord : item))
