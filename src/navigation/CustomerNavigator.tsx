@@ -94,6 +94,9 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string>('');
   const [aiUnitToBook, setAiUnitToBook] = useState<any>(null);
 
+  // Kích hoạt Modal chọn chi nhánh khi bấm Thuê kho
+  const [triggerOpenBranchPicker, setTriggerOpenBranchPicker] = useState<number>(0);
+
   // Trung tâm thông báo & Toast lý do đăng nhập
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false);
   const [authModalToast, setAuthModalToast] = useState<string | null>(null);
@@ -156,8 +159,13 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
   // Điều hướng thanh dưới đáy & kiểm tra bắt buộc đăng nhập
   const handleNavigateBottomTab = (tab: CustomerTabType) => {
-    if (tab === 'search' || tab === 'book-new') {
+    if (tab === 'search') {
       setCustomerTab('book');
+      return;
+    }
+    if (tab === 'book-new') {
+      setCustomerTab('book');
+      setTriggerOpenBranchPicker(Date.now());
       return;
     }
     // Bắt buộc đăng nhập khi nhấn qua Kho của tôi, Hỗ trợ hoặc Tài khoản
@@ -382,6 +390,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           /* TAB 4: Hỗ trợ & Trợ giúp */
           <CustomerSupportScreen
             units={rentedUnits}
+            facilities={facilities}
             onBackToUnits={() => {
               setCustomerNavTab('my_units');
               setCustomerFlowStep('dashboard');
@@ -438,6 +447,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
           onLogout={handleLogout}
           currentUser={currentUser}
           activeBottomTab="search"
+          triggerOpenBranchPicker={triggerOpenBranchPicker}
           onNavigateTab={handleNavigateBottomTab}
           initialSelectedUnit={aiUnitToBook}
           onClearInitialSelectedUnit={() => setAiUnitToBook(null)}

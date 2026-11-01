@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -13,6 +13,9 @@ import {
   Modal,
   TextInput,
   Image,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
@@ -22,6 +25,7 @@ import {
   createSupportRequestApi,
   addTicketNoteApi,
 } from '../../api';
+import { getSocket } from '../../services/socketService';
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
@@ -50,6 +54,7 @@ const T = {
 
 interface CustomerSupportScreenProps {
   units: CustomerRentedUnit[];
+  facilities?: any[];
   onBackToUnits?: () => void;
   onOpenSidebar?: () => void;
   onOpenReportIssue?: (unit: CustomerRentedUnit) => void;
@@ -62,6 +67,7 @@ interface CustomerSupportScreenProps {
 
 export default function CustomerSupportScreen({
   units,
+  facilities = [],
   onBackToUnits,
   onOpenSidebar,
   onOpenReportIssue,
@@ -81,9 +87,60 @@ export default function CustomerSupportScreen({
   const [selectedUnitCode, setSelectedUnitCode] = useState<string>(
     units[0]?.unitCode || ''
   );
+  const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState<boolean>(false);
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string | number>(
+    units[0]?.facilityId || ''
+  );
+
+  const dropdownOptions = useMemo(() => {
+    const list: { value: string; facilityId: string | number; label: string }[] = [];
+
+    // Danh sách các ô kho của khách hàng đang thuê
+    if (Array.isArray(units) && units.length > 0) {
+      units.forEach((u) => {
+        list.push({
+          value: u.unitCode,
+          facilityId: u.facilityId,
+          label: `Ô kho #${u.unitCode} - ${u.facilityName || 'Cơ sở kho'}`,
+        });
+      });
+    }
+
+    // Danh sách các cơ sở kho của hệ thống
+    if (Array.isArray(facilities) && facilities.length > 0) {
+      facilities.forEach((fac) => {
+        list.push({
+          value: '',
+          facilityId: fac.id,
+          label: `${fac.name || fac.title || 'Kho tự quản'} (Chung)`,
+        });
+      });
+    }
+
+    // Tùy chọn chung
+    list.push({
+      value: '',
+      facilityId: '6ac4ea732f3017f8106ae7a6',
+      label: 'Hỗ trợ chung (Thủ tục, tài khoản, thanh toán)',
+    });
+
+    return list;
+  }, [units, facilities]);
+
+  const selectedUnitLabel = useMemo(() => {
+    const found = dropdownOptions.find(
+      (opt) =>
+        (selectedUnitCode && opt.value === selectedUnitCode) ||
+        (!selectedUnitCode && String(opt.facilityId) === String(selectedFacilityId))
+    );
+    return found ? found.label : (dropdownOptions[0]?.label || 'Chọn ô kho / cơ sở');
+  }, [dropdownOptions, selectedUnitCode, selectedFacilityId]);
+
+
   const [category, setCategory] = useState<string>('LOCK');
   const [subject, setSubject] = useState<string>('');
   const [description, setDescription] = useState<string>('');
+  const [formErrors, setFormErrors] = useState<{ subject?: string; description?: string }>({});
   const [priority, setPriority] = useState<string>('HIGH');
   const [supportPhotos, setSupportPhotos] = useState<CapturedPhoto[]>([]);
   const [isCapturingPhoto, setIsCapturingPhoto] = useState<boolean>(false);
@@ -112,31 +169,107 @@ export default function CustomerSupportScreen({
   const [replyText, setReplyText] = useState<string>('');
   const [isSendingReply, setIsSendingReply] = useState<boolean>(false);
 
-  // Tải danh sách phiếu
-  const loadTickets = useCallback(async () => {
-    setIsLoading(true);
+  // Tải danh sách phiếu (hỗ trợ chế độ silent cho realtime)
+  const loadTickets = useCallback(async (silent?: any) => {
+    const isSilent = silent === true;
+    if (!isSilent) setIsLoading(true);
     try {
-      const data = await fetchMySupportRequestsApi();
-      if (Array.isArray(data)) {
-        setTickets(data);
+      const res: any = await fetchMySupportRequestsApi();
+      const list = Array.isArray(res) ? res : (res && Array.isArray(res.data) ? res.data : null);
+      if (list) {
+        setTickets(list);
+        setSelectedTicket((prev: any) => {
+          if (!prev) return null;
+          const updated = list.find((t: any) => String(t.id) === String(prev.id));
+          return updated ? { ...prev, ...updated } : prev;
+        });
       }
     } catch (err: any) {
-      console.warn('Load tickets notice:', err.message);
+      if (!isSilent) console.warn('Load tickets notice:', err.message);
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadTickets();
+
+    let isMounted = true;
+    let activeSocket: any = null;
+
+    const initSocket = async () => {
+      try {
+        const socket = await getSocket();
+        if (!isMounted || !socket) return;
+        activeSocket = socket;
+
+        const handleCreated = (newTicket: any) => {
+          setTickets((prev) => {
+            if (prev.some((t) => t.id === newTicket.id)) return prev;
+            return [newTicket, ...prev];
+          });
+        };
+
+        const handleUpdated = (updatedTicket: any) => {
+          setTickets((prev) =>
+            prev.map((t) => (t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t))
+          );
+          setSelectedTicket((prev: any) =>
+            prev && prev.id === updatedTicket.id ? { ...prev, ...updatedTicket } : prev
+          );
+        };
+
+        const handleNoteAdded = (payload: { ticketId: string; log: any }) => {
+          setSelectedTicket((prev: any) => {
+            if (prev && prev.id === payload.ticketId) {
+              const currentLogs = prev.logs || [];
+              if (!currentLogs.some((l: any) => l.id === payload.log?.id)) {
+                return {
+                  ...prev,
+                  logs: [...currentLogs, payload.log],
+                };
+              }
+            }
+            return prev;
+          });
+          loadTickets();
+        };
+
+        socket.on('support_ticket_created', handleCreated);
+        socket.on('support_ticket_updated', handleUpdated);
+        socket.on('support_ticket_note_added', handleNoteAdded);
+      } catch (e) {
+        console.warn('Realtime socket init warning:', e);
+      }
+    };
+
+    initSocket();
+    const syncInterval = setInterval(() => {
+      loadTickets(true);
+    }, 3000);
+
+    return () => {
+      clearInterval(syncInterval);
+      isMounted = false;
+      if (activeSocket) {
+        activeSocket.off('support_ticket_created');
+        activeSocket.off('support_ticket_updated');
+        activeSocket.off('support_ticket_note_added');
+      }
+    };
   }, [loadTickets]);
 
   // Tạo phiếu mới
   const handleCreateTicket = async () => {
+    const errs: { subject?: string; description?: string } = {};
     if (!description.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập mô tả sự cố.');
+      errs.description = 'Vui lòng nhập mô tả chi tiết sự cố';
+    }
+    if (Object.keys(errs).length > 0) {
+      setFormErrors(errs);
       return;
     }
+    setFormErrors({});
 
     setIsSubmitting(true);
     try {
@@ -165,10 +298,10 @@ export default function CustomerSupportScreen({
       setSubject('');
       setDescription('');
       setSupportPhotos([]);
-      Alert.alert('Thành công', 'Đã gửi phiếu hỗ trợ. Kỹ thuật viên sẽ xử lý sớm nhất!');
+      setFormErrors({});
       loadTickets();
     } catch (err: any) {
-      Alert.alert('Lỗi', err.message || 'Không thể tạo phiếu hỗ trợ.');
+      console.warn('Không thể tạo phiếu hỗ trợ:', err?.message || err);
     } finally {
       setIsSubmitting(false);
     }
@@ -195,7 +328,7 @@ export default function CustomerSupportScreen({
       }));
       loadTickets();
     } catch (err: any) {
-      Alert.alert('Lỗi', err.message || 'Không thể gửi phản hồi.');
+      console.warn('Không thể gửi phản hồi:', err?.message || err);
     } finally {
       setIsSendingReply(false);
     }
@@ -213,10 +346,10 @@ export default function CustomerSupportScreen({
   };
 
   const categories = [
-    { id: 'LOCK', label: '🔐 Khóa PIN' },
-    { id: 'UNIT', label: '💡 Thiết bị kho' },
-    { id: 'DAMAGE', label: '🌧️ Thấm dột' },
-    { id: 'OTHER', label: '❓ Khác' },
+    { id: 'LOCK', label: 'Khóa PIN' },
+    { id: 'UNIT', label: 'Thiết bị kho' },
+    { id: 'DAMAGE', label: 'Thấm dột' },
+    { id: 'OTHER', label: 'Khác' },
   ];
 
   const faqs = [
@@ -276,9 +409,7 @@ export default function CustomerSupportScreen({
         </View>
 
         <View style={s.topBarRight}>
-          <TouchableOpacity onPress={loadTickets} style={s.iconBtn}>
-            <MaterialIcons name="refresh" size={20} color={isLoading ? T.primary : T.textMuted} />
-          </TouchableOpacity>
+
           {!currentUser && onOpenLogin && (
             <TouchableOpacity
               style={s.loginHeaderBtn}
@@ -322,71 +453,12 @@ export default function CustomerSupportScreen({
               onPress={() => setShowCreateModal(true)}
               activeOpacity={0.88}
             >
-              <MaterialIcons name="add-circle" size={18} color="#ffffff" />
-              <Text style={s.createBtnText}>Gửi Yêu Cầu Hỗ Trợ Mới</Text>
+              <Text style={s.createBtnText}>Tạo Phiếu Hỗ Trợ Mới</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ─── Trợ lý AI Phản Hồi Tức Thì 24/7 ─── */}
-        {onOpenAiAssistant && (
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#eff6ff',
-              borderWidth: 1.5,
-              borderColor: '#bfdbfe',
-              borderRadius: 16,
-              padding: 14,
-              marginBottom: 14,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-              shadowColor: '#2563eb',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.08,
-              shadowRadius: 6,
-              elevation: 2,
-            }}
-            onPress={onOpenAiAssistant}
-            activeOpacity={0.85}
-          >
-            <View
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: 13,
-                backgroundColor: '#2563eb',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              <MaterialIcons name="auto-awesome" size={22} color="#ffffff" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: '#1e3a8a' }}>
-                  Trợ lý AI SelfStorage
-                </Text>
-                <View
-                  style={{
-                    backgroundColor: '#dbeafe',
-                    paddingHorizontal: 6,
-                    paddingVertical: 1,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#1d4ed8' }}>
-                    Phản hồi 1s
-                  </Text>
-                </View>
-              </View>
-              <Text style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
-                Tư vấn cỡ kho, đồ đạc, đồ cấm & phí quá hạn ngay tức thì.
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={22} color="#2563eb" />
-          </TouchableOpacity>
-        )}
+
 
         {/* ─── Kênh Hotline Khẩn Cấp 24/7 ─── */}
         <View style={s.contactRow}>
@@ -401,7 +473,7 @@ export default function CustomerSupportScreen({
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={s.contactLabel}>Hotline Khẩn Cấp 24/7</Text>
               <Text style={s.contactVal}>1900 6868</Text>
-              <Text style={s.contactSub}>Hỗ trợ mở khóa PIN & điều hòa buồng kho</Text>
+              <Text style={s.contactSub} numberOfLines={1}>Hỗ trợ mở khóa PIN & điều hòa buồng kho</Text>
             </View>
             <View style={s.callNowBadge}>
               <Text style={s.callNowText}>Gọi ngay</Text>
@@ -416,8 +488,18 @@ export default function CustomerSupportScreen({
             <MaterialIcons name="receipt-long" size={18} color={T.primary} />
             <Text style={s.sectionTitle}>Phiếu Hỗ Trợ Của Bạn</Text>
           </View>
-          <View style={s.ticketCountBadge}>
-            <Text style={s.ticketCountText}>{tickets.length} phiếu</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={s.ticketCountBadge}>
+              <Text style={s.ticketCountText}>{tickets.length} phiếu</Text>
+            </View>
+            <TouchableOpacity
+              style={s.headerCreateBtn}
+              onPress={() => setShowCreateModal(true)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="add" size={14} color="#ffffff" />
+              <Text style={s.headerCreateBtnText}>Tạo phiếu</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -428,8 +510,16 @@ export default function CustomerSupportScreen({
             </View>
             <Text style={s.emptyTitle}>Chưa có yêu cầu hỗ trợ nào</Text>
             <Text style={s.emptySub}>
-              Khi cần trợ giúp về khóa PIN, thiết bị buồng kho hoặc hợp đồng, bấm nút gửi yêu cầu phía trên.
+              Khi cần trợ giúp về khóa PIN, thiết bị buồng kho hoặc hợp đồng lưu trữ, bấm tạo phiếu để kỹ thuật viên xử lý 24/7.
             </Text>
+            <TouchableOpacity
+              style={s.emptyCreateBtn}
+              onPress={() => setShowCreateModal(true)}
+              activeOpacity={0.85}
+            >
+              <MaterialIcons name="add" size={18} color="#ffffff" />
+              <Text style={s.emptyCreateBtnText}>Tạo Phiếu Hỗ Trợ Mới</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           tickets.map((t) => {
@@ -517,14 +607,88 @@ export default function CustomerSupportScreen({
 
       {/* ─── Modal Tạo Phiếu Mới ─── */}
       <Modal visible={showCreateModal} transparent animationType="slide">
-        <View style={s.modalBackdrop}>
-          <View style={s.modalCard}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>Tạo Phiếu Hỗ Trợ</Text>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <MaterialIcons name="close" size={22} color={T.textMuted} />
-              </TouchableOpacity>
-            </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={s.modalBackdrop}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={{ width: '100%', alignItems: 'center' }}
+            >
+              <View style={s.modalCard}>
+                <View style={s.modalHeader}>
+                  <Text style={s.modalTitle}>Tạo Phiếu Hỗ Trợ</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowCreateModal(false);
+                      setFormErrors({});
+                    }}
+                  >
+                    <MaterialIcons name="close" size={22} color={T.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  contentContainerStyle={{ paddingBottom: 10 }}
+                >
+
+            {/* Dropdown Chọn ô kho hoặc cơ sở kho */}
+            <Text style={s.modalLabel}>Chọn ô kho hoặc cơ sở cần hỗ trợ:</Text>
+            <TouchableOpacity
+              style={s.dropdownBox}
+              onPress={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <MaterialIcons name="warehouse" size={18} color={T.primary} />
+                <Text style={s.dropdownSelectedText} numberOfLines={1}>
+                  {selectedUnitLabel}
+                </Text>
+              </View>
+              <MaterialIcons
+                name={isUnitDropdownOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                size={22}
+                color={T.textMuted}
+              />
+            </TouchableOpacity>
+
+            {isUnitDropdownOpen && (
+              <View style={s.dropdownMenu}>
+                <ScrollView
+                  style={{ maxHeight: 150 }}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                >
+                  {dropdownOptions.map((opt, idx) => {
+                    const isSelected =
+                      (selectedUnitCode && opt.value === selectedUnitCode) ||
+                      (!selectedUnitCode && String(opt.facilityId) === String(selectedFacilityId));
+                    return (
+                      <TouchableOpacity
+                        key={`${opt.value}-${opt.facilityId}-${idx}`}
+                        style={[s.dropdownItem, isSelected && s.dropdownItemActive]}
+                        onPress={() => {
+                          setSelectedUnitCode(opt.value);
+                          setSelectedFacilityId(opt.facilityId);
+                          setIsUnitDropdownOpen(false);
+                        }}
+                      >
+                        <Text
+                          style={[s.dropdownItemText, isSelected && s.dropdownItemTextActive]}
+                          numberOfLines={1}
+                        >
+                          {opt.label}
+                        </Text>
+                        {isSelected && (
+                          <MaterialIcons name="check" size={16} color={T.primary} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
 
             {/* Chọn loại sự cố */}
             <Text style={s.modalLabel}>Loại sự cố:</Text>
@@ -547,21 +711,39 @@ export default function CustomerSupportScreen({
             {/* Tiêu đề */}
             <Text style={s.modalLabel}>Tiêu đề:</Text>
             <TextInput
-              style={s.modalInput}
+              style={[s.modalInput, formErrors.subject && s.inputErrorBorder]}
               value={subject}
-              onChangeText={setSubject}
+              onFocus={() => setIsUnitDropdownOpen(false)}
+              onChangeText={(text) => {
+                setSubject(text);
+                if (formErrors.subject) setFormErrors((prev) => ({ ...prev, subject: undefined }));
+              }}
               placeholder="VD: Không mở được khóa, kẹt chốt..."
             />
+            {formErrors.subject && (
+              <Text style={s.inputErrorText}>{formErrors.subject}</Text>
+            )}
 
             {/* Mô tả chi tiết */}
             <Text style={s.modalLabel}>Mô tả chi tiết:</Text>
             <TextInput
-              style={[s.modalInput, { height: 75, textAlignVertical: 'top' }]}
+              style={[
+                s.modalInput,
+                { height: 75, textAlignVertical: 'top' },
+                formErrors.description && s.inputErrorBorder,
+              ]}
               value={description}
-              onChangeText={setDescription}
+              onFocus={() => setIsUnitDropdownOpen(false)}
+              onChangeText={(text) => {
+                setDescription(text);
+                if (formErrors.description) setFormErrors((prev) => ({ ...prev, description: undefined }));
+              }}
               multiline
               placeholder="Mô tả cụ thể vấn đề bạn gặp phải..."
             />
+            {formErrors.description && (
+              <Text style={s.inputErrorText}>{formErrors.description}</Text>
+            )}
 
             {/* Đính kèm ảnh sự cố */}
             <Text style={s.modalLabel}>Ảnh chụp sự cố (nếu có):</Text>
@@ -590,12 +772,14 @@ export default function CustomerSupportScreen({
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {supportPhotos.map((p) => (
                     <View key={p.id} style={s.photoPreviewCard}>
-                      <Image source={{ uri: p.uri }} style={{ width: 55, height: 55, borderRadius: 8 }} />
+                      <Image source={{ uri: p.uri }} style={{ width: 84, height: 84, borderRadius: 12 }} />
                       <TouchableOpacity
                         style={s.photoRemoveBtn}
                         onPress={() => handleRemovePhoto(p.id)}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        activeOpacity={0.8}
                       >
-                        <MaterialIcons name="close" size={12} color="#fff" />
+                        <MaterialIcons name="close" size={15} color="#fff" />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -615,8 +799,11 @@ export default function CustomerSupportScreen({
                 <Text style={s.modalSubmitText}>Gửi Phiếu Hỗ Trợ</Text>
               )}
             </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </KeyboardAvoidingView>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* ─── Modal Xem Chi Tiết & Phản Hồi ─── */}
@@ -650,18 +837,29 @@ export default function CustomerSupportScreen({
 
               {/* Trao đổi / Phản hồi */}
               <Text style={[s.modalLabel, { marginTop: 12 }]}>Lịch sử trao đổi:</Text>
-              {(!selectedTicket?.notes || selectedTicket.notes.length === 0) ? (
-                <Text style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 8 }}>
-                  Chưa có tin nhắn phản hồi mới từ nhân viên.
-                </Text>
-              ) : (
-                selectedTicket.notes.map((n: any, idx: number) => (
+              {(() => {
+                const logsOrNotes = (selectedTicket?.logs && selectedTicket.logs.length > 0)
+                  ? selectedTicket.logs.map((l: any) => ({
+                      author: l.user?.fullName || (l.userId === currentUser?.id ? 'Bạn' : 'Kỹ thuật viên'),
+                      content: l.note,
+                    }))
+                  : (selectedTicket?.notes || []);
+
+                if (logsOrNotes.length === 0) {
+                  return (
+                    <Text style={{ fontSize: 11, color: T.textMuted, fontStyle: 'italic', padding: 8 }}>
+                      Chưa có tin nhắn phản hồi mới từ nhân viên.
+                    </Text>
+                  );
+                }
+
+                return logsOrNotes.map((n: any, idx: number) => (
                   <View key={idx} style={s.noteItem}>
                     <Text style={s.noteAuthor}>{n.author || 'Kỹ thuật viên'}:</Text>
                     <Text style={s.noteContent}>{n.content || n.note}</Text>
                   </View>
-                ))
-              )}
+                ));
+              })()}
             </ScrollView>
 
             {/* Ô gửi tin nhắn */}
@@ -798,11 +996,10 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     backgroundColor: '#ffffff',
     borderRadius: 12,
     paddingVertical: 11,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     alignSelf: 'flex-start',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
@@ -810,7 +1007,12 @@ const s = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  createBtnText: { color: T.primary, fontSize: 13, fontWeight: '800' },
+  createBtnText: {
+    color: T.primary,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
 
   /* Contact Row */
   contactRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
@@ -818,9 +1020,10 @@ const s = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: T.surface,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: T.border,
@@ -842,10 +1045,11 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 5,
     borderRadius: 8,
     gap: 2,
+    flexShrink: 0,
   },
   callNowText: {
     fontSize: 12,
@@ -862,7 +1066,7 @@ const s = StyleSheet.create({
   },
   contactLabel: { fontSize: 11, color: T.textMuted },
   contactVal: { fontSize: 13, fontWeight: '800', color: T.textMain, marginTop: 1 },
-  contactSub: { fontSize: 10, color: T.textMuted, marginTop: 1 },
+  contactSub: { fontSize: 9.5, color: T.textMuted, marginTop: 2, letterSpacing: -0.2 },
 
   /* Section Header */
   sectionHeader: {
@@ -898,6 +1102,41 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+  },
+  headerCreateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.primary,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 2,
+  },
+  headerCreateBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyCreateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 14,
+    gap: 6,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  emptyCreateBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   emptyTitle: { fontSize: 14, fontWeight: '800', color: T.textMain },
   emptySub: { fontSize: 12, color: T.textMuted, textAlign: 'center', marginTop: 4, lineHeight: 18, paddingHorizontal: 12 },
@@ -976,9 +1215,10 @@ const s = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 16,
-    maxHeight: '90%',
+    borderRadius: 20,
+    padding: 18,
+    maxHeight: '94%',
+    width: '100%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -987,6 +1227,60 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   modalTitle: { fontSize: 16, fontWeight: '800', color: T.textMain },
+  dropdownBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  dropdownSelectedText: {
+    fontSize: 13,
+    color: T.textMain,
+    fontWeight: '600',
+    flex: 1,
+  },
+  dropdownMenu: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    marginTop: -2,
+    marginBottom: 10,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#eff6ff',
+  },
+  dropdownItemText: {
+    fontSize: 12.5,
+    color: '#334155',
+    flex: 1,
+  },
+  dropdownItemTextActive: {
+    color: T.primary,
+    fontWeight: '700',
+  },
   modalLabel: { fontSize: 12, fontWeight: '700', color: T.textMain, marginTop: 10, marginBottom: 4 },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   categoryChip: {
@@ -1010,6 +1304,8 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: T.textMain,
   },
+  inputErrorBorder: { borderColor: '#ef4444', borderWidth: 1.5, backgroundColor: '#fef2f2' },
+  inputErrorText: { color: '#ef4444', fontSize: 11, fontWeight: '600', marginTop: 4, marginBottom: 2 },
   modalSubmitBtn: {
     backgroundColor: T.primary,
     borderRadius: 12,
@@ -1074,19 +1370,27 @@ const s = StyleSheet.create({
   photoAttachText: { fontSize: 11, fontWeight: '700', color: T.primary },
   photoPreviewCard: {
     position: 'relative',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: T.border,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    marginRight: 6,
+    marginTop: 6,
   },
   photoRemoveBtn: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#ef4444',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 4,
+    zIndex: 10,
   },
 });

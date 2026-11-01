@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Keyboard } from 'react-native';
 
 export interface CapturedPhoto {
   id: string;
@@ -24,23 +24,43 @@ export const CLOUDINARY_CONFIG = {
  */
 export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
   try {
+    Keyboard.dismiss();
+    if (Platform.OS === 'ios') {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
     // Xin quyền truy cập Camera
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert(
-        'Quyền truy cập Camera',
-        'Ứng dụng cần quyền sử dụng máy ảnh để chụp ảnh hiện trạng ô kho hoặc sự cố.'
-      );
+      console.warn('Quyền truy cập Camera chưa được cấp.');
       return null;
     }
 
-    // allowsEditing: false để tránh lỗi màn hình đen (black image / CROP intent bug) trên Android và Web
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.85,
-      base64: true,
-    });
+    if (Platform.OS === 'ios') {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+        base64: true,
+      });
+    } catch (launchErr: any) {
+      if (Platform.OS === 'ios' && launchErr?.message?.includes('Cannot determine')) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: false,
+          quality: 0.85,
+          base64: true,
+        });
+      } else {
+        throw launchErr;
+      }
+    }
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
       return null;
@@ -61,8 +81,7 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
       createdAt: now.toISOString(),
     };
   } catch (err: any) {
-    console.error('Lỗi khi chụp ảnh camera:', err);
-    Alert.alert('Lỗi Camera', err.message || 'Không thể mở máy ảnh trên thiết bị này.');
+    console.warn('Không thể mở camera:', err?.message || err);
     return null;
   }
 }
@@ -72,21 +91,42 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
  */
 export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
   try {
+    Keyboard.dismiss();
+    if (Platform.OS === 'ios') {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert(
-        'Quyền thư viện ảnh',
-        'Ứng dụng cần quyền truy cập thư viện để chọn ảnh hiện trạng ô kho.'
-      );
+      console.warn('Quyền thư viện ảnh chưa được cấp.');
       return null;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.85,
-      base64: true,
-    });
+    if (Platform.OS === 'ios') {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+        base64: true,
+      });
+    } catch (launchErr: any) {
+      if (Platform.OS === 'ios' && launchErr?.message?.includes('Cannot determine')) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: false,
+          quality: 0.85,
+          base64: true,
+        });
+      } else {
+        throw launchErr;
+      }
+    }
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
       return null;
@@ -107,8 +147,7 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
       createdAt: now.toISOString(),
     };
   } catch (err: any) {
-    console.error('Lỗi khi chọn ảnh từ thư viện:', err);
-    Alert.alert('Lỗi Thư Viện', err.message || 'Không thể truy cập thư viện ảnh.');
+    console.warn('Không thể mở thư viện ảnh:', err?.message || err);
     return null;
   }
 }
