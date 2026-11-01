@@ -122,14 +122,12 @@ export default function NotificationsModal({
   onDeleteNotification,
   role = 'customer',
 }: NotificationsModalProps) {
-  const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'payment' | 'access' | 'support'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
 
   const filteredNotifs = useMemo(() => {
     return notifications.filter((n) => {
       if (activeFilter === 'unread') return !n.isRead;
-      if (activeFilter === 'payment') return n.type === 'PAYMENT';
-      if (activeFilter === 'access') return n.type === 'ACCESS';
-      if (activeFilter === 'support') return n.type === 'SUPPORT';
+
       return true;
     });
   }, [notifications, activeFilter]);
@@ -173,57 +171,32 @@ export default function NotificationsModal({
           )}
         </View>
 
-        {/* Filter Chips Bar */}
+        {/* Filter Tabs Bar (Tất cả / Chưa đọc, tuyệt đối không dùng emoji, không dòng danh mục) */}
         <View style={s.filtersWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtersScroll}>
+          <View style={s.segmentRow}>
             <TouchableOpacity
-              style={[s.filterChip, activeFilter === 'all' && s.filterChipActive]}
+              style={[s.segmentBtn, activeFilter === 'all' && s.segmentBtnActive]}
               onPress={() => setActiveFilter('all')}
+              activeOpacity={0.8}
             >
-              <Text style={[s.filterChipText, activeFilter === 'all' && s.filterChipTextActive]}>
+              <Text style={[s.segmentBtnText, activeFilter === 'all' && s.segmentBtnTextActive]}>
                 Tất cả ({notifications.length})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[s.filterChip, activeFilter === 'unread' && s.filterChipActive]}
+              style={[s.segmentBtn, activeFilter === 'unread' && s.segmentBtnActive]}
               onPress={() => setActiveFilter('unread')}
+              activeOpacity={0.8}
             >
               <View style={s.filterWithDot}>
                 {unreadCount > 0 && <View style={s.chipUnreadDot} />}
-                <Text style={[s.filterChipText, activeFilter === 'unread' && s.filterChipTextActive]}>
+                <Text style={[s.segmentBtnText, activeFilter === 'unread' && s.segmentBtnTextActive]}>
                   Chưa đọc ({unreadCount})
                 </Text>
               </View>
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.filterChip, activeFilter === 'payment' && s.filterChipActive]}
-              onPress={() => setActiveFilter('payment')}
-            >
-              <Text style={[s.filterChipText, activeFilter === 'payment' && s.filterChipTextActive]}>
-                💳 Giao dịch & Cọc
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.filterChip, activeFilter === 'access' && s.filterChipActive]}
-              onPress={() => setActiveFilter('access')}
-            >
-              <Text style={[s.filterChipText, activeFilter === 'access' && s.filterChipTextActive]}>
-                🔑 Mã PIN & Cửa
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[s.filterChip, activeFilter === 'support' && s.filterChipActive]}
-              onPress={() => setActiveFilter('support')}
-            >
-              <Text style={[s.filterChipText, activeFilter === 'support' && s.filterChipTextActive]}>
-                🎧 Hỗ trợ sự cố
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+          </View>
         </View>
 
         {/* Notification Cards List */}
@@ -389,34 +362,40 @@ const s = StyleSheet.create({
   },
   filtersWrap: {
     backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
-  filtersScroll: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+  segmentRow: {
+    flexDirection: 'row',
     backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 3,
   },
-  filterChipActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  filterChipText: {
-    fontSize: 12,
+  segmentBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  segmentBtnText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#475569',
+    color: '#64748b',
   },
-  filterChipTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
+  segmentBtnTextActive: {
+    color: '#0f172a',
+    fontWeight: '800',
   },
   filterWithDot: {
     flexDirection: 'row',

@@ -29,42 +29,6 @@ interface Point {
   y: number;
 }
 
-/**
- * Thuật toán nội suy Midpoint B-Spline liên tục (C1 Continuous Curve)
- * Đảm bảo mọi điểm tiếp giáp đều có cùng tiếp tuyến, triệt tiêu 100% các góc nhọn hay gấp khúc.
- */
-function pointsToSvgPath(pts: Point[]): string {
-  if (pts.length === 0) return '';
-  if (pts.length === 1) {
-    const p = pts[0];
-    return `M ${p.x.toFixed(1)} ${p.y.toFixed(1)} L ${(p.x + 0.2).toFixed(1)} ${(p.y + 0.2).toFixed(1)}`;
-  }
-  if (pts.length === 2) {
-    return `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} L ${pts[1].x.toFixed(1)} ${pts[1].y.toFixed(1)}`;
-  }
-
-  // Đoạn mở đầu: từ P0 đến trung điểm giữa P0 và P1
-  const mid0X = ((pts[0].x + pts[1].x) / 2).toFixed(1);
-  const mid0Y = ((pts[0].y + pts[1].y) / 2).toFixed(1);
-  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)} L ${mid0X} ${mid0Y}`;
-
-  // Các đoạn cong liên tục: nối giữa các trung điểm liên tiếp với điểm chạm làm điểm điều khiển (control point)
-  for (let i = 1; i < pts.length - 1; i++) {
-    const curr = pts[i];
-    const next = pts[i + 1];
-    const midX = ((curr.x + next.x) / 2).toFixed(1);
-    const midY = ((curr.y + next.y) / 2).toFixed(1);
-    d += ` Q ${curr.x.toFixed(1)} ${curr.y.toFixed(1)} ${midX} ${midY}`;
-  }
-
-  // Đoạn kết: từ trung điểm cuối đến điểm kết thúc cuối cùng
-  const last = pts[pts.length - 1];
-  const secondLast = pts[pts.length - 2];
-  d += ` Q ${secondLast.x.toFixed(1)} ${secondLast.y.toFixed(1)} ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
-
-  return d;
-}
-
 export default function SignaturePadModal({
   visible,
   onClose,
@@ -73,10 +37,9 @@ export default function SignaturePadModal({
   title = 'Ký Tên Hợp Đồng Điện Tử',
 }: SignaturePadModalProps) {
   const [paths, setPaths] = useState<string[]>([]);
+  const currentPathRef = useRef<string>('');
   const [currentPathState, setCurrentPathState] = useState<string>('');
-
-  // Bộ đệm điểm thô & điểm đã lọc rung tay cho nét đang vẽ
-  const strokePointsRef = useRef<Point[]>([]);
+  const lastPointRef = useRef<Point | null>(null);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -84,59 +47,52 @@ export default function SignaturePadModal({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         const { locationX, locationY } = evt.nativeEvent;
-        const initialPoint: Point = {
-          x: Number(locationX.toFixed(1)),
-          y: Number(locationY.toFixed(1)),
-        };
-        strokePointsRef.current = [initialPoint];
-        const initialPath = `M ${initialPoint.x} ${initialPoint.y}`;
-        setCurrentPathState(initialPath);
+        const x = Math.round(locationX);
+        const y = Math.round(locationY);
+        lastPointRef.current = { x, y };
+        const startPath = `M ${x} ${y}`;
+        currentPathRef.current = startPath;
+        setCurrentPathState(startPath);
       },
       onPanResponderMove: (evt: GestureResponderEvent) => {
-        const pts = strokePointsRef.current;
-        if (pts.length === 0) return;
-
+        if (!lastPointRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
-        const prev = pts[pts.length - 1];
+        const x = Math.round(locationX);
+        const y = Math.round(locationY);
 
-        // 1. Bộ lọc khử nhiễu tần số cao (Low-pass filter): chống rung tay khi tì ngón tay
-        const smoothX = Number((prev.x * 0.2 + locationX * 0.8).toFixed(1));
-        const smoothY = Number((prev.y * 0.2 + locationY * 0.8).toFixed(1));
+        const prev = lastPointRef.current;
+        const dx = x - prev.x;
+        const dy = y - prev.y;
 
-        // 2. Ngưỡng dịch chuyển tối thiểu (2px) để loại bỏ dao động tĩnh
-        const dx = smoothX - prev.x;
-        const dy = smoothY - prev.y;
-        if (dx * dx + dy * dy < 4.0) return;
+        // Bộ lọc khử rung tay: chỉ vẽ khi ngón tay di chuyển ít nhất 2.5px
+        if (dx * dx + dy * dy < 6) return;
 
-        const newPoint: Point = { x: smoothX, y: smoothY };
-        pts.push(newPoint);
+        // Thuật toán làm mịn Bezier bậc 2 (Quadratic Curve qua trung điểm)
+        const midX = Math.round((prev.x + x) / 2);
+        const midY = Math.round((prev.y + y) / 2);
 
-        // 3. Render tức thời đường cong mượt
-        const livePath = pointsToSvgPath(pts);
-        setCurrentPathState(livePath);
+        const segment = ` Q ${prev.x} ${prev.y} ${midX} ${midY}`;
+        currentPathRef.current += segment;
+        setCurrentPathState(currentPathRef.current);
+        lastPointRef.current = { x, y };
       },
       onPanResponderRelease: () => {
-        const pts = strokePointsRef.current;
-        if (pts.length > 0) {
-          const finalSvgPath = pointsToSvgPath(pts);
-          if (finalSvgPath) {
-            setPaths((prev) => [...prev, finalSvgPath]);
-          }
+        if (lastPointRef.current && currentPathRef.current.length > 5) {
+          const finalStroke = `${currentPathRef.current} L ${lastPointRef.current.x} ${lastPointRef.current.y}`;
+          setPaths((prev) => [...prev, finalStroke]);
         }
-        strokePointsRef.current = [];
+        currentPathRef.current = '';
         setCurrentPathState('');
+        lastPointRef.current = null;
       },
     })
   ).current;
 
   const handleClear = () => {
     setPaths([]);
-    strokePointsRef.current = [];
+    currentPathRef.current = '';
     setCurrentPathState('');
-  };
-
-  const handleUndo = () => {
-    setPaths((prev) => prev.slice(0, -1));
+    lastPointRef.current = null;
   };
 
   const handleConfirm = () => {
@@ -186,7 +142,7 @@ export default function SignaturePadModal({
           <View style={styles.guideBadge}>
             <MaterialIcons name="touch-app" size={15} color="#0284C7" />
             <Text style={styles.guideText}>
-              Nét ký tự động làm mịn đường cong & chống rung tay
+              Vẽ trực tiếp chữ ký của bạn vào ô bên dưới
             </Text>
           </View>
 
@@ -198,22 +154,20 @@ export default function SignaturePadModal({
                   key={index}
                   d={p}
                   stroke="#004AC6"
-                  strokeWidth={3.0}
+                  strokeWidth={3.2}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeMiterlimit={10}
                 />
               ))}
               {currentPathState ? (
                 <Path
                   d={currentPathState}
                   stroke="#004AC6"
-                  strokeWidth={3.0}
+                  strokeWidth={3.2}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeMiterlimit={10}
                 />
               ) : null}
             </Svg>
@@ -221,9 +175,9 @@ export default function SignaturePadModal({
             {/* Dòng kẻ chữ ký Baseline & Placeholder */}
             {paths.length === 0 && !currentPathState && (
               <View style={styles.placeholderWrap} pointerEvents="none">
-                <MaterialIcons name="gesture" size={30} color="#94A3B8" />
+                <MaterialIcons name="edit" size={26} color="#94A3B8" />
                 <Text style={styles.placeholderText}>Ký tên tại đây</Text>
-                <Text style={styles.placeholderSubText}>Nét ký mượt mà tự nhiên như ký bút thật</Text>
+                <Text style={styles.placeholderSubText}>Nét ký mượt mà tự nhiên</Text>
               </View>
             )}
 
@@ -238,28 +192,7 @@ export default function SignaturePadModal({
               activeOpacity={0.7}
             >
               <MaterialIcons name="refresh" size={16} color="#DC2626" />
-              <Text style={styles.clearBtnText}>Xóa hết</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.undoBtn, paths.length === 0 && styles.undoBtnDisabled]}
-              onPress={handleUndo}
-              disabled={paths.length === 0}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons
-                name="undo"
-                size={16}
-                color={paths.length > 0 ? '#475569' : '#94A3B8'}
-              />
-              <Text
-                style={[
-                  styles.undoBtnText,
-                  paths.length === 0 && styles.undoBtnTextDisabled,
-                ]}
-              >
-                Hoàn tác
-              </Text>
+              <Text style={styles.clearBtnText}>Xóa & Ký lại</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -392,13 +325,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 14,
-    gap: 8,
+    gap: 10,
   },
   clearBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
     backgroundColor: '#FEF2F2',
@@ -406,33 +339,9 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
   },
   clearBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#DC2626',
-  },
-  undoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  undoBtnDisabled: {
-    opacity: 0.5,
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-  },
-  undoBtnText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  undoBtnTextDisabled: {
-    color: '#94A3B8',
   },
   confirmBtn: {
     flex: 1,
@@ -440,12 +349,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 10,
     backgroundColor: '#004AC6',
   },
   confirmBtnText: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
   },
