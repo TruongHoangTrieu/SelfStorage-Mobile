@@ -240,7 +240,7 @@ export default function HandoverSuccessScreen({
                     key={i}
                     d={p}
                     stroke="#004AC6"
-                    strokeWidth={3.2}
+                    strokeWidth={4.2}
                     fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"

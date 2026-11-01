@@ -206,9 +206,9 @@ export default function CheckInQueueScreen({
             </View>
           </View>
 
-          {/* Hàng 2: TÊN KHÁCH (LÊN DÒNG TRÊN) <───────────────> NÚT NHẬN KHO (RÚT GỌN) */}
+          {/* Hàng 2: TÊN KHÁCH (HIỂN THỊ ĐẦY ĐỦ TÊN KHÁCH) <───────────────> NÚT NHẬN KHO (RÚT GỌN) */}
           <View style={styles.wRow2}>
-            <Text style={styles.wCustomerName} numberOfLines={1}>
+            <Text style={styles.wCustomerName}>
               {app.customerName}
             </Text>
 
@@ -798,15 +798,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 1.5,
+    marginTop: 2,
+    minHeight: 24,
   },
   wCustomerName: {
-    fontSize: 13.5,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
     color: '#18181B',
     letterSpacing: -0.2,
     flex: 1,
-    marginRight: 6,
+    marginRight: 8,
   },
   wActionButton: {
     backgroundColor: '#2563EB',

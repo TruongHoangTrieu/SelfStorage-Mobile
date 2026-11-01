@@ -47,8 +47,8 @@ export default function SignaturePadModal({
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         const { locationX, locationY } = evt.nativeEvent;
-        const x = Math.round(locationX);
-        const y = Math.round(locationY);
+        const x = Number(locationX.toFixed(1));
+        const y = Number(locationY.toFixed(1));
         lastPointRef.current = { x, y };
         const startPath = `M ${x} ${y}`;
         currentPathRef.current = startPath;
@@ -57,29 +57,39 @@ export default function SignaturePadModal({
       onPanResponderMove: (evt: GestureResponderEvent) => {
         if (!lastPointRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
-        const x = Math.round(locationX);
-        const y = Math.round(locationY);
+        const rawX = Number(locationX.toFixed(1));
+        const rawY = Number(locationY.toFixed(1));
 
         const prev = lastPointRef.current;
-        const dx = x - prev.x;
-        const dy = y - prev.y;
+        const dx = rawX - prev.x;
+        const dy = rawY - prev.y;
 
-        // Bộ lọc khử rung tay: chỉ vẽ khi ngón tay di chuyển ít nhất 2.5px
-        if (dx * dx + dy * dy < 6) return;
+        // Bộ lọc khử rung tay & giảm ngoằn ngoèo: bỏ qua rung vi mô < 5.5px
+        if (dx * dx + dy * dy < 30) return;
 
-        // Thuật toán làm mịn Bezier bậc 2 (Quadratic Curve qua trung điểm)
-        const midX = Math.round((prev.x + x) / 2);
-        const midY = Math.round((prev.y + y) / 2);
+        // Thuật toán làm dịu tọa độ (Smoothing Filter) chống gắt góc
+        const smoothX = Number((prev.x * 0.25 + rawX * 0.75).toFixed(1));
+        const smoothY = Number((prev.y * 0.25 + rawY * 0.75).toFixed(1));
+
+        // Điểm trung gian để đường cong Bezier tiếp tuyến mềm mại
+        const midX = Number(((prev.x + smoothX) / 2).toFixed(1));
+        const midY = Number(((prev.y + smoothY) / 2).toFixed(1));
 
         const segment = ` Q ${prev.x} ${prev.y} ${midX} ${midY}`;
         currentPathRef.current += segment;
         setCurrentPathState(currentPathRef.current);
-        lastPointRef.current = { x, y };
+        lastPointRef.current = { x: smoothX, y: smoothY };
       },
       onPanResponderRelease: () => {
-        if (lastPointRef.current && currentPathRef.current.length > 5) {
-          const finalStroke = `${currentPathRef.current} L ${lastPointRef.current.x} ${lastPointRef.current.y}`;
-          setPaths((prev) => [...prev, finalStroke]);
+        if (lastPointRef.current) {
+          if (currentPathRef.current.length > 5) {
+            const finalStroke = `${currentPathRef.current} L ${lastPointRef.current.x} ${lastPointRef.current.y}`;
+            setPaths((prev) => [...prev, finalStroke]);
+          } else {
+            // Chấm nhẹ (chấm của dấu/chữ i/chữ j): vẽ chấm nhỏ tròn trịa
+            const dot = `M ${lastPointRef.current.x} ${lastPointRef.current.y} L ${Number((lastPointRef.current.x + 0.1).toFixed(1))} ${Number((lastPointRef.current.y + 0.1).toFixed(1))}`;
+            setPaths((prev) => [...prev, dot]);
+          }
         }
         currentPathRef.current = '';
         setCurrentPathState('');
@@ -154,7 +164,7 @@ export default function SignaturePadModal({
                   key={index}
                   d={p}
                   stroke="#004AC6"
-                  strokeWidth={3.2}
+                  strokeWidth={4.5}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -164,7 +174,7 @@ export default function SignaturePadModal({
                 <Path
                   d={currentPathState}
                   stroke="#004AC6"
-                  strokeWidth={3.2}
+                  strokeWidth={4.5}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"

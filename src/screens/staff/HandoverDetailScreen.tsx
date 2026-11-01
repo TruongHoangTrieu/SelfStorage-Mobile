@@ -643,7 +643,7 @@ export default function HandoverDetailScreen({
                       />
                     </View>
                     <Text style={s.cccdPlaceholderTitle}>
-                      {identityType === 'CCCD' ? 'Chưa chụp mặt trước' : 'Chưa chụp trang chính'}
+                      {identityType === 'CCCD' ? 'Chụp mặt trước' : 'Chưa chụp trang chính'}
                     </Text>
                     <View style={s.cccdActionCol}>
                       <TouchableOpacity
@@ -727,7 +727,7 @@ export default function HandoverDetailScreen({
                       />
                     </View>
                     <Text style={s.cccdPlaceholderTitle}>
-                      'Chưa chụp mặt sau CCCD'
+                      Chụp mặt sau 
                     </Text>
                     <View style={s.cccdActionCol}>
                       <TouchableOpacity
@@ -1075,7 +1075,7 @@ export default function HandoverDetailScreen({
                         key={i}
                         d={p}
                         stroke="#004AC6"
-                        strokeWidth={3}
+                        strokeWidth={4.2}
                         fill="none"
                         strokeLinecap="round"
                         strokeLinejoin="round"
