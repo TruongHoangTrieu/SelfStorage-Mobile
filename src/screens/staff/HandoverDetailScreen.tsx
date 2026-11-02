@@ -51,6 +51,8 @@ interface HandoverDetailScreenProps {
     identityFrontUrl?: string;
     identityBackUrl?: string;
     signature?: string[];
+    contractCode?: string;
+    accessPin?: string;
   }) => void;
   isSubmitting?: boolean;
 }
@@ -102,12 +104,12 @@ export default function HandoverDetailScreen({
   // Bước 1: KYC Định danh & Ô kho (Chuẩn hóa duy nhất CCCD 12 số)
   const identityType = "CCCD";
   const [identityNumber, setIdentityNumber] = useState<string>(() => {
-    const raw =
-      appointment.identityNumber ||
-      (appointment.idCard && appointment.idCard !== "Đã đối chiếu tại quầy"
-        ? appointment.idCard
-        : "079095012345");
-    return raw.replace(/\D/g, "").slice(0, 12);
+    let raw = appointment.identityNumber || appointment.idCard || '';
+    if (raw.includes(':') || raw === 'Đã đối chiếu tại quầy') {
+      raw = '';
+    }
+    const clean = raw.replace(/\D/g, '').slice(0, 12);
+    return clean || '079095012345';
   });
 
   const handleIdentityNumberChange = (val: string) => {
@@ -155,8 +157,7 @@ export default function HandoverDetailScreen({
 
   // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
   const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityFrontUrl &&
-      appointment.identityFrontUrl.startsWith("http")
+    appointment.identityFrontUrl
       ? {
           id: "cccd-front-initial",
           title: "Mặt trước CCCD",
@@ -166,8 +167,7 @@ export default function HandoverDetailScreen({
       : null,
   );
   const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityBackUrl &&
-      appointment.identityBackUrl.startsWith("http")
+    appointment.identityBackUrl
       ? {
           id: "cccd-back-initial",
           title: "Mặt sau CCCD",
@@ -624,6 +624,8 @@ export default function HandoverDetailScreen({
       identityFrontUrl: frontUrl,
       identityBackUrl: backUrl,
       signature: contractSignature,
+      contractCode: appointment.contractCode,
+      accessPin: appointment.accessPin || accessPin,
     });
   };
 

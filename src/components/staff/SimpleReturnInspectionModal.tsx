@@ -156,6 +156,20 @@ export default function SimpleReturnInspectionModal({
   useEffect(() => {
     if (!order) return;
     let isMounted = true;
+    setBeforePhotos(order.handoverPhotos || []);
+    AsyncStorage.getItem(`unit_handover_photos_${order.unitCode}`)
+      .then((savedPhotos) => {
+        if (!isMounted) return;
+        if (savedPhotos) {
+          try {
+            const parsed = JSON.parse(savedPhotos);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setBeforePhotos(parsed);
+            }
+          } catch {}
+        }
+      })
+      .catch(() => null);
     const isAlreadyDone = order.status === 'TERMINATED' || order.returnType === 'completed';
 
     setItemsCleared(true);
@@ -234,13 +248,17 @@ export default function SimpleReturnInspectionModal({
         if (savedPin && savedPin.trim().length >= 4) {
           setNewSmartPin(savedPin.trim());
         } else {
-          // Đồng bộ từ API Backend nếu staff chưa từng đổi mã PIN của ô kho này
+          // Đồng bộ mã PIN và ảnh lúc nhận kho từ API Backend
           getContractForCheckOutApi(order.id)
             .then((beData) => {
               if (!isMounted) return;
               const bePin = beData?.units?.[0]?.accessCode;
               if (bePin && String(bePin).trim().length >= 4) {
                 setNewSmartPin(String(bePin).trim());
+              }
+              const beCheckInPhotos = beData?.units?.[0]?.checkInInspection?.photos;
+              if (Array.isArray(beCheckInPhotos) && beCheckInPhotos.length > 0) {
+                setBeforePhotos(beCheckInPhotos);
               }
             })
             .catch(() => null);
@@ -315,7 +333,7 @@ export default function SimpleReturnInspectionModal({
   const isCompleted = order ? (order.status === 'TERMINATED' || order.returnType === 'completed') : false;
 
   // Danh sách ảnh lúc nhận kho (trước khi thuê) từ hệ thống bàn giao
-  const beforePhotos: string[] = order?.handoverPhotos || [];
+  const [beforePhotos, setBeforePhotos] = useState<string[]>(order?.handoverPhotos || []);
 
   // Tính tổng tiền phụ thu
   const checkedBaseAmount = selectedSurcharges.reduce((acc, id) => {

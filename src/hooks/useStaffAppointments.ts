@@ -141,16 +141,33 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           return app.depositStatus === 'paid';
         });
 
-        // Khôi phục chữ ký đã ký từ bộ nhớ máy
+        // Khôi phục chữ ký và hồ sơ CCCD, ảnh bàn giao đã lưu từ bộ nhớ máy
         const appointmentsWithSig = await Promise.all(
           mappedAppointments.map(async (a: CheckInAppointment) => {
+            let updatedItem = { ...a };
             try {
-              const stored = await AsyncStorage.getItem(`handover_sig_${a.id}`);
-              if (stored) {
-                return { ...a, signature: JSON.parse(stored) };
+              const storedSig = await AsyncStorage.getItem(`handover_sig_${a.id}`);
+              if (storedSig) {
+                updatedItem.signature = JSON.parse(storedSig);
               }
             } catch {}
-            return a;
+            try {
+              const storedKyc = await AsyncStorage.getItem(`appointment_kyc_${a.id}`);
+              if (storedKyc) {
+                const kyc = JSON.parse(storedKyc);
+                if (kyc.identityNumber) updatedItem.identityNumber = kyc.identityNumber;
+                if (kyc.identityAddress) updatedItem.identityAddress = kyc.identityAddress;
+                if (kyc.identityFrontUrl) updatedItem.identityFrontUrl = kyc.identityFrontUrl;
+                if (kyc.identityBackUrl) updatedItem.identityBackUrl = kyc.identityBackUrl;
+                if (kyc.contractCode) updatedItem.contractCode = kyc.contractCode;
+                if (kyc.accessPin) updatedItem.accessPin = kyc.accessPin;
+                if (Array.isArray(kyc.handoverPhotos) && kyc.handoverPhotos.length > 0) {
+                  updatedItem.handoverPhotos = kyc.handoverPhotos;
+                  updatedItem.photos = kyc.handoverPhotos;
+                }
+              }
+            } catch {}
+            return updatedItem;
           })
         );
 
@@ -248,6 +265,8 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     identityFrontUrl?: string;
     identityBackUrl?: string;
     signature?: string[];
+    contractCode?: string;
+    accessPin?: string;
   }) => {
     setIsSubmittingHandover(true);
     try {
@@ -258,8 +277,8 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         throw new Error('Không tìm thấy thông tin cuộc hẹn để bàn giao');
       }
 
-      let generatedContract = '';
-      let generatedPin = '';
+      let generatedContract = updatedData.contractCode || app.contractCode || '';
+      let generatedPin = updatedData.accessPin || app.accessPin || '';
 
       // Tự động đảm bảo JWT Token hợp lệ cho Staff khi thực hiện bàn giao
       try {
@@ -291,10 +310,12 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           });
 
           if (checkInResponse?.contract) {
-            generatedContract = checkInResponse.contract.contractCode;
+            generatedContract = checkInResponse.contract.contractCode || generatedContract;
             generatedPin =
+              (checkInResponse.contract as any)?.contractItems?.[0]?.accessCode ||
               checkInResponse.contractItems?.[0]?.accessCode ||
               checkInResponse.accessCodes?.[0]?.code ||
+              generatedPin ||
               '682914';
           }
         } catch (apiErr: any) {
@@ -309,12 +330,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         }
       }
 
-      // Fallback code nếu chưa kết nối server
+      // Fallback code nếu chưa kết nối server và chưa từng có mã hợp đồng
       if (!generatedContract) {
         const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
         generatedContract = `CON-${datePart}-${randomPart}`;
-        generatedPin = app.accessPin || Math.floor(100000 + Math.random() * 900000).toString();
+      }
+      if (!generatedPin) {
+        generatedPin = updatedData.accessPin || app.accessPin || Math.floor(100000 + Math.random() * 900000).toString();
       }
 
       // [ Hoàn tất bàn giao ]: Cập nhật trạng thái ô kho thành ĐANG THUÊ (Occupied) và đơn hàng thành HOÀN TẤT
@@ -329,12 +352,37 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         handoverPhotos: updatedData.photos,
         condition: updatedData.condition,
         notes: updatedData.notes,
+        identityType: updatedData.identityType,
+        identityNumber: updatedData.identityNumber,
+        identityAddress: updatedData.identityAddress,
+        isIdentityVerified: updatedData.isIdentityVerified,
+        identityFrontUrl: updatedData.identityFrontUrl,
+        identityBackUrl: updatedData.identityBackUrl,
         completedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       };
 
-      // Lưu chữ ký cục bộ persistent
+      // Lưu chữ ký và hồ sơ CCCD persistent
       if (updatedData.signature && updatedData.signature.length > 0) {
         AsyncStorage.setItem(`handover_sig_${app.id}`, JSON.stringify(updatedData.signature)).catch(() => null);
+      }
+      AsyncStorage.setItem(
+        `appointment_kyc_${app.id}`,
+        JSON.stringify({
+          identityType: updatedData.identityType,
+          identityNumber: updatedData.identityNumber,
+          identityAddress: updatedData.identityAddress,
+          identityFrontUrl: updatedData.identityFrontUrl,
+          identityBackUrl: updatedData.identityBackUrl,
+          contractCode: generatedContract,
+          accessPin: generatedPin,
+          handoverPhotos: updatedData.photos,
+        })
+      ).catch(() => null);
+      if (updatedData.photos && updatedData.photos.length > 0) {
+        AsyncStorage.setItem(
+          `unit_handover_photos_${updatedData.unitCode}`,
+          JSON.stringify(updatedData.photos)
+        ).catch(() => null);
       }
 
       setAppointments((prev) =>

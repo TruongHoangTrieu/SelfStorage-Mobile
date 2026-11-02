@@ -319,9 +319,8 @@ export const INITIAL_RETURN_ORDERS: StaffReturnOrder[] = [
     extraChargesTotal: 0,
     notes: 'Khách hàng hoàn tất dọn đồ và đề nghị nghiệm thu trả kho hôm nay.',
     handoverPhotos: [
-      'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&auto=format&fit=crop&q=80',
-      'https://res.cloudinary.com/micb9okr/image/upload/v1792946232/selfstorage/storage_units/unit_sto1.png',
-      'https://images.unsplash.com/photo-1595246140625-573b715d11dc?w=600&auto=format&fit=crop&q=80',
+      'https://res.cloudinary.com/micb9okr/image/upload/v1793629031/selfstorage/n7ky3zusgqk6qgzme6zj.jpg',
+      'https://res.cloudinary.com/micb9okr/image/upload/v1793629031/selfstorage/crqgjvvowlmm2e3mloz8.jpg',
     ],
     handoverCondition: 'Kho sạch sẽ, không mùi, đèn sáng, ổ khóa tốt, tường sàn nguyên vẹn.',
     handoverDate: '02/10/2026',
