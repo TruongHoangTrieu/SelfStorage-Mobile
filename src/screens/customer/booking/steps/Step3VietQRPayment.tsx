@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T, formatVND } from "../bookingTypes";
 
 interface Step3Props {
@@ -26,6 +28,8 @@ interface Step3Props {
   checkingPayment: boolean;
   handleCheckPaymentStatus: () => void;
   onBack: () => void;
+  onCancelReservation?: () => void;
+  cancellingReservation?: boolean;
 }
 
 export default function Step3VietQRPayment({
@@ -36,11 +40,25 @@ export default function Step3VietQRPayment({
   checkingPayment,
   handleCheckPaymentStatus,
   onBack,
+  onCancelReservation,
+  cancellingReservation = false,
 }: Step3Props) {
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={{ flex: 1, position: "relative" }}>
       {/* Header */}
-      <View style={s.step2Header}>
+      <View
+        style={[
+          s.step2Header,
+          {
+            paddingTop: Math.max(
+              insets.top + 6,
+              Platform.OS === "ios" ? 48 : 14
+            ),
+          },
+        ]}
+      >
         <View style={s.step2HeaderLeft}>
           <TouchableOpacity
             style={s.backBtn}
@@ -301,12 +319,28 @@ export default function Step3VietQRPayment({
             </>
           )}
         </TouchableOpacity>
+
+        {onCancelReservation && (
+          <TouchableOpacity
+            style={s.cancelReservationBtn}
+            onPress={onCancelReservation}
+            disabled={checkingPayment || cancellingReservation}
+            activeOpacity={0.7}
+          >
+            {cancellingReservation ? (
+              <ActivityIndicator color="#ef4444" size="small" />
+            ) : (
+              <Text style={s.cancelReservationText}>Hủy đơn giữ chỗ này</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
         <Text
           style={{
             textAlign: "center",
             fontSize: 11,
             color: T.outline,
-            marginTop: 4,
+            marginTop: onCancelReservation ? 0 : 4,
           }}
         >
           Hệ thống tự động polling kiểm tra biên nhận SePay mỗi 3 giây
@@ -328,7 +362,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
     backgroundColor: "#ffffff",
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
@@ -532,6 +566,17 @@ const s = StyleSheet.create({
     color: T.onPrimary,
     fontSize: 14,
     fontWeight: "800",
+  },
+  cancelReservationBtn: {
+    paddingVertical: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  cancelReservationText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#ef4444",
   },
 });
 

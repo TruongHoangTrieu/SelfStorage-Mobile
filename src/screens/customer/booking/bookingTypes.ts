@@ -160,3 +160,103 @@ export function formatVND(amount: number): string {
   return amount.toLocaleString("vi-VN") + " đ";
 }
 
+export interface RentalDateCalculation {
+  startDateFormatted: string; // DD/MM/YYYY
+  dueDateFormatted: string;   // DD/MM/YYYY
+  endDateFormatted: string;   // DD/MM/YYYY
+  startDateIso: string;       // YYYY-MM-DD
+  dueDateIso: string;         // YYYY-MM-DD
+  endDateIso: string;         // YYYY-MM-DD
+  periodSummary: string;      // "DD/MM/YYYY → DD/MM/YYYY"
+}
+
+export function calculateRentalDates(
+  startDateInput?: string | Date | null,
+  months: number = 1
+): RentalDateCalculation | null {
+  if (!startDateInput) return null;
+
+  let year: number;
+  let month: number; // 1-indexed (1..12)
+  let day: number;
+
+  if (typeof startDateInput === "string") {
+    const trimmed = startDateInput.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.includes("-")) {
+      const cleanDate = trimmed.split("T")[0];
+      const parts = cleanDate.split("-");
+      if (parts.length < 3) return null;
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      day = parseInt(parts[2], 10);
+    } else if (trimmed.includes("/")) {
+      const parts = trimmed.split("/");
+      if (parts.length < 3) return null;
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10);
+      year = parseInt(parts[2], 10);
+    } else {
+      const parsed = new Date(trimmed);
+      if (isNaN(parsed.getTime())) return null;
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
+    }
+  } else if (startDateInput instanceof Date) {
+    if (isNaN(startDateInput.getTime())) return null;
+    year = startDateInput.getFullYear();
+    month = startDateInput.getMonth() + 1;
+    day = startDateInput.getDate();
+  } else {
+    return null;
+  }
+
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+
+  const validMonths = Math.max(1, months || 1);
+  const targetYear = year + Math.floor((month - 1 + validMonths) / 12);
+  const targetMonth = ((month - 1 + validMonths) % 12) + 1;
+
+  const maxDaysInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
+  const targetDay = Math.min(day, maxDaysInTargetMonth);
+
+  const dueDate = new Date(targetYear, targetMonth - 1, targetDay);
+  const endDate = new Date(targetYear, targetMonth - 1, targetDay - 1);
+
+  const formatVn = (dt: Date): string => {
+    const d = String(dt.getDate()).padStart(2, "0");
+    const m = String(dt.getMonth() + 1).padStart(2, "0");
+    const y = dt.getFullYear();
+    return `${d}/${m}/${y}`;
+  };
+
+  const formatIso = (dt: Date): string => {
+    const d = String(dt.getDate()).padStart(2, "0");
+    const m = String(dt.getMonth() + 1).padStart(2, "0");
+    const y = dt.getFullYear();
+    return `${y}-${m}-${d}`;
+  };
+
+  const startDateObj = new Date(year, month - 1, day);
+  const startDateFormatted = formatVn(startDateObj);
+  const startDateIso = formatIso(startDateObj);
+
+  const dueDateFormatted = formatVn(dueDate);
+  const dueDateIso = formatIso(dueDate);
+
+  const endDateFormatted = formatVn(endDate);
+  const endDateIso = formatIso(endDate);
+
+  return {
+    startDateFormatted,
+    dueDateFormatted,
+    endDateFormatted,
+    startDateIso,
+    dueDateIso,
+    endDateIso,
+    periodSummary: `${startDateFormatted} → ${endDateFormatted}`,
+  };
+}
+

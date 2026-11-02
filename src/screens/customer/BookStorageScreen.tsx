@@ -208,6 +208,7 @@ export default function BookStorageScreen({
   } | null>(null);
   const [paymentTimeLeft, setPaymentTimeLeft] = useState(900); // 15 mins (900s)
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const [cancellingReservation, setCancellingReservation] = useState(false);
   const [isDepositPaid, setIsDepositPaid] = useState(false);
 
   // Submitting & Reservation result
@@ -324,26 +325,11 @@ export default function BookStorageScreen({
       };
     }
     const baseRate = selectedUnit.monthlyBasePrice;
-    let discountPct = 0;
-    let ratePerMonth = baseRate;
-
-    if (rentalTermMonths === 1) {
-      discountPct = 0;
-      ratePerMonth = baseRate;
-    } else if (rentalTermMonths === 3) {
-      discountPct = 5;
-      ratePerMonth = Math.round(baseRate * 0.95);
-    } else if (rentalTermMonths === 6) {
-      discountPct = 10;
-      ratePerMonth = Math.round(baseRate * 0.9);
-    } else if (rentalTermMonths === 12) {
-      discountPct = 15;
-      ratePerMonth = Math.round(baseRate * 0.85);
-    }
-
+    const discountPct = 0;
+    const ratePerMonth = baseRate;
     const grossRent = baseRate * rentalTermMonths;
-    const totalRent = ratePerMonth * rentalTermMonths;
-    const discountSavings = grossRent - totalRent;
+    const totalRent = baseRate * rentalTermMonths;
+    const discountSavings = 0;
     const depositAmount = Number(selectedUnit.depositAmount) || baseRate;
 
     return {
@@ -674,6 +660,43 @@ export default function BookStorageScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handleCancelReservation = () => {
+    if (!confirmedReservation?.id) {
+      setCurrentStep(1);
+      setQrData(null);
+      return;
+    }
+
+    Alert.alert(
+      "Hủy đơn giữ chỗ",
+      "Bạn có chắc chắn muốn hủy đơn giữ chỗ này không? Buồng kho sẽ được mở lại ngay cho khách hàng khác.",
+      [
+        { text: "Không", style: "cancel" },
+        {
+          text: "Xác nhận hủy",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setCancellingReservation(true);
+              await apiRequest(`/reservations/${confirmedReservation.id}/cancel`, {
+                method: "POST",
+                body: JSON.stringify({ reason: "Khách hàng hủy trên app" }),
+              });
+              setConfirmedReservation(null);
+              setQrData(null);
+              setCurrentStep(1);
+              showToast("Đã hủy đơn giữ chỗ thành công");
+            } catch (err: any) {
+              Alert.alert("Lỗi", err?.message || "Không thể hủy đơn đặt chỗ lúc này");
+            } finally {
+              setCancellingReservation(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleTabPress = (tab: CustomerTabType) => {
     setCurrentBottomTab(tab);
     if (tab === "book-new") {
@@ -748,6 +771,8 @@ export default function BookStorageScreen({
             checkingPayment={checkingPayment}
             handleCheckPaymentStatus={handleCheckPaymentStatus}
             onBack={() => setCurrentStep(2)}
+            onCancelReservation={handleCancelReservation}
+            cancellingReservation={cancellingReservation}
           />
         )}
 

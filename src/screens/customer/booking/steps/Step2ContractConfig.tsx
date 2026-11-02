@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,10 +10,11 @@ import {
   Linking,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, {
-  DateTimePickerEvent,
+  DateTimePickerChangeEvent,
 } from "@react-native-community/datetimepicker";
-import { StorageDisplayItem, T, formatVND } from "../bookingTypes";
+import { StorageDisplayItem, T, formatVND, calculateRentalDates } from "../bookingTypes";
 
 interface Step2Props {
   selectedUnit: StorageDisplayItem;
@@ -45,25 +46,48 @@ export default function Step2ContractConfig({
   handleSignContract,
   onBack,
 }: Step2Props) {
+  const insets = useSafeAreaInsets();
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const rentalDates = useMemo(() => {
+    return calculateRentalDates(moveInDateStr, rentalTermMonths);
+  }, [moveInDateStr, rentalTermMonths]);
+
+  const remainingAtCheckIn = Math.max(0, calc.totalRent - calc.depositAmount);
 
   const minMoveInDate = new Date();
   minMoveInDate.setDate(minMoveInDate.getDate() + 1);
 
-  const handleDateChange = (
-    event: DateTimePickerEvent,
-    selectedDate?: Date
+  const handleDateValueChange = (
+    _event: DateTimePickerChangeEvent,
+    selectedDate: Date
   ) => {
-    setShowDatePicker(Platform.OS === "ios");
-    if (selectedDate && event.type !== "dismissed") {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+    }
+    if (selectedDate) {
       setMoveInDateStr(selectedDate.toISOString().split("T")[0]);
     }
+  };
+
+  const handleDateDismiss = () => {
+    setShowDatePicker(false);
   };
 
   return (
     <View style={{ flex: 1, position: "relative" }}>
       {/* Header Task-Focused Mode */}
-      <View style={s.step2Header}>
+      <View
+        style={[
+          s.step2Header,
+          {
+            paddingTop: Math.max(
+              insets.top + 6,
+              Platform.OS === "ios" ? 48 : 14
+            ),
+          },
+        ]}
+      >
         <View style={s.step2HeaderLeft}>
           <TouchableOpacity
             style={s.backBtn}
@@ -83,19 +107,6 @@ export default function Step2ContractConfig({
             </Text>
           </View>
         </View>
-
-        <TouchableOpacity
-          style={s.hotlineBtn}
-          activeOpacity={0.85}
-          onPress={() => Linking.openURL("tel:19006868")}
-        >
-          <MaterialIcons
-            name="support-agent"
-            size={18}
-            color={T.secondary}
-          />
-          <Text style={s.hotlineText}>Hotline</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Scrollable Content */}
@@ -127,16 +138,6 @@ export default function Step2ContractConfig({
 
           {/* 1. Selected Unit Card */}
           <View style={s.step2Card}>
-            <View style={s.lockedBadge}>
-              <MaterialIcons
-                name="verified"
-                size={14}
-                color={T.onSecondaryFixed}
-              />
-              <Text style={s.lockedBadgeText}>
-                Đã khóa giữ chỗ trong 15:00
-              </Text>
-            </View>
             <Text style={s.unitNameText}>{selectedUnit.title}</Text>
             <Text style={s.unitAddressText}>
               {selectedUnit.locationText || "TP. Hồ Chí Minh"}
@@ -194,8 +195,11 @@ export default function Step2ContractConfig({
 
           {/* 2. Move-in Date Picker */}
           <TouchableOpacity
-            style={s.datePickerBox}
-            onPress={() => setShowDatePicker(true)}
+            style={[
+              s.datePickerBox,
+              showDatePicker && Platform.OS === "ios" && { borderColor: T.secondary, borderWidth: 1.5 },
+            ]}
+            onPress={() => setShowDatePicker((prev) => !prev)}
             activeOpacity={0.85}
           >
             <View style={s.dateLeftGroup}>
@@ -222,21 +226,48 @@ export default function Step2ContractConfig({
               </View>
             </View>
             <MaterialIcons
-              name="edit-calendar"
+              name={showDatePicker ? "expand-less" : "edit-calendar"}
               size={22}
               color={T.secondary}
             />
           </TouchableOpacity>
 
           {showDatePicker && (
-            <DateTimePicker
-              value={new Date(moveInDateStr)}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              minimumDate={minMoveInDate}
-              onChange={handleDateChange}
-              locale="vi-VN"
-            />
+            Platform.OS === "ios" ? (
+              <View style={s.inlineCalendarCard}>
+                <View style={s.inlineCalendarHeader}>
+                  <Text style={s.inlineCalendarTitle}>Chọn ngày nhận kho</Text>
+                  <TouchableOpacity
+                    style={s.inlineCalendarDoneBtn}
+                    onPress={() => setShowDatePicker(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.inlineCalendarDoneText}>Xong</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={new Date(moveInDateStr)}
+                  mode="date"
+                  display="inline"
+                  minimumDate={minMoveInDate}
+                  onValueChange={handleDateValueChange}
+                  onDismiss={handleDateDismiss}
+                  locale="vi-VN"
+                  themeVariant="light"
+                  accentColor={T.secondary}
+                />
+              </View>
+            ) : (
+              <DateTimePicker
+                value={new Date(moveInDateStr)}
+                mode="date"
+                display="default"
+                minimumDate={minMoveInDate}
+                onValueChange={handleDateValueChange}
+                onDismiss={handleDateDismiss}
+                locale="vi-VN"
+              />
+            )
           )}
 
           {/* 3. Rental Duration Selector */}
@@ -249,9 +280,6 @@ export default function Step2ContractConfig({
                   color={T.secondary}
                 />
                 <Text style={s.sectionTitle}>Thời hạn thuê kho</Text>
-              </View>
-              <View style={s.savePill}>
-                <Text style={s.savePillText}>Tiết kiệm tới 15%</Text>
               </View>
             </View>
 
@@ -277,7 +305,7 @@ export default function Step2ContractConfig({
                 <Text style={s.termPrice}>
                   {formatVND(selectedUnit.monthlyBasePrice)}
                 </Text>
-                <Text style={s.termSubtitle}>Giá chuẩn / tháng</Text>
+                <Text style={s.termSubtitle}>Giá thuê / tháng</Text>
               </TouchableOpacity>
 
               {/* Option 2: 3 Months */}
@@ -299,17 +327,12 @@ export default function Step2ContractConfig({
                   />
                 </View>
                 <Text style={s.termPrice}>
-                  {formatVND(
-                    Math.round(selectedUnit.monthlyBasePrice * 0.95)
-                  )}
+                  {formatVND(selectedUnit.monthlyBasePrice)}
                 </Text>
-                <View style={s.discountRateRow}>
-                  <Text style={s.discountRateBadge}>Giảm 5%</Text>
-                  <Text style={s.termSubtitle}>/tháng</Text>
-                </View>
+                <Text style={s.termSubtitle}>Giá thuê / tháng</Text>
               </TouchableOpacity>
 
-              {/* Option 3: 6 Months (Recommended) */}
+              {/* Option 3: 6 Months */}
               <TouchableOpacity
                 style={[
                   s.termCard,
@@ -318,9 +341,6 @@ export default function Step2ContractConfig({
                 onPress={() => setRentalTermMonths(6)}
                 activeOpacity={0.85}
               >
-                <View style={s.recommendedBadge}>
-                  <Text style={s.recommendedBadgeText}>Khuyên dùng</Text>
-                </View>
                 <View style={s.termCardTop}>
                   <Text style={[s.termMonths, { fontWeight: "700" }]}>
                     6 Tháng
@@ -332,15 +352,10 @@ export default function Step2ContractConfig({
                     ]}
                   />
                 </View>
-                <Text style={[s.termPrice, { color: T.secondary }]}>
-                  {formatVND(
-                    Math.round(selectedUnit.monthlyBasePrice * 0.9)
-                  )}
+                <Text style={s.termPrice}>
+                  {formatVND(selectedUnit.monthlyBasePrice)}
                 </Text>
-                <View style={s.discountRateRow}>
-                  <Text style={s.discountRateBadge}>Giảm 10%</Text>
-                  <Text style={s.termSubtitle}>/tháng</Text>
-                </View>
+                <Text style={s.termSubtitle}>Giá thuê / tháng</Text>
               </TouchableOpacity>
 
               {/* Option 4: 12 Months */}
@@ -362,14 +377,9 @@ export default function Step2ContractConfig({
                   />
                 </View>
                 <Text style={s.termPrice}>
-                  {formatVND(
-                    Math.round(selectedUnit.monthlyBasePrice * 0.85)
-                  )}
+                  {formatVND(selectedUnit.monthlyBasePrice)}
                 </Text>
-                <View style={s.discountRateRow}>
-                  <Text style={s.discountRateBadge}>Giảm 15%</Text>
-                  <Text style={s.termSubtitle}>/tháng</Text>
-                </View>
+                <Text style={s.termSubtitle}>Giá thuê / tháng</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -392,88 +402,117 @@ export default function Step2ContractConfig({
               </Text>
             </View>
 
+            {/* Date range box */}
+            {rentalDates && (
+              <View style={s.dateRangeBox}>
+                <View style={s.dateRangeRow}>
+                  <Text style={s.dateRangeLabel}>Ngày bắt đầu:</Text>
+                  <Text style={s.dateRangeValue}>{rentalDates.startDateFormatted}</Text>
+                </View>
+                <View style={s.dateRangeDivider} />
+                <View style={s.dateRangeRow}>
+                  <Text style={s.dateRangeEndLabel}>Ngày kết thúc:</Text>
+                  <Text style={s.dateRangeEndValue}>
+                    {rentalDates.endDateFormatted} • 23:59
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Price lines */}
             <View style={s.costLinesList}>
               <View style={s.costLine}>
-                <Text style={s.costLineLabel}>
-                  Tiền thuê kho niêm yết ({rentalTermMonths} tháng x{" "}
-                  {formatVND(selectedUnit.monthlyBasePrice)})
-                </Text>
+                <Text style={s.costLineLabel}>Giá thuê cơ bản:</Text>
                 <Text style={s.costLineValue}>
-                  {formatVND(calc.grossRent)}
+                  {formatVND(selectedUnit.monthlyBasePrice)} / tháng
                 </Text>
               </View>
 
-              {calc.discountPct > 0 && (
-                <View style={s.costLine}>
-                  <Text style={[s.costLineLabel, { color: T.secondary }]}>
-                    Ưu đãi kỳ hạn ({rentalTermMonths} tháng giảm{" "}
-                    {calc.discountPct}%)
-                  </Text>
-                  <Text
-                    style={[
-                      s.costLineValue,
-                      { color: T.secondary, fontWeight: "700" },
-                    ]}
-                  >
-                    -{formatVND(calc.discountSavings)}
-                  </Text>
-                </View>
-              )}
+              <View style={s.costLine}>
+                <Text style={s.costLineLabel}>Thời gian thuê:</Text>
+                <Text style={s.costLineValue}>
+                  {rentalTermMonths} Tháng
+                </Text>
+              </View>
 
               <View
                 style={[
                   s.costLine,
                   {
-                    paddingTop: 6,
+                    paddingTop: 8,
                     borderTopWidth: 1,
                     borderTopColor: "#f1f5f9",
                   },
                 ]}
               >
-                <Text style={[s.costLineLabel, { fontWeight: "700" }]}>
-                  Tổng tiền thuê thực tế ({rentalTermMonths} tháng)
+                <Text style={[s.costLineLabel, { fontWeight: "700", color: T.onSurface }]}>
+                  Tổng tiền thuê ({rentalTermMonths} tháng):
                 </Text>
-                <Text style={[s.costLineValue, { fontWeight: "700" }]}>
-                  {formatVND(calc.totalRent)}
-                </Text>
-              </View>
-
-              <View style={s.costLine}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    flex: 1,
-                    flexShrink: 1,
-                  }}
-                >
-                  <Text
-                    style={[
-                      s.costLineLabel,
-                      { fontWeight: "700", color: T.onSurface },
-                    ]}
-                  >
-                    Tiền cọc giữ chỗ (Hoàn lại 100%)
-                  </Text>
-                  <View style={s.refundPill}>
-                    <Text style={s.refundPillText}>Cọc đảm bảo</Text>
-                  </View>
-                </View>
                 <Text
                   style={[
                     s.costLineValue,
-                    {
-                      fontWeight: "800",
-                      color: T.secondary,
-                      fontSize: 14,
-                    },
+                    { fontWeight: "800", color: T.secondary, fontSize: 15 },
                   ]}
                 >
-                  {formatVND(calc.depositAmount)}
+                  {formatVND(calc.totalRent)}
                 </Text>
               </View>
             </View>
+
+            {/* Deposit Box (Orange/Amber) */}
+            <View style={s.depositOrangeBox}>
+              <View style={s.depositOrangeTop}>
+                <Text style={s.depositOrangeTitle}>
+                  Tiền Cọc Giữ Chỗ (Nộp ngay):
+                </Text>
+                <Text style={s.depositOrangeAmount}>
+                  {formatVND(calc.depositAmount)}
+                </Text>
+              </View>
+              <View style={s.depositOrangeNoteRow}>
+                <MaterialIcons name="check" size={14} color="#15803d" />
+                <Text style={s.depositOrangeNoteText}>
+                  Khấu trừ 100% vào tiền thuê khi ký hợp đồng nhận phòng
+                </Text>
+              </View>
+            </View>
+
+            {/* Remaining amount at check-in */}
+            {remainingAtCheckIn === 0 ? (
+              <View style={s.checkInZeroBox}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <MaterialIcons name="check-circle" size={15} color="#16a34a" />
+                    <Text style={s.checkInZeroTitle}>
+                      Thanh toán khi nhận kho: 0 đ
+                    </Text>
+                  </View>
+                  <Text style={s.checkInZeroSub}>
+                    Đã thanh toán trọn gói tháng đầu • Không phát sinh thêm phí
+                  </Text>
+                </View>
+                <Text style={s.checkInZeroAmount}>0 đ</Text>
+              </View>
+            ) : (
+              <View style={s.checkInRemainingBox}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={s.checkInRemainingTitle}>
+                    Còn lại thanh toán khi nhận kho:
+                  </Text>
+                  <Text style={s.checkInRemainingSub}>
+                    (Tổng tiền thuê - Tiền cọc đã nộp)
+                  </Text>
+                </View>
+                <Text style={s.checkInRemainingAmount}>
+                  {formatVND(remainingAtCheckIn)}
+                </Text>
+              </View>
+            )}
+
+            {/* Non-refundable disclaimer note */}
+            <Text style={s.disclaimerText}>
+              * Tiền cọc giữ chỗ được trừ trực tiếp vào tiền thuê khi ký hợp đồng và không hoàn lại nếu quý khách hủy đơn.
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -533,7 +572,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
     backgroundColor: "#ffffff",
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
@@ -718,6 +757,45 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
+  inlineCalendarCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+    marginTop: -4,
+  },
+  inlineCalendarHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    marginBottom: 6,
+  },
+  inlineCalendarTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: T.onSurface,
+  },
+  inlineCalendarDoneBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "#eff6ff",
+  },
+  inlineCalendarDoneText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: T.secondary,
+  },
   dateLeftGroup: {
     flexDirection: "row",
     alignItems: "center",
@@ -885,18 +963,137 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: T.onSurface,
   },
-  refundPill: {
+  dateRangeBox: {
+    backgroundColor: "#eff6ff",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    marginBottom: 12,
+    gap: 6,
+  },
+  dateRangeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dateRangeLabel: {
+    fontSize: 12,
+    color: "#475569",
+  },
+  dateRangeValue: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: T.onSurface,
+  },
+  dateRangeDivider: {
+    height: 1,
+    backgroundColor: "#dbeafe",
+  },
+  dateRangeEndLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1e40af",
+  },
+  dateRangeEndValue: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1d4ed8",
+  },
+  depositOrangeBox: {
+    backgroundColor: "#fff7ed",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+    marginTop: 10,
+    gap: 4,
+  },
+  depositOrangeTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+  },
+  depositOrangeTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#7c2d12",
+  },
+  depositOrangeAmount: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#ea580c",
+  },
+  depositOrangeNoteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  depositOrangeNoteText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#15803d",
+    flex: 1,
+  },
+  checkInZeroBox: {
     backgroundColor: "#ecfdf5",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: "#a7f3d0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
   },
-  refundPillText: {
-    fontSize: 9,
+  checkInZeroTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#065f46",
+  },
+  checkInZeroSub: {
+    fontSize: 9.5,
+    color: "#047857",
+    marginTop: 2,
+  },
+  checkInZeroAmount: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#047857",
+  },
+  checkInRemainingBox: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  checkInRemainingTitle: {
+    fontSize: 12,
     fontWeight: "700",
-    color: "#059669",
+    color: "#334155",
+  },
+  checkInRemainingSub: {
+    fontSize: 9.5,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  checkInRemainingAmount: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: T.onSurface,
+  },
+  disclaimerText: {
+    fontSize: 10,
+    color: "#94a3b8",
+    marginTop: 10,
+    lineHeight: 14,
+    fontStyle: "italic",
   },
   stickyBottomBar: {
     position: "absolute",

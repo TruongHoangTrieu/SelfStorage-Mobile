@@ -1,6 +1,7 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Reservation } from "../../../../api";
 import { StorageDisplayItem, T, formatVND } from "../bookingTypes";
 
@@ -25,10 +26,19 @@ export default function Step4BookingSuccess({
   onNavigateToMyReservations,
   onBookAnother,
 }: Step4Props) {
+  const insets = useSafeAreaInsets();
+
   return (
     <ScrollView
       style={s.scrollView}
-      contentContainerStyle={[s.scrollContent, { padding: 20 }]}
+      contentContainerStyle={[
+        s.scrollContent,
+        {
+          paddingHorizontal: 20,
+          paddingTop: Math.max(insets.top + 16, Platform.OS === "ios" ? 52 : 24),
+          paddingBottom: Math.max(insets.bottom, 20),
+        },
+      ]}
       showsVerticalScrollIndicator={false}
     >
       <View style={s.successCard}>
