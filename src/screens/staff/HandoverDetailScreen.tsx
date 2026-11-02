@@ -413,34 +413,46 @@ export default function HandoverDetailScreen({
       setCurrentStep(targetStep);
       return;
     }
-    // Chuyển tới các bước sau: Bắt buộc phải hoàn thành tuần tự
-    if (!isCccdVerified) {
+    // Bắt buộc phải hoàn tất đầy đủ các bước trước đó mới cho qua
+    if (
+      !identityNumber.trim() ||
+      (identityType === "CCCD" && identityNumber.trim().length !== 12) ||
+      !identityAddress.trim() ||
+      !frontCccdPhoto ||
+      !backCccdPhoto ||
+      !isCccdVerified
+    ) {
       Alert.alert(
         "Chưa hoàn tất Bước 1",
-        "Vui lòng xác nhận đối chiếu CCCD trước khi chuyển bước.",
+        "Vui lòng điền đủ số CCCD (12 số), địa chỉ, chụp đủ 2 mặt CCCD và xác nhận đối chiếu trước khi chuyển bước.",
       );
       return;
     }
-    if (targetStep >= 3 && photos.length === 0) {
-      Alert.alert(
-        "Chưa có ảnh hiện trạng",
-        "Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho tại Bước 2.",
-      );
-      return;
+    if (targetStep >= 3) {
+      if (photos.length === 0) {
+        Alert.alert(
+          "Chưa có ảnh hiện trạng",
+          "Vui lòng chụp ít nhất 1 ảnh hiện trạng ô kho tại Bước 2.",
+        );
+        return;
+      }
+      if (!checklist.lockTested || !checklist.lightingChecked || !checklist.cleanlinessChecked) {
+        Alert.alert(
+          "Chưa hoàn thành kiểm tra",
+          "Vui lòng kiểm tra và tích chọn đủ 3 mục hiện trạng kho tại Bước 2.",
+        );
+        return;
+      }
     }
-    if (targetStep >= 4 && !isContractSigned) {
-      Alert.alert(
-        "Chưa ký hợp đồng",
-        "Vui lòng xác nhận khách đã ký hợp đồng tại Bước 3.",
-      );
-      return;
-    }
-    if (targetStep >= 5 && !isPaid) {
-      Alert.alert(
-        "Chưa thanh toán",
-        "Vui lòng xác nhận đã thu tiền thuê kho tại Bước 4 trước khi cấp PIN.",
-      );
-      return;
+    if (targetStep >= 4) {
+      const hasSig = Boolean((contractSignature && contractSignature.length > 0) || isContractSigned);
+      if (!hasSig) {
+        Alert.alert(
+          "Chưa ký hợp đồng",
+          "Vui lòng yêu cầu khách hàng ký tên vào hợp đồng tại Bước 3.",
+        );
+        return;
+      }
     }
     setCurrentStep(targetStep);
   };
@@ -465,11 +477,24 @@ export default function HandoverDetailScreen({
         );
         return;
       }
-
+      if (!identityAddress || !identityAddress.trim()) {
+        Alert.alert(
+          "Thiếu địa chỉ thường trú",
+          "Vui lòng nhập địa chỉ thường trú của khách hàng theo CCCD.",
+        );
+        return;
+      }
+      if (!frontCccdPhoto || !backCccdPhoto) {
+        Alert.alert(
+          "Chưa đủ ảnh CCCD",
+          "Vui lòng chụp hoặc tải đủ ảnh 2 mặt CCCD của khách hàng.",
+        );
+        return;
+      }
       if (!isCccdVerified) {
         Alert.alert(
           "Chưa đối chiếu giấy tờ",
-          "Vui lòng xác nhận đối chiếu giấy tờ gốc của khách hàng.",
+          "Vui lòng tích xác nhận đã đối chiếu giấy tờ gốc của khách hàng.",
         );
         return;
       }
@@ -482,35 +507,24 @@ export default function HandoverDetailScreen({
         );
         return;
       }
+      if (!checklist.lockTested || !checklist.lightingChecked || !checklist.cleanlinessChecked) {
+        Alert.alert(
+          "Chưa hoàn thành kiểm tra",
+          "Vui lòng kiểm tra và tích chọn đủ 3 mục hiện trạng kho (Khóa, Đèn, Vệ sinh).",
+        );
+        return;
+      }
       setCurrentStep(3);
     } else if (currentStep === 3) {
-      if (!isContractSigned) {
+      const hasSignature = Boolean((contractSignature && contractSignature.length > 0) || isContractSigned);
+      if (!hasSignature) {
         Alert.alert(
           "Chưa ký hợp đồng",
-          "Vui lòng xác nhận khách hàng đã ký hợp đồng thuê kho.",
+          "Vui lòng yêu cầu khách hàng ký tên vào hợp đồng trước khi sang Bước 4.",
         );
         return;
       }
       setCurrentStep(4);
-    } else if (currentStep === 4) {
-      if (!isPaid) {
-        Alert.alert(
-          "Chưa xác nhận thanh toán",
-          "Vui lòng xác nhận khách hàng đã thanh toán tiền thuê còn lại trước khi cấp PIN bàn giao kho.",
-          [
-            { text: "Kiểm tra lại", style: "cancel" },
-            {
-              text: "Xác nhận đã thu & Tiếp tục",
-              onPress: () => {
-                setIsPaid(true);
-                setCurrentStep(5);
-              },
-            },
-          ],
-        );
-        return;
-      }
-      setCurrentStep(5);
     }
   };
 
@@ -618,7 +632,6 @@ export default function HandoverDetailScreen({
     { num: 2, title: "Hiện trạng" },
     { num: 3, title: "Hợp đồng" },
     { num: 4, title: "Thu tiền" },
-    { num: 5, title: "Cấp PIN" },
   ];
 
   return (
@@ -878,7 +891,7 @@ export default function HandoverDetailScreen({
               <View style={s.cccdBox}>
                 <View style={s.cccdHeaderRow}>
                   <Text style={s.cccdBoxTitle} numberOfLines={1}>
-                    '2. Mặt sau CCCD'
+                    2. Mặt sau CCCD
                   </Text>
                   {backCccdPhoto && (
                     <View style={s.cccdStatusBadge}>
@@ -1462,35 +1475,7 @@ export default function HandoverDetailScreen({
               </View>
             )}
 
-            {/* Checkbox xác nhận ký hợp đồng */}
-            <TouchableOpacity
-              style={[s.signedBox, isContractSigned && s.signedBoxActive]}
-              onPress={() => setIsContractSigned(!isContractSigned)}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons
-                name={
-                  isContractSigned ? "check-box" : "check-box-outline-blank"
-                }
-                size={24}
-                color={isContractSigned ? T.emeraldText : "#94A3B8"}
-              />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text
-                  style={[
-                    s.signedTitle,
-                    isContractSigned && { color: T.emeraldText },
-                  ]}
-                >
-                  {isContractSigned
-                    ? "✓ Đã xác nhận ký hợp đồng"
-                    : "Xác nhận khách hàng đã ký hợp đồng"}
-                </Text>
-                <Text style={s.signedSub}>
-                  Hợp đồng đã có đủ chữ ký và lưu trữ vào hồ sơ
-                </Text>
-              </View>
-            </TouchableOpacity>
+
           </View>
         )}
 
@@ -1707,72 +1692,27 @@ export default function HandoverDetailScreen({
               </View>
             )}
 
-            {/* Nút xác nhận đã thu tiền */}
-            <TouchableOpacity
-              style={[s.paidToggleBtn, isPaid && s.paidToggleBtnDone]}
-              onPress={() => setIsPaid(!isPaid)}
-              activeOpacity={0.85}
-            >
-              <MaterialIcons
-                name={isPaid ? "check-circle" : "radio-button-unchecked"}
-                size={22}
-                color="#fff"
-              />
-              <Text style={s.paidToggleText}>
-                {isPaid ? `✓ ĐÃ THU ĐỦ TIỀN THUÊ ` : ` XÁC NHẬN ĐÃ THU TIỀN `}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ================= BƯỚC 5: CẤP MÃ PIN SMART LOCK ================= */}
-        {currentStep === 5 && (
-          <View style={s.card}>
-            <View style={s.cardHeader}>
-              <MaterialIcons name="lock" size={20} color={T.primary} />
-              <Text style={s.cardTitle}>
-                Bước 5: Cấp PIN & Kích Hoạt Kho #{selectedUnitCode}
-              </Text>
-            </View>
-
-            {/* Mã PIN 6 số */}
-            <View style={s.pinSection}>
-              <Text style={s.sectionSubtitle}>Mã PIN Smart Lock (6 số):</Text>
-              <TextInput
-                style={s.pinInput}
-                value={accessPin}
-                onChangeText={setAccessPin}
-                keyboardType="numeric"
-                maxLength={6}
-                placeholder="6 số PIN"
-              />
-            </View>
-
-            {/* Tóm tắt hoàn tất */}
-            <View style={s.finishSummaryBox}>
-              <View style={s.finishRow}>
-                <MaterialIcons name="check" size={16} color={T.emeraldText} />
-                <Text style={s.finishText}>CCCD: Đã kiểm tra trùng khớp</Text>
-              </View>
-              <View style={s.finishRow}>
-                <MaterialIcons name="check" size={16} color={T.emeraldText} />
-                <Text style={s.finishText}>Hợp đồng: Đã ký kết hợp lệ</Text>
-              </View>
-              <View style={s.finishRow}>
+            {/* Nút xác nhận đã thu tiền: CHỈ HIỂN THỊ KHI CHỌN TIỀN MẶT */}
+            {paymentMethod === "cash" && (
+              <TouchableOpacity
+                style={[s.paidToggleBtn, isPaid && s.paidToggleBtnDone]}
+                onPress={() => setIsPaid(!isPaid)}
+                activeOpacity={0.85}
+              >
                 <MaterialIcons
-                  name={isPaid ? "check" : "schedule"}
-                  size={16}
-                  color={isPaid ? T.emeraldText : T.amberText}
+                  name={isPaid ? "check-circle" : "radio-button-unchecked"}
+                  size={22}
+                  color="#fff"
                 />
-                <Text style={[s.finishText, !isPaid && { color: T.amberText }]}>
-                  {isPaid
-                    ? "Tiền thuê: Đã thu đủ"
-                    : "Tiền thuê: Ghi nợ thu sau"}
+                <Text style={s.paidToggleText}>
+                  {isPaid ? `✓ ĐÃ THU ĐỦ TIỀN MẶT` : `XÁC NHẬN ĐÃ THU TIỀN MẶT`}
                 </Text>
-              </View>
-            </View>
+              </TouchableOpacity>
+            )}
           </View>
         )}
+
+        
       </ScrollView>
 
       {/* ─── Bottom Navigation Bar ─── */}
@@ -1789,9 +1729,9 @@ export default function HandoverDetailScreen({
           </Text>
         </TouchableOpacity>
 
-        <Text style={s.stepCountText}>Bước {currentStep} / 5</Text>
+        <Text style={s.stepCountText}>Bước {currentStep} / 4</Text>
 
-        {currentStep < 5 ? (
+        {currentStep < 4 ? (
           <TouchableOpacity style={s.navNextBtn} onPress={handleNext}>
             <Text style={s.navNextText}>Tiếp tục</Text>
             <MaterialIcons name="arrow-forward" size={16} color="#fff" />
@@ -1819,7 +1759,7 @@ export default function HandoverDetailScreen({
                 <Text style={s.finishBtnText}>
                   {appointment.status === "completed"
                     ? "Lưu Chỉnh Sửa"
-                    : "Hoàn Tất & Cấp PIN"}
+                    : "Hoàn Tất Bàn Giao"}
                 </Text>
                 <MaterialIcons name="check-circle" size={18} color="#fff" />
               </>
