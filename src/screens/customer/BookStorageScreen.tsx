@@ -282,7 +282,7 @@ export default function BookStorageScreen({
         floorArea: `${size} ${ut.sizeUnit || "m²"}`.trim(),
         volume: "",
         dimensions: (ut as any).dimensions || "",
-        capacity: ut.description ?? "",
+        capacity: (ut.description ?? '').replace(/\[PENALTIES_JSON:[\s\S]*?\]/gi, '').replace(/\[PENALTY:[^\]]*\]/gi, '').trim(),
         features: ((ut as any).features as string[]) ?? [],
         originalPrice: (ut as any).originalPrice,
         monthlyBasePrice: Number(ut.price) || 0,
