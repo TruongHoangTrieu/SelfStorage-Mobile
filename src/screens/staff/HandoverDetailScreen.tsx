@@ -1,5 +1,5 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useState, useEffect } from 'react';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -13,24 +13,26 @@ import {
   Image,
   Clipboard,
   Platform,
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
-import { CheckInAppointment, AvailableUnit } from '../../types/handover';
-import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
-import CccdQrScannerModal, { CccdQrData } from '../../components/staff/CccdQrScannerModal';
+} from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
+import Svg, { Path } from "react-native-svg";
+import { CheckInAppointment, AvailableUnit } from "../../types/handover";
+import ContractPreviewModal from "../../components/staff/ContractPreviewModal";
+import CccdQrScannerModal, {
+  CccdQrData,
+} from "../../components/staff/CccdQrScannerModal";
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
   pickMultiplePhotosFromGallery,
   uploadMultipleImagesToStorage,
   CapturedPhoto,
-} from '../../services/imageService';
+} from "../../services/imageService";
 import {
   uploadCccdApi,
   createRentalPaymentApi,
   getReservationPaymentSummaryApi,
-} from '../../api';
+} from "../../api";
 
 interface HandoverDetailScreenProps {
   appointment: CheckInAppointment;
@@ -42,7 +44,7 @@ interface HandoverDetailScreenProps {
     condition: string;
     notes?: string;
     photos?: string[];
-    identityType?: 'CCCD' | 'PASSPORT' | 'BUSINESS_LICENSE';
+    identityType?: "CCCD" | "PASSPORT" | "BUSINESS_LICENSE";
     identityNumber?: string;
     identityAddress?: string;
     isIdentityVerified?: boolean;
@@ -55,35 +57,35 @@ interface HandoverDetailScreenProps {
 
 // Design Tokens đồng bộ với User & Web
 const T = {
-  primary: '#004ac6',
-  primaryContainer: '#2563eb',
-  bg: '#F8FAFC',
-  surface: '#FFFFFF',
-  surfaceLow: '#F1F5F9',
-  border: '#E2E8F0',
-  textMain: '#0F172A',
-  textMuted: '#64748B',
-  emerald: '#10B981',
-  emeraldBg: '#ECFDF5',
-  emeraldBorder: '#A7F3D0',
-  emeraldText: '#047857',
-  amber: '#F59E0B',
-  amberBg: '#FFFBEB',
-  amberBorder: '#FDE68A',
-  amberText: '#B45309',
+  primary: "#004ac6",
+  primaryContainer: "#2563eb",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F5F9",
+  border: "#E2E8F0",
+  textMain: "#0F172A",
+  textMuted: "#64748B",
+  emerald: "#10B981",
+  emeraldBg: "#ECFDF5",
+  emeraldBorder: "#A7F3D0",
+  emeraldText: "#047857",
+  amber: "#F59E0B",
+  amberBg: "#FFFBEB",
+  amberBorder: "#FDE68A",
+  amberText: "#B45309",
 };
 
 function parseCurrency(val?: string | number): number {
-  if (typeof val === 'number') return val;
+  if (typeof val === "number") return val;
   if (!val) return 0;
   const match = val.toString().match(/([\d.]+)\s*đ/);
-  if (match) return parseInt(match[1].replace(/\./g, ''), 10) || 0;
-  const digitsOnly = val.toString().replace(/[^\d]/g, '');
+  if (match) return parseInt(match[1].replace(/\./g, ""), 10) || 0;
+  const digitsOnly = val.toString().replace(/[^\d]/g, "");
   return digitsOnly ? parseInt(digitsOnly, 10) : 0;
 }
 
 function formatVND(amount: number): string {
-  return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
+  return new Intl.NumberFormat("vi-VN").format(amount) + " đ";
 }
 
 export default function HandoverDetailScreen({
@@ -98,25 +100,31 @@ export default function HandoverDetailScreen({
   const [currentStep, setCurrentStep] = useState<number>(1);
 
   // Bước 1: KYC Định danh & Ô kho (Chuẩn hóa duy nhất CCCD 12 số)
-  const identityType = 'CCCD';
+  const identityType = "CCCD";
   const [identityNumber, setIdentityNumber] = useState<string>(() => {
-    const raw = appointment.identityNumber ||
-      (appointment.idCard && appointment.idCard !== 'Đã đối chiếu tại quầy' ? appointment.idCard : '079095012345');
-    return raw.replace(/\D/g, '').slice(0, 12);
+    const raw =
+      appointment.identityNumber ||
+      (appointment.idCard && appointment.idCard !== "Đã đối chiếu tại quầy"
+        ? appointment.idCard
+        : "079095012345");
+    return raw.replace(/\D/g, "").slice(0, 12);
   });
 
   const handleIdentityNumberChange = (val: string) => {
-    const digitsOnly = val.replace(/\D/g, '').slice(0, 12);
+    const digitsOnly = val.replace(/\D/g, "").slice(0, 12);
     setIdentityNumber(digitsOnly);
   };
   const [identityAddress, setIdentityAddress] = useState<string>(
-    appointment.identityAddress || 'Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM'
+    appointment.identityAddress || "Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM",
   );
-  const [isCccdVerified, setIsCccdVerified] = useState<boolean>(appointment.isIdentityVerified ?? true);
+  const [isCccdVerified, setIsCccdVerified] = useState<boolean>(
+    appointment.isIdentityVerified ?? true,
+  );
   const [selectedUnitCode, setSelectedUnitCode] = useState<string>(
-    appointment.assignedUnit || 'A-101'
+    appointment.assignedUnit || "A-101",
   );
-  const [showUnitPickerModal, setShowUnitPickerModal] = useState<boolean>(false);
+  const [showUnitPickerModal, setShowUnitPickerModal] =
+    useState<boolean>(false);
   const [showQrScannerModal, setShowQrScannerModal] = useState<boolean>(false);
 
   const handleCccdScanSuccess = (data: CccdQrData) => {
@@ -134,55 +142,65 @@ export default function HandoverDetailScreen({
       data.address ? `• Địa chỉ: ${data.address}` : null,
       data.birthDate ? `• Ngày sinh: ${data.birthDate}` : null,
       data.gender ? `• Giới tính: ${data.gender}` : null,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     Alert.alert(
-      'Quét CCCD thành công',
+      "Quét CCCD thành công",
       `Đã trích xuất thông tin Căn cước công dân:\n${infoLines}\n\nDữ liệu đã được tự động điền vào hồ sơ bàn giao.`,
-      [{ text: 'Đồng ý' }]
+      [{ text: "Đồng ý" }],
     );
   };
 
   // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
   const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityFrontUrl && appointment.identityFrontUrl.startsWith('http')
+    appointment.identityFrontUrl &&
+      appointment.identityFrontUrl.startsWith("http")
       ? {
-          id: 'cccd-front-initial',
-          title: 'Mặt trước CCCD',
+          id: "cccd-front-initial",
+          title: "Mặt trước CCCD",
           uri: appointment.identityFrontUrl,
           createdAt: new Date().toISOString(),
         }
-      : null
+      : null,
   );
   const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityBackUrl && appointment.identityBackUrl.startsWith('http')
+    appointment.identityBackUrl &&
+      appointment.identityBackUrl.startsWith("http")
       ? {
-          id: 'cccd-back-initial',
-          title: 'Mặt sau CCCD',
+          id: "cccd-back-initial",
+          title: "Mặt sau CCCD",
           uri: appointment.identityBackUrl,
           createdAt: new Date().toISOString(),
         }
-      : null
+      : null,
   );
   const [isCapturingCccd, setIsCapturingCccd] = useState<boolean>(false);
 
-  const handleCaptureCccd = async (side: 'front' | 'back') => {
+  const handleCaptureCccd = async (side: "front" | "back") => {
     setIsCapturingCccd(true);
     const photo = await takePhotoWithCamera();
     if (photo) {
-      const customized = { ...photo, title: side === 'front' ? 'Mặt trước CCCD' : 'Mặt sau CCCD' };
-      if (side === 'front') setFrontCccdPhoto(customized);
+      const customized = {
+        ...photo,
+        title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
+      };
+      if (side === "front") setFrontCccdPhoto(customized);
       else setBackCccdPhoto(customized);
     }
     setIsCapturingCccd(false);
   };
 
-  const handlePickCccd = async (side: 'front' | 'back') => {
+  const handlePickCccd = async (side: "front" | "back") => {
     setIsCapturingCccd(true);
     const photo = await pickPhotoFromGallery();
     if (photo) {
-      const customized = { ...photo, title: side === 'front' ? 'Mặt trước CCCD' : 'Mặt sau CCCD' };
-      if (side === 'front') setFrontCccdPhoto(customized);
+      const customized = {
+        ...photo,
+        title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
+      };
+      if (side === "front") setFrontCccdPhoto(customized);
       else setBackCccdPhoto(customized);
     }
     setIsCapturingCccd(false);
@@ -210,7 +228,7 @@ export default function HandoverDetailScreen({
           title: `Ảnh hiện trạng ${idx + 1}`,
           uri: url,
           createdAt: new Date().toISOString(),
-        }))
+        })),
       );
     }
     if (appointment.condition) {
@@ -226,7 +244,7 @@ export default function HandoverDetailScreen({
         setPhotos((prev) => [photo, ...prev]);
       }
     } catch (e) {
-      console.error('Lỗi khi chụp ảnh:', e);
+      console.error("Lỗi khi chụp ảnh:", e);
     } finally {
       setIsCapturing(false);
     }
@@ -240,7 +258,7 @@ export default function HandoverDetailScreen({
         setPhotos((prev) => [...selectedPhotos, ...prev]);
       }
     } catch (e) {
-      console.error('Lỗi khi chọn nhiều ảnh:', e);
+      console.error("Lỗi khi chọn nhiều ảnh:", e);
     } finally {
       setIsCapturing(false);
     }
@@ -251,7 +269,7 @@ export default function HandoverDetailScreen({
   };
 
   const [condition, setCondition] = useState<string>(
-    'Kho sạch sẽ, không mùi, đèn sáng, ổ khóa Smart Lock PIN hoạt động tốt'
+    "Kho sạch sẽ, không mùi, đèn sáng, ổ khóa Smart Lock PIN hoạt động tốt",
   );
   const [checklist, setChecklist] = useState({
     lockTested: true,
@@ -261,16 +279,22 @@ export default function HandoverDetailScreen({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Bước 3: Hợp đồng thuê
-  const [contractSignature, setContractSignature] = useState<string[]>(appointment.signature || []);
+  const [contractSignature, setContractSignature] = useState<string[]>(
+    appointment.signature || [],
+  );
   const [isContractSigned, setIsContractSigned] = useState<boolean>(
-    Boolean(appointment.signature && appointment.signature.length > 0)
+    Boolean(appointment.signature && appointment.signature.length > 0),
   );
   const [showContractModal, setShowContractModal] = useState<boolean>(false);
 
   // Bước 4: Thu tiền thuê kho
   // Bước 4: Thu tiền thuê kho (SePay VietQR)
-  const [paymentMethod, setPaymentMethod] = useState<'vietqr' | 'cash'>('vietqr');
-  const [isPaid, setIsPaid] = useState<boolean>(appointment.rentalStatus === 'paid');
+  const [paymentMethod, setPaymentMethod] = useState<"vietqr" | "cash">(
+    "vietqr",
+  );
+  const [isPaid, setIsPaid] = useState<boolean>(
+    appointment.rentalStatus === "paid",
+  );
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // SePay VietQR Dynamic State
@@ -284,10 +308,10 @@ export default function HandoverDetailScreen({
   } | null>(null);
   const [isLoadingPaymentQr, setIsLoadingPaymentQr] = useState<boolean>(false);
 
-
   // Bước 5: Cấp mã PIN Smart Lock
   const [accessPin, setAccessPin] = useState<string>(
-    appointment.accessPin || Math.floor(100000 + Math.random() * 900000).toString()
+    appointment.accessPin ||
+      Math.floor(100000 + Math.random() * 900000).toString(),
   );
 
   // Tính toán tiền tệ
@@ -295,18 +319,27 @@ export default function HandoverDetailScreen({
   const monthlyRentNum = parseCurrency(appointment.monthlyRent);
   const depositNum = parseCurrency(appointment.depositAmount);
   const discountPercent =
-    durationMonths >= 12 ? 15 : durationMonths >= 6 ? 10 : durationMonths >= 3 ? 5 : 0;
+    durationMonths >= 12
+      ? 15
+      : durationMonths >= 6
+        ? 10
+        : durationMonths >= 3
+          ? 5
+          : 0;
   const rawTotal = monthlyRentNum * durationMonths;
   const discountAmount = Math.round(rawTotal * (discountPercent / 100));
   const totalRent = rawTotal - discountAmount;
   const remainingAmount = Math.max(0, totalRent - depositNum);
 
   // Cấu hình ngân hàng SePay (ưu tiên từ Backend, sau đó tới biến môi trường, cuối cùng fallback)
-  const fallbackBankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
-  const fallbackAccountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0838500046';
-  const fallbackAccountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'TRUONG DINH LONG';
+  const fallbackBankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || "MBBank";
+  const fallbackAccountNumber =
+    process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || "0838500046";
+  const fallbackAccountName =
+    process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || "TRUONG DINH LONG";
 
-  const paymentContent = sepayQrInfo?.transferContent || `THANH TOAN ${appointment.id}`;
+  const paymentContent =
+    sepayQrInfo?.transferContent || `THANH TOAN ${appointment.id}`;
   const bankCode = sepayQrInfo?.bankCode || fallbackBankCode;
   const accountNumber = sepayQrInfo?.accountNumber || fallbackAccountNumber;
   const accountName = sepayQrInfo?.accountName || fallbackAccountName;
@@ -314,7 +347,7 @@ export default function HandoverDetailScreen({
   const qrUrl =
     sepayQrInfo?.qrCodeUrl ||
     `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${displayAmount}&addInfo=${encodeURIComponent(
-      paymentContent
+      paymentContent,
     )}&accountName=${encodeURIComponent(accountName)}`;
 
   // Tự động sinh mã thanh toán tiền thuê SePay khi vào Bước 4
@@ -324,13 +357,14 @@ export default function HandoverDetailScreen({
     const fetchRentalPayment = async () => {
       try {
         setIsLoadingPaymentQr(true);
-        const resId = (appointment as any).rawId || appointment.id.replace('RSV-', '');
-        const res = await createRentalPaymentApi(resId, 'BANK_TRANSFER');
+        const resId =
+          (appointment as any).rawId || appointment.id.replace("RSV-", "");
+        const res = await createRentalPaymentApi(resId, "BANK_TRANSFER");
         if (isSubscribed && res?.qr) {
           setSepayQrInfo(res.qr);
         }
       } catch (err) {
-        console.warn('Backend rental payment info notice:', err);
+        console.warn("Backend rental payment info notice:", err);
       } finally {
         if (isSubscribed) setIsLoadingPaymentQr(false);
       }
@@ -347,9 +381,13 @@ export default function HandoverDetailScreen({
     let isSubscribed = true;
     const interval = setInterval(async () => {
       try {
-        const resId = (appointment as any).rawId || appointment.id.replace('RSV-', '');
+        const resId =
+          (appointment as any).rawId || appointment.id.replace("RSV-", "");
         const summary = await getReservationPaymentSummaryApi(resId);
-        if (isSubscribed && (summary.rentalPaid || summary.reservationStatus === 'COMPLETED')) {
+        if (
+          isSubscribed &&
+          (summary.rentalPaid || summary.reservationStatus === "COMPLETED")
+        ) {
           setIsPaid(true);
           clearInterval(interval);
         }
@@ -369,8 +407,6 @@ export default function HandoverDetailScreen({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-
-
   const handleSelectStep = (targetStep: number) => {
     if (targetStep === currentStep) return;
     if (targetStep < currentStep) {
@@ -379,19 +415,31 @@ export default function HandoverDetailScreen({
     }
     // Chuyển tới các bước sau: Bắt buộc phải hoàn thành tuần tự
     if (!isCccdVerified) {
-      Alert.alert('Chưa hoàn tất Bước 1', 'Vui lòng xác nhận đối chiếu CCCD trước khi chuyển bước.');
+      Alert.alert(
+        "Chưa hoàn tất Bước 1",
+        "Vui lòng xác nhận đối chiếu CCCD trước khi chuyển bước.",
+      );
       return;
     }
     if (targetStep >= 3 && photos.length === 0) {
-      Alert.alert('Chưa có ảnh hiện trạng', 'Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho tại Bước 2.');
+      Alert.alert(
+        "Chưa có ảnh hiện trạng",
+        "Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho tại Bước 2.",
+      );
       return;
     }
     if (targetStep >= 4 && !isContractSigned) {
-      Alert.alert('Chưa ký hợp đồng', 'Vui lòng xác nhận khách đã ký hợp đồng tại Bước 3.');
+      Alert.alert(
+        "Chưa ký hợp đồng",
+        "Vui lòng xác nhận khách đã ký hợp đồng tại Bước 3.",
+      );
       return;
     }
     if (targetStep >= 5 && !isPaid) {
-      Alert.alert('Chưa thanh toán', 'Vui lòng xác nhận đã thu tiền thuê kho tại Bước 4 trước khi cấp PIN.');
+      Alert.alert(
+        "Chưa thanh toán",
+        "Vui lòng xác nhận đã thu tiền thuê kho tại Bước 4 trước khi cấp PIN.",
+      );
       return;
     }
     setCurrentStep(targetStep);
@@ -400,49 +448,65 @@ export default function HandoverDetailScreen({
   const handleNext = () => {
     if (currentStep === 1) {
       if (!identityNumber.trim()) {
-        Alert.alert('Thiếu số định danh', 'Vui lòng nhập số ' + (identityType === 'CCCD' ? 'CCCD' : 'Hộ chiếu') + ' của khách hàng.');
+        Alert.alert(
+          "Thiếu số định danh",
+          "Vui lòng nhập số " +
+            (identityType === "CCCD" ? "CCCD" : "Hộ chiếu") +
+            " của khách hàng.",
+        );
         return;
       }
-      if (identityType === 'CCCD' && identityNumber.trim().length !== 12) {
+      if (identityType === "CCCD" && identityNumber.trim().length !== 12) {
         Alert.alert(
-          'Số CCCD không hợp lệ',
-          'Số CCCD/Căn cước công dân Việt Nam phải gồm đúng 12 chữ số.\nHiện tại bạn đã nhập: ' + identityNumber.trim().length + '/12 số.'
+          "Số CCCD không hợp lệ",
+          "Số CCCD/Căn cước công dân Việt Nam phải gồm đúng 12 chữ số.\nHiện tại bạn đã nhập: " +
+            identityNumber.trim().length +
+            "/12 số.",
         );
         return;
       }
 
       if (!isCccdVerified) {
-        Alert.alert('Chưa đối chiếu giấy tờ', 'Vui lòng xác nhận đối chiếu giấy tờ gốc của khách hàng.');
+        Alert.alert(
+          "Chưa đối chiếu giấy tờ",
+          "Vui lòng xác nhận đối chiếu giấy tờ gốc của khách hàng.",
+        );
         return;
       }
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (photos.length === 0) {
-        Alert.alert('Chưa có ảnh hiện trạng', 'Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho trước khi sang Bước 3.');
+        Alert.alert(
+          "Chưa có ảnh hiện trạng",
+          "Vui lòng chụp hoặc chọn ít nhất 1 ảnh hiện trạng ô kho trước khi sang Bước 3.",
+        );
         return;
       }
       setCurrentStep(3);
     } else if (currentStep === 3) {
       if (!isContractSigned) {
-        Alert.alert('Chưa ký hợp đồng', 'Vui lòng xác nhận khách hàng đã ký hợp đồng thuê kho.');
+        Alert.alert(
+          "Chưa ký hợp đồng",
+          "Vui lòng xác nhận khách hàng đã ký hợp đồng thuê kho.",
+        );
         return;
       }
       setCurrentStep(4);
     } else if (currentStep === 4) {
       if (!isPaid) {
         Alert.alert(
-          'Chưa xác nhận thanh toán',
-          'Vui lòng xác nhận khách hàng đã thanh toán tiền thuê còn lại trước khi cấp PIN bàn giao kho.',
+          "Chưa xác nhận thanh toán",
+          "Vui lòng xác nhận khách hàng đã thanh toán tiền thuê còn lại trước khi cấp PIN bàn giao kho.",
           [
-            { text: 'Kiểm tra lại', style: 'cancel' },
+            { text: "Kiểm tra lại", style: "cancel" },
             {
-              text: 'Xác nhận đã thu & Tiếp tục',
+              text: "Xác nhận đã thu & Tiếp tục",
               onPress: () => {
                 setIsPaid(true);
                 setCurrentStep(5);
               },
             },
-          ]
+          ],
         );
         return;
       }
@@ -460,17 +524,23 @@ export default function HandoverDetailScreen({
 
   const handleFinish = async () => {
     if (!isCccdVerified) {
-      Alert.alert('Lỗi', 'Vui lòng đối chiếu CCCD tại Bước 1.');
+      Alert.alert("Lỗi", "Vui lòng đối chiếu CCCD tại Bước 1.");
       setCurrentStep(1);
       return;
     }
-    if (!identityNumber.trim() || (identityType === 'CCCD' && identityNumber.trim().length !== 12)) {
-      Alert.alert('Lỗi định danh', 'Vui lòng nhập đúng 12 chữ số CCCD tại Bước 1.');
+    if (
+      !identityNumber.trim() ||
+      (identityType === "CCCD" && identityNumber.trim().length !== 12)
+    ) {
+      Alert.alert(
+        "Lỗi định danh",
+        "Vui lòng nhập đúng 12 chữ số CCCD tại Bước 1.",
+      );
       setCurrentStep(1);
       return;
     }
     if (!isContractSigned) {
-      Alert.alert('Lỗi', 'Vui lòng ký hợp đồng tại Bước 3.');
+      Alert.alert("Lỗi", "Vui lòng ký hợp đồng tại Bước 3.");
       setCurrentStep(3);
       return;
     }
@@ -485,9 +555,16 @@ export default function HandoverDetailScreen({
       uploadedUrls = await uploadMultipleImagesToStorage(photos);
 
       // Upload ảnh CCCD 2 mặt đóng dấu Watermark lên Cloudinary Private Storage
-      if (frontCccdPhoto && (!frontCccdPhoto.uri.startsWith('http') || frontCccdPhoto.base64)) {
+      if (
+        frontCccdPhoto &&
+        (!frontCccdPhoto.uri.startsWith("http") || frontCccdPhoto.base64)
+      ) {
         try {
-          const resFront = await uploadCccdApi(frontCccdPhoto.uri, 'front', appointment.id);
+          const resFront = await uploadCccdApi(
+            frontCccdPhoto.uri,
+            "front",
+            appointment.id,
+          );
           frontUrl = resFront.signedUrl || resFront.url;
         } catch (e) {
           frontUrl = frontCccdPhoto.uri;
@@ -496,9 +573,16 @@ export default function HandoverDetailScreen({
         frontUrl = frontCccdPhoto.uri;
       }
 
-      if (backCccdPhoto && (!backCccdPhoto.uri.startsWith('http') || backCccdPhoto.base64)) {
+      if (
+        backCccdPhoto &&
+        (!backCccdPhoto.uri.startsWith("http") || backCccdPhoto.base64)
+      ) {
         try {
-          const resBack = await uploadCccdApi(backCccdPhoto.uri, 'back', appointment.id);
+          const resBack = await uploadCccdApi(
+            backCccdPhoto.uri,
+            "back",
+            appointment.id,
+          );
           backUrl = resBack.signedUrl || resBack.url;
         } catch (e) {
           backUrl = backCccdPhoto.uri;
@@ -507,7 +591,7 @@ export default function HandoverDetailScreen({
         backUrl = backCccdPhoto.uri;
       }
     } catch (uploadErr) {
-      console.warn('Lỗi khi upload ảnh:', uploadErr);
+      console.warn("Lỗi khi upload ảnh:", uploadErr);
       uploadedUrls = photos.map((p) => p.base64 || p.uri);
     } finally {
       setIsUploadingPhotos(false);
@@ -530,27 +614,32 @@ export default function HandoverDetailScreen({
   };
 
   const steps = [
-    { num: 1, title: 'CCCD & Kho' },
-    { num: 2, title: 'Hiện trạng' },
-    { num: 3, title: 'Hợp đồng' },
-    { num: 4, title: 'Thu tiền' },
-    { num: 5, title: 'Cấp PIN' },
+    { num: 1, title: "CCCD & Kho" },
+    { num: 2, title: "Hiện trạng" },
+    { num: 3, title: "Hợp đồng" },
+    { num: 4, title: "Thu tiền" },
+    { num: 5, title: "Cấp PIN" },
   ];
 
   return (
     <View style={s.container}>
       {/* ─── Top Bar ─── */}
-      <View style={[s.topBar, { paddingTop: insets.top > 0 ? insets.top + 8 : 14 }]}>
+      <View
+        style={[s.topBar, { paddingTop: insets.top > 0 ? insets.top + 8 : 14 }]}
+      >
         <TouchableOpacity style={s.backBtn} onPress={onBackToQueue}>
           <MaterialIcons name="arrow-back" size={22} color={T.textMain} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 8 }}>
           <Text style={s.topTitle}>
-            {appointment.status === 'completed' ? 'Chỉnh Sửa Bàn Giao: ' : 'Bàn Giao: '}
+            {appointment.status === "completed"
+              ? "Chỉnh Sửa Bàn Giao: "
+              : "Bàn Giao: "}
             {appointment.customerName}
           </Text>
           <Text style={s.topSub}>
-            Đơn #{appointment.id.slice(-6).toUpperCase()} • Ô #{selectedUnitCode}
+            Đơn #{appointment.id.slice(-6).toUpperCase()} • Ô #
+            {selectedUnitCode}
           </Text>
         </View>
       </View>
@@ -583,8 +672,8 @@ export default function HandoverDetailScreen({
                   <Text
                     style={[
                       s.stepNumText,
-                      isActive && { color: '#fff' },
-                      isDone && { color: '#fff' },
+                      isActive && { color: "#fff" },
+                      isDone && { color: "#fff" },
                     ]}
                   >
                     {st.num}
@@ -607,13 +696,18 @@ export default function HandoverDetailScreen({
       </View>
 
       {/* ─── Nội Dung Từng Bước ─── */}
-      <ScrollView contentContainerStyle={s.contentScroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={s.contentScroll}
+        showsVerticalScrollIndicator={false}
+      >
         {/* ================= BƯỚC 1: XÁC THỰC ĐỊNH DANH (KYC) & Ô KHO ================= */}
         {currentStep === 1 && (
           <View style={s.card}>
             <View style={s.cardHeader}>
               <MaterialIcons name="verified-user" size={20} color={T.primary} />
-              <Text style={s.cardTitle}>Bước 1: Xác Thực Định Danh (KYC) & Ô Kho</Text>
+              <Text style={s.cardTitle}>
+                Bước 1: Xác Thực Định Danh (KYC) & Ô Kho
+              </Text>
             </View>
 
             {/* Thông tin khách hàng */}
@@ -628,7 +722,9 @@ export default function HandoverDetailScreen({
               </View>
               <View style={s.infoRow}>
                 <Text style={s.infoLabel}>Email:</Text>
-                <Text style={s.infoVal}>{appointment.email || 'customer@example.com'}</Text>
+                <Text style={s.infoVal}>
+                  {appointment.email || "customer@example.com"}
+                </Text>
               </View>
             </View>
 
@@ -639,15 +735,19 @@ export default function HandoverDetailScreen({
               activeOpacity={0.85}
             >
               <View style={s.qrScanIconWrap}>
-                <MaterialIcons name="qr-code-scanner" size={24} color="#FFFFFF" />
+                <MaterialIcons
+                  name="qr-code-scanner"
+                  size={24}
+                  color="#FFFFFF"
+                />
               </View>
               <View style={s.qrScanTextWrap}>
                 <View style={s.qrScanBadgeRow}>
                   <Text style={s.qrScanTitle}>Quét Mã QR Trên Thẻ CCCD</Text>
-                  
                 </View>
                 <Text style={s.qrScanSub}>
-                  Hướng camera vào mã QR góc phải mặt trước thẻ để lấy Số CCCD & Địa chỉ tức thì
+                  Hướng camera vào mã QR góc phải mặt trước thẻ để lấy Số CCCD &
+                  Địa chỉ tức thì
                 </Text>
               </View>
             </TouchableOpacity>
@@ -665,7 +765,11 @@ export default function HandoverDetailScreen({
                   </Text>
                   {frontCccdPhoto && (
                     <View style={s.cccdStatusBadge}>
-                      <MaterialIcons name="check-circle" size={12} color="#16A34A" />
+                      <MaterialIcons
+                        name="check-circle"
+                        size={12}
+                        color="#16A34A"
+                      />
                       <Text style={s.cccdStatusText}>Đã chụp</Text>
                     </View>
                   )}
@@ -676,10 +780,16 @@ export default function HandoverDetailScreen({
                     <TouchableOpacity
                       activeOpacity={0.9}
                       style={s.cccdImageTouch}
-                      onPress={() => setPreviewImage(frontCccdPhoto.uri || frontCccdPhoto.base64 || null)}
+                      onPress={() =>
+                        setPreviewImage(
+                          frontCccdPhoto.uri || frontCccdPhoto.base64 || null,
+                        )
+                      }
                     >
                       <Image
-                        source={{ uri: frontCccdPhoto.uri || frontCccdPhoto.base64 }}
+                        source={{
+                          uri: frontCccdPhoto.uri || frontCccdPhoto.base64,
+                        }}
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
@@ -693,17 +803,28 @@ export default function HandoverDetailScreen({
                     <View style={s.cccdOverlayActions}>
                       <TouchableOpacity
                         style={s.cccdOverlayBtn}
-                        onPress={() => setPreviewImage(frontCccdPhoto.uri || frontCccdPhoto.base64 || null)}
+                        onPress={() =>
+                          setPreviewImage(
+                            frontCccdPhoto.uri || frontCccdPhoto.base64 || null,
+                          )
+                        }
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
                         <MaterialIcons name="zoom-in" size={16} color="#fff" />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[s.cccdOverlayBtn, { backgroundColor: '#EF4444' }]}
+                        style={[
+                          s.cccdOverlayBtn,
+                          { backgroundColor: "#EF4444" },
+                        ]}
                         onPress={() => setFrontCccdPhoto(null)}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
-                        <MaterialIcons name="delete-outline" size={16} color="#fff" />
+                        <MaterialIcons
+                          name="delete-outline"
+                          size={16}
+                          color="#fff"
+                        />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -711,30 +832,42 @@ export default function HandoverDetailScreen({
                   <View style={s.cccdPlaceholder}>
                     <View style={s.cccdIconCircle}>
                       <MaterialIcons
-                        name={identityType === 'CCCD' ? 'credit-card' : 'badge'}
+                        name={identityType === "CCCD" ? "credit-card" : "badge"}
                         size={22}
                         color={T.primary}
                       />
                     </View>
                     <Text style={s.cccdPlaceholderTitle}>
-                      {identityType === 'CCCD' ? 'Chụp mặt trước' : 'Chưa chụp trang chính'}
+                      {identityType === "CCCD"
+                        ? "Chụp mặt trước"
+                        : "Chưa chụp trang chính"}
                     </Text>
                     <View style={s.cccdActionCol}>
                       <TouchableOpacity
                         style={s.cccdActionBtnPrimary}
-                        onPress={() => handleCaptureCccd('front')}
+                        onPress={() => handleCaptureCccd("front")}
                         disabled={isCapturingCccd}
                       >
-                        <MaterialIcons name="camera-alt" size={13} color="#fff" />
+                        <MaterialIcons
+                          name="camera-alt"
+                          size={13}
+                          color="#fff"
+                        />
                         <Text style={s.cccdActionBtnPrimaryText}>Chụp ảnh</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={s.cccdActionBtnSecondary}
-                        onPress={() => handlePickCccd('front')}
+                        onPress={() => handlePickCccd("front")}
                         disabled={isCapturingCccd}
                       >
-                        <MaterialIcons name="photo-library" size={13} color={T.primary} />
-                        <Text style={s.cccdActionBtnSecondaryText}>Thư viện</Text>
+                        <MaterialIcons
+                          name="photo-library"
+                          size={13}
+                          color={T.primary}
+                        />
+                        <Text style={s.cccdActionBtnSecondaryText}>
+                          Thư viện
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -749,7 +882,11 @@ export default function HandoverDetailScreen({
                   </Text>
                   {backCccdPhoto && (
                     <View style={s.cccdStatusBadge}>
-                      <MaterialIcons name="check-circle" size={12} color="#16A34A" />
+                      <MaterialIcons
+                        name="check-circle"
+                        size={12}
+                        color="#16A34A"
+                      />
                       <Text style={s.cccdStatusText}>Đã chụp</Text>
                     </View>
                   )}
@@ -760,10 +897,16 @@ export default function HandoverDetailScreen({
                     <TouchableOpacity
                       activeOpacity={0.9}
                       style={s.cccdImageTouch}
-                      onPress={() => setPreviewImage(backCccdPhoto.uri || backCccdPhoto.base64 || null)}
+                      onPress={() =>
+                        setPreviewImage(
+                          backCccdPhoto.uri || backCccdPhoto.base64 || null,
+                        )
+                      }
                     >
                       <Image
-                        source={{ uri: backCccdPhoto.uri || backCccdPhoto.base64 }}
+                        source={{
+                          uri: backCccdPhoto.uri || backCccdPhoto.base64,
+                        }}
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
@@ -777,17 +920,28 @@ export default function HandoverDetailScreen({
                     <View style={s.cccdOverlayActions}>
                       <TouchableOpacity
                         style={s.cccdOverlayBtn}
-                        onPress={() => setPreviewImage(backCccdPhoto.uri || backCccdPhoto.base64 || null)}
+                        onPress={() =>
+                          setPreviewImage(
+                            backCccdPhoto.uri || backCccdPhoto.base64 || null,
+                          )
+                        }
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
                         <MaterialIcons name="zoom-in" size={16} color="#fff" />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[s.cccdOverlayBtn, { backgroundColor: '#EF4444' }]}
+                        style={[
+                          s.cccdOverlayBtn,
+                          { backgroundColor: "#EF4444" },
+                        ]}
                         onPress={() => setBackCccdPhoto(null)}
                         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
-                        <MaterialIcons name="delete-outline" size={16} color="#fff" />
+                        <MaterialIcons
+                          name="delete-outline"
+                          size={16}
+                          color="#fff"
+                        />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -800,56 +954,82 @@ export default function HandoverDetailScreen({
                         color={T.primary}
                       />
                     </View>
-                    <Text style={s.cccdPlaceholderTitle}>
-                      Chụp mặt sau 
-                    </Text>
+                    <Text style={s.cccdPlaceholderTitle}>Chụp mặt sau</Text>
                     <View style={s.cccdActionCol}>
                       <TouchableOpacity
                         style={s.cccdActionBtnPrimary}
-                        onPress={() => handleCaptureCccd('back')}
+                        onPress={() => handleCaptureCccd("back")}
                         disabled={isCapturingCccd}
                       >
-                        <MaterialIcons name="camera-alt" size={13} color="#fff" />
+                        <MaterialIcons
+                          name="camera-alt"
+                          size={13}
+                          color="#fff"
+                        />
                         <Text style={s.cccdActionBtnPrimaryText}>Chụp ảnh</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={s.cccdActionBtnSecondary}
-                        onPress={() => handlePickCccd('back')}
+                        onPress={() => handlePickCccd("back")}
                         disabled={isCapturingCccd}
                       >
-                        <MaterialIcons name="photo-library" size={13} color={T.primary} />
-                        <Text style={s.cccdActionBtnSecondaryText}>Thư viện</Text>
+                        <MaterialIcons
+                          name="photo-library"
+                          size={13}
+                          color={T.primary}
+                        />
+                        <Text style={s.cccdActionBtnSecondaryText}>
+                          Thư viện
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 )}
               </View>
             </View>
-           
+
             {/* Nhập & Đối chiếu thông tin giấy tờ */}
             <View style={s.kycInputGroup}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
                 <Text style={s.kycInputLabel}>
                   Số Căn cước công dân (CCCD) đối chiếu: *
                 </Text>
-                {identityType === 'CCCD' && (
-                  <View style={[
-                    s.digitBadge,
-                    identityNumber.length === 12 ? s.digitBadgeValid : s.digitBadgePending
-                  ]}>
-                   
-                  </View>
+                {identityType === "CCCD" && (
+                  <View
+                    style={[
+                      s.digitBadge,
+                      identityNumber.length === 12
+                        ? s.digitBadgeValid
+                        : s.digitBadgePending,
+                    ]}
+                  ></View>
                 )}
               </View>
-              <View style={[
-                s.kycInputWrap,
-                identityType === 'CCCD' && identityNumber.length > 0 && identityNumber.length !== 12 && { borderColor: '#F59E0B' },
-                identityType === 'CCCD' && identityNumber.length === 12 && { borderColor: '#10B981' }
-              ]}>
+              <View
+                style={[
+                  s.kycInputWrap,
+                  identityType === "CCCD" &&
+                    identityNumber.length > 0 &&
+                    identityNumber.length !== 12 && { borderColor: "#F59E0B" },
+                  identityType === "CCCD" &&
+                    identityNumber.length === 12 && { borderColor: "#10B981" },
+                ]}
+              >
                 <MaterialIcons
                   name="badge"
                   size={18}
-                  color={identityType === 'CCCD' && identityNumber.length === 12 ? '#10B981' : T.textMuted}
+                  color={
+                    identityType === "CCCD" && identityNumber.length === 12
+                      ? "#10B981"
+                      : T.textMuted
+                  }
                 />
                 <TextInput
                   style={s.kycInput}
@@ -857,19 +1037,28 @@ export default function HandoverDetailScreen({
                   onChangeText={handleIdentityNumberChange}
                   placeholder="Nhập đúng 12 chữ số CCCD"
                   placeholderTextColor={T.textMuted}
-                  keyboardType={identityType === 'CCCD' ? 'numeric' : 'default'}
-                  maxLength={identityType === 'CCCD' ? 12 : 15}
+                  keyboardType={identityType === "CCCD" ? "numeric" : "default"}
+                  maxLength={identityType === "CCCD" ? 12 : 15}
                   autoCapitalize="characters"
                 />
-                {identityType === 'CCCD' && identityNumber.length === 12 && (
-                  <MaterialIcons name="check-circle" size={18} color="#10B981" />
+                {identityType === "CCCD" && identityNumber.length === 12 && (
+                  <MaterialIcons
+                    name="check-circle"
+                    size={18}
+                    color="#10B981"
+                  />
                 )}
               </View>
-              {identityType === 'CCCD' && identityNumber.length > 0 && identityNumber.length < 12 && (
-                <Text style={{ fontSize: 11, color: '#D97706', marginTop: 4 }}>
-                  Số CCCD phải gồm đúng 12 chữ số (còn thiếu {12 - identityNumber.length} số)
-                </Text>
-              )}
+              {identityType === "CCCD" &&
+                identityNumber.length > 0 &&
+                identityNumber.length < 12 && (
+                  <Text
+                    style={{ fontSize: 11, color: "#D97706", marginTop: 4 }}
+                  >
+                    Số CCCD phải gồm đúng 12 chữ số (còn thiếu{" "}
+                    {12 - identityNumber.length} số)
+                  </Text>
+                )}
             </View>
 
             <View style={s.kycInputGroup}>
@@ -888,12 +1077,15 @@ export default function HandoverDetailScreen({
 
             {/* Checkbox đối chiếu CCCD */}
             <TouchableOpacity
-              style={[s.checkActionBox, isCccdVerified && s.checkActionBoxActive]}
+              style={[
+                s.checkActionBox,
+                isCccdVerified && s.checkActionBoxActive,
+              ]}
               onPress={() => setIsCccdVerified(!isCccdVerified)}
               activeOpacity={0.8}
             >
               <MaterialIcons
-                name={isCccdVerified ? 'check-box' : 'check-box-outline-blank'}
+                name={isCccdVerified ? "check-box" : "check-box-outline-blank"}
                 size={22}
                 color={isCccdVerified ? T.primary : T.textMuted}
               />
@@ -901,7 +1093,9 @@ export default function HandoverDetailScreen({
                 <Text style={s.checkActionTitle}>
                   Đã đối chiếu người thật khớp với giấy tờ gốc xuất trình
                 </Text>
-                <Text style={s.checkActionSub}>Nhân viên xác nhận khuôn mặt và thông tin trùng khớp</Text>
+                <Text style={s.checkActionSub}>
+                  Nhân viên xác nhận khuôn mặt và thông tin trùng khớp
+                </Text>
               </View>
             </TouchableOpacity>
 
@@ -928,7 +1122,9 @@ export default function HandoverDetailScreen({
           <View style={s.card}>
             <View style={s.cardHeader}>
               <MaterialIcons name="camera-alt" size={20} color={T.primary} />
-              <Text style={s.cardTitle}>Bước 2: Hiện Trạng Ô Kho #{selectedUnitCode}</Text>
+              <Text style={s.cardTitle}>
+                Bước 2: Hiện Trạng Ô Kho #{selectedUnitCode}
+              </Text>
             </View>
 
             {/* Nút chụp ảnh Camera & Chọn Thư viện */}
@@ -949,19 +1145,38 @@ export default function HandoverDetailScreen({
                 disabled={isCapturing}
                 activeOpacity={0.8}
               >
-                <MaterialIcons name="photo-library" size={18} color={T.primary} />
+                <MaterialIcons
+                  name="photo-library"
+                  size={18}
+                  color={T.primary}
+                />
                 <Text style={s.galleryBtnText}>Chọn Từ Thư Viện</Text>
               </TouchableOpacity>
             </View>
 
             {/* Danh sách ảnh hiện trạng */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
               <Text style={s.sectionSubtitle}>
                 Ảnh kiểm tra trước bàn giao ({photos.length} ảnh):
               </Text>
               {photos.length > 0 && (
                 <TouchableOpacity onPress={() => setPhotos([])}>
-                  <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '500' }}>Xóa tất cả</Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: "#EF4444",
+                      fontWeight: "500",
+                    }}
+                  >
+                    Xóa tất cả
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -974,7 +1189,11 @@ export default function HandoverDetailScreen({
                 activeOpacity={0.8}
               >
                 <View style={s.addPhotoBigIconWrap}>
-                  <MaterialIcons name="add-a-photo" size={32} color={T.primary} />
+                  <MaterialIcons
+                    name="add-a-photo"
+                    size={32}
+                    color={T.primary}
+                  />
                 </View>
                 <Text style={s.emptyPhotoTitle}>Chưa có ảnh kiểm tra kho</Text>
                 <Text style={s.emptyPhotoDesc}>
@@ -986,11 +1205,15 @@ export default function HandoverDetailScreen({
                     onPress={handlePickPhoto}
                     disabled={isCapturing}
                   >
-                    <MaterialIcons name="photo-library" size={16} color="#fff" />
+                    <MaterialIcons
+                      name="photo-library"
+                      size={16}
+                      color="#fff"
+                    />
                     <Text style={s.emptyAddBtnText}>Chọn nhiều ảnh</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[s.emptyAddBtn, { backgroundColor: '#10B981' }]}
+                    style={[s.emptyAddBtn, { backgroundColor: "#10B981" }]}
                     onPress={handleCapturePhoto}
                     disabled={isCapturing}
                   >
@@ -1000,8 +1223,19 @@ export default function HandoverDetailScreen({
                 </View>
               </TouchableOpacity>
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-                <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4, alignItems: 'center' }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginHorizontal: -4 }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 10,
+                    paddingHorizontal: 4,
+                    alignItems: "center",
+                  }}
+                >
                   {/* Ô thẻ dấu + to rõ để thêm thêm ảnh */}
                   <TouchableOpacity
                     style={s.addPhotoSquareCard}
@@ -1023,7 +1257,9 @@ export default function HandoverDetailScreen({
                         activeOpacity={0.85}
                       >
                         <Image source={{ uri: p.uri }} style={s.photoImg} />
-                        <Text style={s.photoTag} numberOfLines={1}>{p.title}</Text>
+                        <Text style={s.photoTag} numberOfLines={1}>
+                          {p.title}
+                        </Text>
                       </TouchableOpacity>
 
                       {/* Nút xóa ảnh */}
@@ -1042,9 +1278,9 @@ export default function HandoverDetailScreen({
             {/* Checklist kiểm tra */}
             <View style={s.checklistCard}>
               {[
-                { key: 'lockTested', label: 'Khóa Smart PIN hoạt động tốt' },
-                { key: 'lightingChecked', label: 'Đèn chiếu sáng ổn định' },
-                { key: 'cleanlinessChecked', label: 'Kho sạch sẽ, không mùi' },
+                { key: "lockTested", label: "Khóa Smart PIN hoạt động tốt" },
+                { key: "lightingChecked", label: "Đèn chiếu sáng ổn định" },
+                { key: "cleanlinessChecked", label: "Kho sạch sẽ, không mùi" },
               ].map((item) => (
                 <TouchableOpacity
                   key={item.key}
@@ -1052,18 +1288,23 @@ export default function HandoverDetailScreen({
                   onPress={() =>
                     setChecklist({
                       ...checklist,
-                      [item.key]: !checklist[item.key as keyof typeof checklist],
+                      [item.key]:
+                        !checklist[item.key as keyof typeof checklist],
                     })
                   }
                 >
                   <MaterialIcons
                     name={
                       checklist[item.key as keyof typeof checklist]
-                        ? 'check-circle'
-                        : 'radio-button-unchecked'
+                        ? "check-circle"
+                        : "radio-button-unchecked"
                     }
                     size={20}
-                    color={checklist[item.key as keyof typeof checklist] ? T.primary : T.textMuted}
+                    color={
+                      checklist[item.key as keyof typeof checklist]
+                        ? T.primary
+                        : T.textMuted
+                    }
                   />
                   <Text style={s.checklistText}>{item.label}</Text>
                 </TouchableOpacity>
@@ -1071,9 +1312,12 @@ export default function HandoverDetailScreen({
             </View>
 
             {/* Nút lưu nhanh khi chỉnh sửa đơn đã hoàn tất */}
-            {appointment.status === 'completed' && (
+            {appointment.status === "completed" && (
               <TouchableOpacity
-                style={[s.quickSaveBtn, (isSubmitting || isUploadingPhotos) && { opacity: 0.7 }]}
+                style={[
+                  s.quickSaveBtn,
+                  (isSubmitting || isUploadingPhotos) && { opacity: 0.7 },
+                ]}
                 onPress={handleFinish}
                 disabled={isSubmitting || isUploadingPhotos}
                 activeOpacity={0.85}
@@ -1083,7 +1327,9 @@ export default function HandoverDetailScreen({
                 ) : (
                   <>
                     <MaterialIcons name="save" size={18} color="#fff" />
-                    <Text style={s.quickSaveBtnText}>Lưu Thay Đổi Bàn Giao</Text>
+                    <Text style={s.quickSaveBtnText}>
+                      Lưu Thay Đổi Bàn Giao
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1102,7 +1348,11 @@ export default function HandoverDetailScreen({
             {/* Bảng tóm tắt điều khoản hợp đồng dạng lưới 2x2 thông thoáng */}
             <View style={s.contractCardBox}>
               <View style={s.contractHeaderBadge}>
-                <MaterialIcons name="folder-shared" size={15} color={T.primary} />
+                <MaterialIcons
+                  name="folder-shared"
+                  size={15}
+                  color={T.primary}
+                />
                 <Text style={s.contractHeaderBadgeText}>
                   Hồ sơ hợp đồng điện tử • Ô #{selectedUnitCode}
                 </Text>
@@ -1114,9 +1364,16 @@ export default function HandoverDetailScreen({
                   <Text style={s.contractGridLabel}>THỜI HẠN THUÊ</Text>
                   <Text style={s.contractGridVal}>{durationMonths} tháng</Text>
                 </View>
-                <View style={[s.contractGridItem, { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' }]}>
+                <View
+                  style={[
+                    s.contractGridItem,
+                    { borderLeftWidth: 1, borderLeftColor: "#E2E8F0" },
+                  ]}
+                >
                   <Text style={s.contractGridLabel}>NGÀY BẮT ĐẦU</Text>
-                  <Text style={s.contractGridVal}>{appointment.startDate || 'Hôm nay'}</Text>
+                  <Text style={s.contractGridVal}>
+                    {appointment.startDate || "Hôm nay"}
+                  </Text>
                 </View>
               </View>
 
@@ -1126,13 +1383,28 @@ export default function HandoverDetailScreen({
               <View style={s.contractGridRow}>
                 <View style={s.contractGridItem}>
                   <Text style={s.contractGridLabel}>GIÁ THUÊ THÁNG</Text>
-                  <Text style={[s.contractGridVal, { color: T.primary, fontWeight: '800' }]}>
+                  <Text
+                    style={[
+                      s.contractGridVal,
+                      { color: T.primary, fontWeight: "800" },
+                    ]}
+                  >
                     {appointment.monthlyRent}
                   </Text>
                 </View>
-                <View style={[s.contractGridItem, { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' }]}>
+                <View
+                  style={[
+                    s.contractGridItem,
+                    { borderLeftWidth: 1, borderLeftColor: "#E2E8F0" },
+                  ]}
+                >
                   <Text style={s.contractGridLabel}>TIỀN ĐẶT CỌC</Text>
-                  <Text style={[s.contractGridVal, { color: T.emeraldText, fontWeight: '800' }]}>
+                  <Text
+                    style={[
+                      s.contractGridVal,
+                      { color: T.emeraldText, fontWeight: "800" },
+                    ]}
+                  >
                     {appointment.depositAmount || formatVND(depositNum)}
                   </Text>
                 </View>
@@ -1145,9 +1417,15 @@ export default function HandoverDetailScreen({
               onPress={() => setShowContractModal(true)}
               activeOpacity={0.85}
             >
-              <MaterialIcons name={isContractSigned ? "visibility" : "draw"} size={18} color="#FFFFFF" />
+              <MaterialIcons
+                name={isContractSigned ? "visibility" : "draw"}
+                size={18}
+                color="#FFFFFF"
+              />
               <Text style={s.viewContractFullText}>
-                {isContractSigned ? "Xem Toàn Văn Hợp Đồng Đã Ký" : "Xem & Ký Hợp Đồng Điện Tử"}
+                {isContractSigned
+                  ? "Xem Toàn Văn Hợp Đồng Đã Ký"
+                  : "Xem & Ký Hợp Đồng Điện Tử"}
               </Text>
             </TouchableOpacity>
 
@@ -1156,7 +1434,9 @@ export default function HandoverDetailScreen({
               <View style={s.contractSignatureCard}>
                 <View style={s.contractSigHeader}>
                   <MaterialIcons name="verified" size={16} color="#059669" />
-                  <Text style={s.contractSigTitle}>Chữ ký điện tử của khách hàng:</Text>
+                  <Text style={s.contractSigTitle}>
+                    Chữ ký điện tử của khách hàng:
+                  </Text>
                   <View style={s.sigDoneBadge}>
                     <Text style={s.sigDoneBadgeText}>Đã in vào HĐ</Text>
                   </View>
@@ -1189,17 +1469,26 @@ export default function HandoverDetailScreen({
               activeOpacity={0.85}
             >
               <MaterialIcons
-                name={isContractSigned ? 'check-box' : 'check-box-outline-blank'}
+                name={
+                  isContractSigned ? "check-box" : "check-box-outline-blank"
+                }
                 size={24}
-                color={isContractSigned ? T.emeraldText : '#94A3B8'}
+                color={isContractSigned ? T.emeraldText : "#94A3B8"}
               />
               <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[s.signedTitle, isContractSigned && { color: T.emeraldText }]}>
+                <Text
+                  style={[
+                    s.signedTitle,
+                    isContractSigned && { color: T.emeraldText },
+                  ]}
+                >
                   {isContractSigned
-                    ? '✓ Đã xác nhận ký hợp đồng'
-                    : 'Xác nhận khách hàng đã ký hợp đồng'}
+                    ? "✓ Đã xác nhận ký hợp đồng"
+                    : "Xác nhận khách hàng đã ký hợp đồng"}
                 </Text>
-                <Text style={s.signedSub}>Hợp đồng đã có đủ chữ ký và lưu trữ vào hồ sơ</Text>
+                <Text style={s.signedSub}>
+                  Hợp đồng đã có đủ chữ ký và lưu trữ vào hồ sơ
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -1213,22 +1502,24 @@ export default function HandoverDetailScreen({
               <Text style={s.cardTitle}>Bước 4: Quyết Toán Tiền Thuê Kho</Text>
             </View>
 
-
             {/* Chọn hình thức */}
             <View style={s.payMethodRow}>
               <TouchableOpacity
-                style={[s.payMethodBtn, paymentMethod === 'vietqr' && s.payMethodBtnActive]}
-                onPress={() => setPaymentMethod('vietqr')}
+                style={[
+                  s.payMethodBtn,
+                  paymentMethod === "vietqr" && s.payMethodBtnActive,
+                ]}
+                onPress={() => setPaymentMethod("vietqr")}
               >
                 <MaterialIcons
                   name="qr-code-scanner"
                   size={18}
-                  color={paymentMethod === 'vietqr' ? T.primary : T.textMuted}
+                  color={paymentMethod === "vietqr" ? T.primary : T.textMuted}
                 />
                 <Text
                   style={[
                     s.payMethodText,
-                    paymentMethod === 'vietqr' && s.payMethodTextActive,
+                    paymentMethod === "vietqr" && s.payMethodTextActive,
                   ]}
                 >
                   VietQR SePay
@@ -1236,18 +1527,21 @@ export default function HandoverDetailScreen({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[s.payMethodBtn, paymentMethod === 'cash' && s.payMethodBtnActive]}
-                onPress={() => setPaymentMethod('cash')}
+                style={[
+                  s.payMethodBtn,
+                  paymentMethod === "cash" && s.payMethodBtnActive,
+                ]}
+                onPress={() => setPaymentMethod("cash")}
               >
                 <MaterialIcons
                   name="attach-money"
                   size={18}
-                  color={paymentMethod === 'cash' ? T.primary : T.textMuted}
+                  color={paymentMethod === "cash" ? T.primary : T.textMuted}
                 />
                 <Text
                   style={[
                     s.payMethodText,
-                    paymentMethod === 'cash' && s.payMethodTextActive,
+                    paymentMethod === "cash" && s.payMethodTextActive,
                   ]}
                 >
                   Tiền mặt tại quầy
@@ -1256,12 +1550,14 @@ export default function HandoverDetailScreen({
             </View>
 
             {/* HIỂN THỊ MÃ VIETQR TRỰC TIẾP */}
-            {paymentMethod === 'vietqr' && (
+            {paymentMethod === "vietqr" && (
               <View style={s.qrWrapper}>
                 {isLoadingPaymentQr && (
                   <View style={s.qrLoadingBox}>
                     <ActivityIndicator size="small" color={T.primary} />
-                    <Text style={s.qrLoadingText}>Đang lấy thông tin VietQR SePay từ hệ thống...</Text>
+                    <Text style={s.qrLoadingText}>
+                      Đang lấy thông tin VietQR SePay từ hệ thống...
+                    </Text>
                   </View>
                 )}
 
@@ -1272,13 +1568,23 @@ export default function HandoverDetailScreen({
                         <MaterialIcons name="check" size={42} color="#FFFFFF" />
                       </View>
                     </View>
-                    <Text style={s.paidSuccessTitle}>Thanh toán thành công</Text>
-                    <Text style={s.paidSuccessAmount}>{formatVND(remainingAmount)}</Text>
+                    <Text style={s.paidSuccessTitle}>
+                      Thanh toán thành công
+                    </Text>
+                    <Text style={s.paidSuccessAmount}>
+                      {formatVND(remainingAmount)}
+                    </Text>
                   </View>
                 ) : (
                   <View style={s.qrBox}>
-                    <Image source={{ uri: qrUrl }} style={s.qrImage} resizeMode="contain" />
-                    <Text style={s.qrHint}>Đưa màn hình cho khách quét bằng App Ngân hàng</Text>
+                    <Image
+                      source={{ uri: qrUrl }}
+                      style={s.qrImage}
+                      resizeMode="contain"
+                    />
+                    <Text style={s.qrHint}>
+                      Đưa màn hình cho khách quét bằng App Ngân hàng
+                    </Text>
                   </View>
                 )}
 
@@ -1286,56 +1592,72 @@ export default function HandoverDetailScreen({
                 <View style={s.bankDetailList}>
                   <View style={s.bankRow}>
                     <Text style={s.bankLabel}>Ngân hàng:</Text>
-                    <Text style={[s.bankVal, { fontWeight: '700' }]}>{bankCode}</Text>
+                    <Text style={[s.bankVal, { fontWeight: "700" }]}>
+                      {bankCode}
+                    </Text>
                   </View>
 
                   <View style={s.bankRow}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={s.bankLabel}>Số tài khoản:</Text>
-                      <Text style={[s.bankVal, { color: T.primary, fontWeight: '800', fontSize: 14 }]}>
+                      <Text
+                        style={[
+                          s.bankVal,
+                          { color: T.primary, fontWeight: "800", fontSize: 14 },
+                        ]}
+                      >
                         {accountNumber}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => handleCopy(accountNumber, 'STK')}
+                      onPress={() => handleCopy(accountNumber, "STK")}
                       style={s.copyBtn}
                       activeOpacity={0.7}
                     >
                       <MaterialIcons
-                        name={copiedField === 'STK' ? 'check' : 'content-copy'}
+                        name={copiedField === "STK" ? "check" : "content-copy"}
                         size={12}
                         color={T.primary}
                       />
                       <Text style={s.copyBtnText}>
-                        {copiedField === 'STK' ? 'Đã chép' : 'Sao chép'}
+                        {copiedField === "STK" ? "Đã chép" : "Sao chép"}
                       </Text>
                     </TouchableOpacity>
                   </View>
 
                   <View style={s.bankRow}>
                     <Text style={s.bankLabel}>Chủ tài khoản:</Text>
-                    <Text style={[s.bankVal, { fontWeight: '700' }]}>{accountName}</Text>
+                    <Text style={[s.bankVal, { fontWeight: "700" }]}>
+                      {accountName}
+                    </Text>
                   </View>
 
                   <View style={s.bankRow}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={s.bankLabel}>Số tiền cần thanh toán:</Text>
-                      <Text style={[s.bankVal, { color: '#004AC6', fontWeight: '800', fontSize: 16 }]}>
+                      <Text
+                        style={[
+                          s.bankVal,
+                          { color: "#004AC6", fontWeight: "800", fontSize: 16 },
+                        ]}
+                      >
                         {formatVND(remainingAmount)}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => handleCopy(String(remainingAmount), 'TIEN')}
+                      onPress={() =>
+                        handleCopy(String(remainingAmount), "TIEN")
+                      }
                       style={s.copyBtn}
                       activeOpacity={0.7}
                     >
                       <MaterialIcons
-                        name={copiedField === 'TIEN' ? 'check' : 'content-copy'}
+                        name={copiedField === "TIEN" ? "check" : "content-copy"}
                         size={12}
                         color={T.primary}
                       />
                       <Text style={s.copyBtnText}>
-                        {copiedField === 'TIEN' ? 'Đã chép' : 'Sao chép'}
+                        {copiedField === "TIEN" ? "Đã chép" : "Sao chép"}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1343,23 +1665,25 @@ export default function HandoverDetailScreen({
                   {/* Khung nội dung chuyển khoản riêng biệt, không bị lồi ra ngoài */}
                   <View style={s.contentHighlightBox}>
                     <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text style={s.contentBoxLabel}>Nội dung CK (bắt buộc):</Text>
+                      <Text style={s.contentBoxLabel}>
+                        Nội dung CK (bắt buộc):
+                      </Text>
                       <Text style={s.contentBoxValue} numberOfLines={2}>
                         {paymentContent}
                       </Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => handleCopy(paymentContent, 'ND')}
+                      onPress={() => handleCopy(paymentContent, "ND")}
                       style={s.copyBtnLarge}
                       activeOpacity={0.7}
                     >
                       <MaterialIcons
-                        name={copiedField === 'ND' ? 'check' : 'content-copy'}
+                        name={copiedField === "ND" ? "check" : "content-copy"}
                         size={13}
                         color="#fff"
                       />
                       <Text style={s.copyBtnLargeText}>
-                        {copiedField === 'ND' ? 'Đã chép' : 'Sao chép'}
+                        {copiedField === "ND" ? "Đã chép" : "Sao chép"}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1368,12 +1692,18 @@ export default function HandoverDetailScreen({
             )}
 
             {/* Tab Tiền mặt */}
-            {paymentMethod === 'cash' && (
+            {paymentMethod === "cash" && (
               <View style={s.cashBox}>
-                <MaterialIcons name="payments" size={36} color={T.emeraldText} />
+                <MaterialIcons
+                  name="payments"
+                  size={36}
+                  color={T.emeraldText}
+                />
                 <Text style={s.cashTitle}>Thu tiền mặt trực tiếp tại quầy</Text>
                 <Text style={s.cashAmount}>{formatVND(remainingAmount)}</Text>
-                <Text style={s.cashSub}>Kiểm đếm đủ tiền trước khi xác nhận bên dưới</Text>
+                <Text style={s.cashSub}>
+                  Kiểm đếm đủ tiền trước khi xác nhận bên dưới
+                </Text>
               </View>
             )}
 
@@ -1384,14 +1714,12 @@ export default function HandoverDetailScreen({
               activeOpacity={0.85}
             >
               <MaterialIcons
-                name={isPaid ? 'check-circle' : 'radio-button-unchecked'}
+                name={isPaid ? "check-circle" : "radio-button-unchecked"}
                 size={22}
                 color="#fff"
               />
               <Text style={s.paidToggleText}>
-                {isPaid
-                  ? `✓ ĐÃ THU ĐỦ TIỀN THUÊ `
-                  : ` XÁC NHẬN ĐÃ THU TIỀN `}
+                {isPaid ? `✓ ĐÃ THU ĐỦ TIỀN THUÊ ` : ` XÁC NHẬN ĐÃ THU TIỀN `}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1402,7 +1730,9 @@ export default function HandoverDetailScreen({
           <View style={s.card}>
             <View style={s.cardHeader}>
               <MaterialIcons name="lock" size={20} color={T.primary} />
-              <Text style={s.cardTitle}>Bước 5: Cấp PIN & Kích Hoạt Kho #{selectedUnitCode}</Text>
+              <Text style={s.cardTitle}>
+                Bước 5: Cấp PIN & Kích Hoạt Kho #{selectedUnitCode}
+              </Text>
             </View>
 
             {/* Mã PIN 6 số */}
@@ -1430,12 +1760,14 @@ export default function HandoverDetailScreen({
               </View>
               <View style={s.finishRow}>
                 <MaterialIcons
-                  name={isPaid ? 'check' : 'schedule'}
+                  name={isPaid ? "check" : "schedule"}
                   size={16}
                   color={isPaid ? T.emeraldText : T.amberText}
                 />
                 <Text style={[s.finishText, !isPaid && { color: T.amberText }]}>
-                  {isPaid ? 'Tiền thuê: Đã thu đủ' : 'Tiền thuê: Ghi nợ thu sau'}
+                  {isPaid
+                    ? "Tiền thuê: Đã thu đủ"
+                    : "Tiền thuê: Ghi nợ thu sau"}
                 </Text>
               </View>
             </View>
@@ -1444,10 +1776,17 @@ export default function HandoverDetailScreen({
       </ScrollView>
 
       {/* ─── Bottom Navigation Bar ─── */}
-      <View style={[s.bottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 }]}>
+      <View
+        style={[
+          s.bottomBar,
+          { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 12 },
+        ]}
+      >
         <TouchableOpacity style={s.navPrevBtn} onPress={handlePrev}>
           <MaterialIcons name="arrow-back" size={16} color={T.textMain} />
-          <Text style={s.navPrevText}>{currentStep === 1 ? 'Hàng đợi' : 'Quay lại'}</Text>
+          <Text style={s.navPrevText}>
+            {currentStep === 1 ? "Hàng đợi" : "Quay lại"}
+          </Text>
         </TouchableOpacity>
 
         <Text style={s.stepCountText}>Bước {currentStep} / 5</Text>
@@ -1459,21 +1798,28 @@ export default function HandoverDetailScreen({
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[s.finishBtn, (isSubmitting || isUploadingPhotos) && { opacity: 0.7 }]}
+            style={[
+              s.finishBtn,
+              (isSubmitting || isUploadingPhotos) && { opacity: 0.7 },
+            ]}
             onPress={handleFinish}
             disabled={isSubmitting || isUploadingPhotos}
           >
             {isSubmitting || isUploadingPhotos ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
                 <ActivityIndicator color="#fff" size="small" />
                 <Text style={s.finishBtnText}>
-                  {isUploadingPhotos ? 'Đang tải ảnh...' : 'Đang xử lý...'}
+                  {isUploadingPhotos ? "Đang tải ảnh..." : "Đang xử lý..."}
                 </Text>
               </View>
             ) : (
               <>
                 <Text style={s.finishBtnText}>
-                  {appointment.status === 'completed' ? 'Lưu Chỉnh Sửa' : 'Hoàn Tất & Cấp PIN'}
+                  {appointment.status === "completed"
+                    ? "Lưu Chỉnh Sửa"
+                    : "Hoàn Tất & Cấp PIN"}
                 </Text>
                 <MaterialIcons name="check-circle" size={18} color="#fff" />
               </>
@@ -1491,14 +1837,19 @@ export default function HandoverDetailScreen({
               {availableUnits.map((u) => (
                 <TouchableOpacity
                   key={u.id}
-                  style={[s.modalUnitItem, u.code === selectedUnitCode && s.modalUnitItemActive]}
+                  style={[
+                    s.modalUnitItem,
+                    u.code === selectedUnitCode && s.modalUnitItemActive,
+                  ]}
                   onPress={() => {
                     setSelectedUnitCode(u.code);
                     setShowUnitPickerModal(false);
                   }}
                 >
                   <Text style={s.modalUnitCode}>Ô #{u.code}</Text>
-                  <Text style={s.modalUnitType}>{u.type} (Tầng {u.floor})</Text>
+                  <Text style={s.modalUnitType}>
+                    {u.type} (Tầng {u.floor})
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1520,7 +1871,11 @@ export default function HandoverDetailScreen({
             onPress={() => setPreviewImage(null)}
             activeOpacity={1}
           >
-            <Image source={{ uri: previewImage }} style={s.lightboxImg} resizeMode="contain" />
+            <Image
+              source={{ uri: previewImage }}
+              style={s.lightboxImg}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </Modal>
       )}
@@ -1551,12 +1906,12 @@ export default function HandoverDetailScreen({
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: T.bg },
   qrScanActionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#93C5FD',
+    borderColor: "#93C5FD",
     padding: 12,
     marginTop: 14,
     marginBottom: 4,
@@ -1566,43 +1921,43 @@ const s = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 10,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
   },
   qrScanTextWrap: {
     flex: 1,
   },
   qrScanBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     marginBottom: 3,
   },
   qrScanTitle: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#1E3A8A',
+    fontWeight: "800",
+    color: "#1E3A8A",
   },
   aiBadge: {
-    backgroundColor: '#10B981',
+    backgroundColor: "#10B981",
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 4,
   },
   aiBadgeText: {
     fontSize: 9,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
   qrScanSub: {
     fontSize: 10.5,
-    color: '#3B82F6',
+    color: "#3B82F6",
     lineHeight: 14,
   },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: T.surface,
@@ -1610,53 +1965,53 @@ const s = StyleSheet.create({
     borderBottomColor: T.border,
   },
   backBtn: { padding: 4 },
-  topTitle: { fontSize: 15, fontWeight: '800', color: T.textMain },
+  topTitle: { fontSize: 15, fontWeight: "800", color: T.textMain },
   topSub: { fontSize: 12, color: T.textMuted },
   printQuickBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
   },
-  printQuickText: { fontSize: 12, fontWeight: '700', color: T.primary },
+  printQuickText: { fontSize: 12, fontWeight: "700", color: T.primary },
 
   stepperBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     backgroundColor: T.surface,
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   stepItem: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: 4,
     borderRadius: 8,
   },
-  stepItemActive: { backgroundColor: '#EFF6FF' },
-  stepItemDone: { backgroundColor: '#F0FDF4' },
+  stepItemActive: { backgroundColor: "#EFF6FF" },
+  stepItemDone: { backgroundColor: "#F0FDF4" },
   stepCircle: {
     width: 20,
     height: 20,
     borderRadius: 10,
     backgroundColor: T.surfaceLow,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 2,
   },
   stepCircleActive: { backgroundColor: T.primary },
   stepCircleDone: { backgroundColor: T.emerald },
-  stepNumText: { fontSize: 10, fontWeight: '800', color: T.textMuted },
-  stepLabel: { fontSize: 10, color: T.textMuted, fontWeight: '600' },
-  stepLabelActive: { color: T.primary, fontWeight: '800' },
-  stepLabelDone: { color: T.emeraldText, fontWeight: '700' },
+  stepNumText: { fontSize: 10, fontWeight: "800", color: T.textMuted },
+  stepLabel: { fontSize: 10, color: T.textMuted, fontWeight: "600" },
+  stepLabelActive: { color: T.primary, fontWeight: "800" },
+  stepLabelDone: { color: T.emeraldText, fontWeight: "700" },
 
   contentScroll: { padding: 14, paddingBottom: 24 },
   card: {
@@ -1667,15 +2022,15 @@ const s = StyleSheet.create({
     borderColor: T.border,
   },
   cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
     marginBottom: 12,
   },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: T.textMain },
+  cardTitle: { fontSize: 15, fontWeight: "800", color: T.textMain },
 
   infoBox: {
     backgroundColor: T.surfaceLow,
@@ -1683,13 +2038,13 @@ const s = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  infoRow: { flexDirection: "row", justifyContent: "space-between" },
   infoLabel: { fontSize: 12, color: T.textMuted },
-  infoVal: { fontSize: 12, fontWeight: '600', color: T.textMain },
+  infoVal: { fontSize: 12, fontWeight: "600", color: T.textMain },
 
   checkActionBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
     borderColor: T.border,
@@ -1698,41 +2053,46 @@ const s = StyleSheet.create({
     marginTop: 12,
   },
   checkActionBoxActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: "#EFF6FF",
+    borderColor: "#93C5FD",
   },
-  checkActionTitle: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  checkActionTitle: { fontSize: 12, fontWeight: "700", color: T.textMain },
   checkActionSub: { fontSize: 11, color: T.textMuted, marginTop: 2 },
 
   unitSelectBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: T.surfaceLow,
     borderRadius: 12,
     padding: 12,
     marginTop: 12,
   },
-  unitSelectVal: { fontSize: 13, fontWeight: '800', color: T.primary, marginTop: 2 },
+  unitSelectVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: T.primary,
+    marginTop: 2,
+  },
   changeUnitBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
   },
-  changeUnitBtnText: { fontSize: 12, fontWeight: '700', color: T.primary },
+  changeUnitBtnText: { fontSize: 12, fontWeight: "700", color: T.primary },
 
   kycTypeRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginBottom: 8,
   },
   kycTypeBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -1747,14 +2107,14 @@ const s = StyleSheet.create({
   },
   kycTypeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.textMain,
   },
   kycTypeTextActive: {
-    color: '#fff',
+    color: "#fff",
   },
   cccdGrid: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
     marginBottom: 14,
   },
@@ -1767,68 +2127,68 @@ const s = StyleSheet.create({
     padding: 10,
   },
   cccdHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
     minHeight: 18,
   },
   cccdBoxTitle: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.textMain,
     flex: 1,
   },
   cccdStatusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 2,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: "#DCFCE7",
     paddingHorizontal: 5,
     paddingVertical: 1.5,
     borderRadius: 10,
   },
   cccdStatusText: {
     fontSize: 9,
-    fontWeight: '700',
-    color: '#15803D',
+    fontWeight: "700",
+    color: "#15803D",
   },
   cccdPlaceholder: {
     minHeight: 140,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#CBD5E1",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
     padding: 8,
   },
   cccdIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
   },
   cccdPlaceholderTitle: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.textMuted,
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   cccdActionCol: {
-    width: '100%',
+    width: "100%",
     gap: 6,
   },
   cccdActionBtnPrimary: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 4,
     backgroundColor: T.primary,
     borderRadius: 6,
@@ -1836,82 +2196,82 @@ const s = StyleSheet.create({
   },
   cccdActionBtnPrimaryText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   cccdActionBtnSecondary: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 4,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
     borderRadius: 6,
     paddingVertical: 5.5,
   },
   cccdActionBtnSecondaryText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.primary,
   },
   cccdPreviewWrap: {
     height: 140,
     borderRadius: 10,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: '#F1F5F9',
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: "#F1F5F9",
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
   },
   cccdImageTouch: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   cccdPreviewImg: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   cccdWatermarkTag: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 6,
     left: 6,
-    backgroundColor: 'rgba(0, 74, 198, 0.85)',
+    backgroundColor: "rgba(0, 74, 198, 0.85)",
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
   },
   cccdWatermarkText: {
     fontSize: 9,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
   },
   cccdOverlayActions: {
-    position: 'absolute',
+    position: "absolute",
     top: 6,
     right: 6,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 4,
   },
   cccdOverlayBtn: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   securityNoticeBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     gap: 8,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: "#F0F9FF",
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: "#BAE6FD",
     borderRadius: 10,
     padding: 10,
     marginBottom: 12,
@@ -1920,21 +2280,21 @@ const s = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     lineHeight: 16,
-    color: '#0369A1',
-    fontWeight: '500',
+    color: "#0369A1",
+    fontWeight: "500",
   },
   kycInputGroup: {
     marginBottom: 10,
   },
   kycInputLabel: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.textMain,
     marginBottom: 4,
   },
   kycInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
     borderColor: T.border,
@@ -1946,22 +2306,27 @@ const s = StyleSheet.create({
   kycInput: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: T.textMain,
     paddingVertical: 0,
   },
 
-  sectionSubtitle: { fontSize: 12, fontWeight: '700', color: T.textMain, marginBottom: 8 },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: T.textMain,
+    marginBottom: 8,
+  },
   photoActionRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginBottom: 12,
   },
   cameraBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     backgroundColor: T.primary,
     borderRadius: 10,
@@ -1972,55 +2337,55 @@ const s = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  cameraBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  cameraBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
   galleryBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
     borderRadius: 10,
     paddingVertical: 10,
   },
-  galleryBtnText: { color: T.primary, fontSize: 12, fontWeight: '700' },
+  galleryBtnText: { color: T.primary, fontSize: 12, fontWeight: "700" },
   photoCard: {
     width: 105,
     height: 95,
     borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
+    overflow: "hidden",
+    position: "relative",
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
     borderColor: T.border,
   },
-  photoThumbWrap: { width: '100%', height: '100%' },
-  photoImg: { width: '100%', height: '100%' },
+  photoThumbWrap: { width: "100%", height: "100%" },
+  photoImg: { width: "100%", height: "100%" },
   photoTag: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    color: '#fff',
+    backgroundColor: "rgba(0,0,0,0.65)",
+    color: "#fff",
     fontSize: 9,
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: 2,
     paddingHorizontal: 4,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   photoDeleteBtn: {
-    position: 'absolute',
+    position: "absolute",
     top: 4,
     right: 4,
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(239, 68, 68, 0.85)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   checklistCard: {
@@ -2030,8 +2395,8 @@ const s = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  checklistItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  checklistText: { fontSize: 12, color: T.textMain, fontWeight: '600' },
+  checklistItem: { flexDirection: "row", alignItems: "center", gap: 8 },
+  checklistText: { fontSize: 12, color: T.textMain, fontWeight: "600" },
   inputBox: {
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
@@ -2044,29 +2409,29 @@ const s = StyleSheet.create({
   },
 
   contractCardBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: "#F8FAFC",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
   },
   contractHeaderBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#DBEAFE',
+    borderBottomColor: "#DBEAFE",
   },
   contractHeaderBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.primary,
   },
   contractGridRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   contractGridItem: {
     flex: 1,
@@ -2075,32 +2440,32 @@ const s = StyleSheet.create({
   },
   contractGridLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
+    fontWeight: "700",
+    color: "#64748B",
     marginBottom: 2,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.3,
   },
   contractGridVal: {
     fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: "700",
+    color: "#0F172A",
   },
   contractGridDivider: {
     height: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: "#E2E8F0",
   },
 
   viewContractFullBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: '#1D4ED8',
+    backgroundColor: "#1D4ED8",
     paddingVertical: 12,
     borderRadius: 12,
     marginTop: 12,
-    shadowColor: '#1D4ED8',
+    shadowColor: "#1D4ED8",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 4,
@@ -2108,31 +2473,31 @@ const s = StyleSheet.create({
   },
   viewContractFullText: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 
   signedBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
     borderRadius: 14,
     padding: 14,
     marginTop: 12,
   },
   signedBoxActive: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#86EFAC',
+    backgroundColor: "#F0FDF4",
+    borderColor: "#86EFAC",
   },
-  signedTitle: { fontSize: 12.5, fontWeight: '700', color: '#0F172A' },
-  signedSub: { fontSize: 11, color: '#64748B', marginTop: 2 },
+  signedTitle: { fontSize: 12.5, fontWeight: "700", color: "#0F172A" },
+  signedSub: { fontSize: 11, color: "#64748B", marginTop: 2 },
 
   priceBox: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderRadius: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: T.border,
     backgroundColor: T.surfaceLow,
@@ -2140,18 +2505,23 @@ const s = StyleSheet.create({
   priceCol: {
     flex: 1,
     padding: 8,
-    alignItems: 'center',
+    alignItems: "center",
     borderRightWidth: 1,
     borderRightColor: T.border,
   },
   priceLabel: { fontSize: 10, color: T.textMuted },
-  priceVal: { fontSize: 12, fontWeight: '700', color: T.textMain, marginTop: 2 },
-  payMethodRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  priceVal: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: T.textMain,
+    marginTop: 2,
+  },
+  payMethodRow: { flexDirection: "row", gap: 8, marginTop: 12 },
   payMethodBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     paddingVertical: 10,
     borderRadius: 10,
@@ -2160,91 +2530,91 @@ const s = StyleSheet.create({
     backgroundColor: T.surfaceLow,
   },
   payMethodBtnActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderColor: T.primary,
   },
-  payMethodText: { fontSize: 11, fontWeight: '600', color: T.textMuted },
-  payMethodTextActive: { color: T.primary, fontWeight: '800' },
+  payMethodText: { fontSize: 11, fontWeight: "600", color: T.textMuted },
+  payMethodTextActive: { color: T.primary, fontWeight: "800" },
 
-  qrWrapper: { marginTop: 12, alignItems: 'center' },
+  qrWrapper: { marginTop: 12, alignItems: "center" },
   qrBox: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: T.border,
-    alignItems: 'center',
-    width: '100%',
+    alignItems: "center",
+    width: "100%",
   },
   qrImage: { width: 180, height: 180 },
   qrHint: { fontSize: 10, color: T.textMuted, marginTop: 6 },
   bankDetailList: {
-    width: '100%',
-    backgroundColor: '#F8FAFC',
+    width: "100%",
+    backgroundColor: "#F8FAFC",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
     padding: 12,
     marginTop: 10,
     gap: 10,
   },
   bankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: 2,
   },
   bankLabel: { fontSize: 11, color: T.textMuted, marginBottom: 2 },
-  bankVal: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  bankVal: { fontSize: 12, fontWeight: "700", color: T.textMain },
   copyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: "#BFDBFE",
     flexShrink: 0,
   },
-  copyBtnText: { fontSize: 11, fontWeight: '700', color: T.primary },
+  copyBtnText: { fontSize: 11, fontWeight: "700", color: T.primary },
 
   contentHighlightBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFBEB',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFBEB",
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#FDE68A',
+    borderColor: "#FDE68A",
     padding: 10,
     marginTop: 2,
   },
   contentBoxLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#B45309',
-    textTransform: 'uppercase',
+    fontWeight: "700",
+    color: "#B45309",
+    textTransform: "uppercase",
     letterSpacing: 0.3,
     marginBottom: 3,
   },
   contentBoxValue: {
     fontSize: 13,
-    fontWeight: '800',
-    color: '#92400E',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: "800",
+    color: "#92400E",
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
   },
   copyBtnLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
-    backgroundColor: '#D97706',
+    backgroundColor: "#D97706",
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 10,
     flexShrink: 0,
-    shadowColor: '#D97706',
+    shadowColor: "#D97706",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
@@ -2252,59 +2622,59 @@ const s = StyleSheet.create({
   },
   copyBtnLargeText: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 
   simulateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: "#FDE68A",
     borderRadius: 8,
     paddingVertical: 8,
     marginTop: 6,
   },
   simulateBtnText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#B45309',
+    fontWeight: "700",
+    color: "#B45309",
   },
   qrLoadingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: "#EFF6FF",
     padding: 8,
     borderRadius: 8,
     marginBottom: 8,
-    width: '100%',
+    width: "100%",
   },
   qrLoadingText: {
     fontSize: 11,
     color: T.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   sepaySuccessBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: "#DCFCE7",
     borderWidth: 1,
-    borderColor: '#86EFAC',
+    borderColor: "#86EFAC",
     borderRadius: 10,
     padding: 10,
     marginBottom: 10,
-    width: '100%',
+    width: "100%",
   },
   sepaySuccessText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#15803D',
+    fontWeight: "700",
+    color: "#15803D",
     flex: 1,
   },
 
@@ -2312,24 +2682,40 @@ const s = StyleSheet.create({
     backgroundColor: T.emeraldBg,
     borderRadius: 14,
     padding: 18,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 12,
     borderWidth: 1,
     borderColor: T.emeraldBorder,
   },
-  cashTitle: { fontSize: 13, color: T.emeraldText, fontWeight: '700', marginTop: 4 },
-  cashAmount: { fontSize: 20, fontWeight: '900', color: T.emeraldText, marginTop: 4 },
-  cashSub: { fontSize: 11, color: T.emeraldText, opacity: 0.85, marginTop: 4, textAlign: 'center' },
+  cashTitle: {
+    fontSize: 13,
+    color: T.emeraldText,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  cashAmount: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: T.emeraldText,
+    marginTop: 4,
+  },
+  cashSub: {
+    fontSize: 11,
+    color: T.emeraldText,
+    opacity: 0.85,
+    marginTop: 4,
+    textAlign: "center",
+  },
   paidToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: '#475569',
+    backgroundColor: "#475569",
     borderRadius: 14,
     paddingVertical: 14,
     marginTop: 14,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
@@ -2340,21 +2726,26 @@ const s = StyleSheet.create({
     shadowColor: T.emerald,
     shadowOpacity: 0.25,
   },
-  paidToggleText: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
+  paidToggleText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.2,
+  },
 
   pinSection: { marginTop: 4 },
-  genPinBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  genPinText: { fontSize: 11, fontWeight: '700', color: T.primary },
+  genPinBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  genPinText: { fontSize: 11, fontWeight: "700", color: T.primary },
   pinInput: {
     backgroundColor: T.surfaceLow,
     borderWidth: 1,
     borderColor: T.border,
     borderRadius: 12,
     fontSize: 22,
-    fontWeight: '900',
-    fontFamily: 'monospace',
+    fontWeight: "900",
+    fontFamily: "monospace",
     letterSpacing: 8,
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: 10,
     color: T.textMain,
   },
@@ -2365,13 +2756,13 @@ const s = StyleSheet.create({
     marginTop: 14,
     gap: 4,
   },
-  finishRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  finishText: { fontSize: 11, color: T.textMain, fontWeight: '600' },
+  finishRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  finishText: { fontSize: 11, color: T.textMain, fontWeight: "600" },
 
   bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: T.surface,
@@ -2379,85 +2770,90 @@ const s = StyleSheet.create({
     borderTopColor: T.border,
   },
   navPrevBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: T.surfaceLow,
   },
-  navPrevText: { fontSize: 12, fontWeight: '700', color: T.textMain },
-  stepCountText: { fontSize: 12, fontWeight: '700', color: T.textMuted },
+  navPrevText: { fontSize: 12, fontWeight: "700", color: T.textMain },
+  stepCountText: { fontSize: 12, fontWeight: "700", color: T.textMuted },
   navNextBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: T.primary,
   },
-  navNextText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  navNextText: { fontSize: 12, fontWeight: "700", color: "#fff" },
   finishBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: T.primary,
   },
-  finishBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  finishBtnText: { fontSize: 12, fontWeight: "800", color: "#fff" },
   quickSaveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    backgroundColor: '#004ac6',
+    backgroundColor: "#004ac6",
     borderRadius: 10,
     paddingVertical: 12,
     marginTop: 14,
   },
   quickSaveBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
     padding: 20,
   },
-  modalCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16 },
-  modalTitle: { fontSize: 14, fontWeight: '800', marginBottom: 10, color: T.textMain },
+  modalCard: { backgroundColor: "#fff", borderRadius: 16, padding: 16 },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 10,
+    color: T.textMain,
+  },
   modalUnitItem: {
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
-  modalUnitItemActive: { backgroundColor: '#EFF6FF' },
-  modalUnitCode: { fontSize: 13, fontWeight: '700', color: T.primary },
+  modalUnitItemActive: { backgroundColor: "#EFF6FF" },
+  modalUnitCode: { fontSize: 13, fontWeight: "700", color: T.primary },
   modalUnitType: { fontSize: 11, color: T.textMuted },
   modalCloseBtn: {
     marginTop: 12,
     paddingVertical: 10,
     backgroundColor: T.surfaceLow,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  modalCloseText: { fontSize: 12, fontWeight: '700', color: T.textMain },
+  modalCloseText: { fontSize: 12, fontWeight: "700", color: T.textMain },
 
   lightboxBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 16,
   },
-  lightboxImg: { width: '100%', height: '80%' },
+  lightboxImg: { width: "100%", height: "80%" },
   // Style bổ sung cho CCCD Counter & Photo Picker
   digitBadge: {
     paddingHorizontal: 8,
@@ -2465,61 +2861,61 @@ const s = StyleSheet.create({
     borderRadius: 12,
   },
   digitBadgeValid: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: "#DCFCE7",
   },
   digitBadgePending: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: "#FEF3C7",
   },
   digitBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   digitBadgeTextValid: {
-    color: '#15803D',
+    color: "#15803D",
   },
   digitBadgeTextPending: {
-    color: '#B45309',
+    color: "#B45309",
   },
 
   emptyPhotoPlaceholder: {
     borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: '#93C5FD',
-    backgroundColor: '#EFF6FF',
+    borderStyle: "dashed",
+    borderColor: "#93C5FD",
+    backgroundColor: "#EFF6FF",
     borderRadius: 16,
     padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginVertical: 4,
   },
   addPhotoBigIconWrap: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
   emptyPhotoTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.primary,
     marginBottom: 4,
   },
   emptyPhotoDesc: {
     fontSize: 12,
     color: T.textMuted,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 12,
   },
   emptyPhotoBtnRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
   },
   emptyAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     backgroundColor: T.primary,
     paddingHorizontal: 14,
@@ -2527,9 +2923,9 @@ const s = StyleSheet.create({
     borderRadius: 8,
   },
   emptyAddBtnText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 
   addPhotoSquareCard: {
@@ -2537,118 +2933,117 @@ const s = StyleSheet.create({
     height: 95,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderStyle: 'dashed',
+    borderStyle: "dashed",
     borderColor: T.primary,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 4,
   },
   addSquareIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
   },
   addSquareText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     color: T.primary,
   },
 
   // Styles hiển thị chữ ký hợp đồng tại Bước 3
   contractSignatureCard: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: "#F0FDF4",
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: "#BBF7D0",
     borderRadius: 12,
     padding: 12,
     marginTop: 10,
-    alignItems: 'center',
+    alignItems: "center",
   },
   contractSigHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
-    width: '100%',
+    width: "100%",
     marginBottom: 6,
   },
   contractSigTitle: {
     flex: 1,
     fontSize: 12,
-    fontWeight: '700',
-    color: '#166534',
+    fontWeight: "700",
+    color: "#166534",
   },
   sigDoneBadge: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: "#DCFCE7",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   sigDoneBadgeText: {
     fontSize: 10,
-    fontWeight: '800',
-    color: '#15803D',
+    fontWeight: "800",
+    color: "#15803D",
   },
   contractSigDrawWrap: {
     width: 130,
     height: 50,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
     marginVertical: 4,
   },
   contractSigCustomerName: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#0F172A',
+    fontWeight: "600",
+    color: "#0F172A",
     marginTop: 2,
   },
 
   // Styles hiển thị dấu tick khi thanh toán thành công
   paidSuccessBox: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: "#F0FDF4",
     borderWidth: 1.5,
-    borderColor: '#86EFAC',
+    borderColor: "#86EFAC",
     borderRadius: 16,
     paddingVertical: 24,
     paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 12,
   },
   paidCheckCircleOuter: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#DCFCE7",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 12,
   },
   paidCheckCircleInner: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#10B981",
+    alignItems: "center",
+    justifyContent: "center",
   },
   paidSuccessTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#065F46',
+    fontWeight: "800",
+    color: "#065F46",
     marginBottom: 4,
   },
   paidSuccessAmount: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#059669',
+    fontWeight: "900",
+    color: "#059669",
   },
-
 });

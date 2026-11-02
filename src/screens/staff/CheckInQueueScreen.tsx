@@ -9,7 +9,9 @@ import {
   TextInput,
   RefreshControl,
   Platform,
+  Alert,
 } from 'react-native';
+import { checkCheckInEligibility } from '../../utils/checkInSchedule';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckInAppointment, StaffReturnOrder } from '../../types/handover';
 import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
@@ -302,6 +304,10 @@ export default function CheckInQueueScreen({
   // ─── RENDER CARD HỢP NHẤT: NHẬN KHO (XANH/TRẮNG) & TRẢ KHO (MÀU CAM NỔI BẬT) ───
   const renderScheduleCard = (item: UnifiedScheduleItem) => {
     const isCheckout = item.orderType === 'checkout';
+    const checkInEligibility = !isCheckout
+      ? checkCheckInEligibility(item.rawCheckIn || item)
+      : { allowed: true };
+    const isCheckInAllowed = checkInEligibility.allowed;
 
     // Tách giờ '1:00' và 'PM'
     const timeParts = (item.slotTime || (isCheckout ? '02:00 PM' : '09:00 AM')).trim().split(/\s+/);
@@ -324,6 +330,21 @@ export default function CheckInQueueScreen({
           onOpenReturnOrder(item.rawReturnOrder!);
         }
       } else {
+        if (item.status === 'completed') {
+          if (item.rawCheckIn) onStartHandover(item.rawCheckIn);
+          return;
+        }
+
+        // Chặn nếu ngoài khung giờ nhận kho: trước tối đa 1 tiếng hoặc trễ tối đa 3 tiếng
+        if (!isCheckInAllowed) {
+          Alert.alert(
+            'Chưa thể nhận kho',
+            checkInEligibility.reason || 'Đơn chỉ được làm thủ tục nhận kho trước giờ hẹn tối đa 1 tiếng hoặc trễ tối đa 3 tiếng.',
+            [{ text: 'Đã hiểu' }]
+          );
+          return;
+        }
+
         if (item.rawCheckIn) {
           onStartHandover(item.rawCheckIn);
         }
@@ -347,6 +368,7 @@ export default function CheckInQueueScreen({
             isCheckout ? styles.wAccentCheckout : styles.wAccentCheckin,
             !isCheckout && item.status === 'completed' && { backgroundColor: '#10B981' },
             item.status === 'in_progress' && { backgroundColor: '#8B5CF6' },
+            !isCheckout && !isCheckInAllowed && item.status !== 'completed' && { backgroundColor: '#94A3B8' },
           ]}
         />
 
@@ -489,16 +511,28 @@ export default function CheckInQueueScreen({
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương */
+                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương hoặc XÁM nếu ngoài khung giờ */
                   <View
                     style={[
                       styles.wActionButton,
-                      styles.wActionButtonCheckin,
-                      item.status === 'in_progress' ? styles.wActionButtonInProgress : null,
+                      isCheckInAllowed
+                        ? (item.status === 'in_progress' ? styles.wActionButtonInProgress : styles.wActionButtonCheckin)
+                        : styles.wActionButtonDisabled,
                     ]}
                   >
-                    <Text style={styles.wActionText}>
-                      {item.status === 'in_progress' ? 'Tiếp tục' : 'Nhận kho'}
+                    <Text
+                      style={[
+                        styles.wActionText,
+                        !isCheckInAllowed && styles.wActionTextDisabled,
+                      ]}
+                    >
+                      {item.status === 'in_progress'
+                        ? 'Tiếp tục'
+                        : isCheckInAllowed
+                          ? 'Nhận kho'
+                          : checkInEligibility.isTooLate
+                            ? 'Quá hạn (>3h)'
+                            : 'Chưa tới giờ'}
                     </Text>
                   </View>
                 )
@@ -1314,6 +1348,15 @@ const styles = StyleSheet.create({
   },
   wActionButtonDone: {
     backgroundColor: '#DCFCE7',
+  },
+  wActionButtonDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  wActionTextDisabled: {
+    color: '#94A3B8',
+    fontWeight: '700',
   },
   wActionText: {
     color: '#FFFFFF',

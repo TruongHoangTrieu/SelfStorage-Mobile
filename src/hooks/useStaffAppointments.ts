@@ -22,6 +22,7 @@ import {
 } from '../data/mockStaffData';
 import { formatSlotTime } from '../data/mockCustomerData';
 import { formatVND, formatVietnameseDate } from '../utils/formatters';
+import { checkCheckInEligibility } from '../utils/checkInSchedule';
 
 export function useStaffAppointments(staffFacilityId?: number | string) {
   const [staffTab, setStaffTab] = useState<StaffTab>('dashboard');
@@ -111,6 +112,8 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             depositAmount: formatVND(firstItem?.depositAmount || item.totalAmount || 890000),
             monthlyRent: formatVND(firstItem?.price || 890000) + '/tháng',
             startDate: formatVietnameseDate(item.appointmentDate),
+            appointmentDate: item.appointmentDate,
+            appointmentDateRaw: item.appointmentDate,
             durationMonths: item.rentalPeriod || 1,
             purpose: 'Lưu trữ tài liệu và đồ đạc',
             specialNotes: item.notes || undefined,
@@ -185,6 +188,17 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       Alert.alert(
         'Đơn không thể nhận kho',
         `Đơn đặt chỗ #${app.id} đã bị hủy hoặc quá hạn nhận kho. Không thể thực hiện thủ tục nhận kho cho đơn này.`,
+        [{ text: 'Đã hiểu' }]
+      );
+      return;
+    }
+
+    // Kiểm tra quy định thời gian: Cho phép trước giờ hẹn tối đa 1 tiếng hoặc trễ tối đa 3 tiếng
+    const eligibility = checkCheckInEligibility(app);
+    if (!eligibility.allowed && app.status !== 'completed') {
+      Alert.alert(
+        'Chưa thể nhận kho',
+        eligibility.reason || 'Đơn chỉ được làm thủ tục nhận kho trước giờ hẹn tối đa 1 tiếng hoặc trễ tối đa 3 tiếng.',
         [{ text: 'Đã hiểu' }]
       );
       return;

@@ -29,6 +29,8 @@ export interface CheckInAppointment {
   rentalStatus?: 'paid' | 'unpaid';
   monthlyRent: string;
   startDate: string;
+  appointmentDate?: string;
+  appointmentDateRaw?: string;
   durationMonths: number;
   purpose: string;
   specialNotes?: string;
@@ -90,6 +92,8 @@ export interface StaffReturnOrder {
   unitSize?: string;
   facilityName?: string;
   startDate: string;
+  appointmentDate?: string;
+  appointmentDateRaw?: string;
   endDate: string;
   status: 'ACTIVE' | 'OVERDUE' | 'TERMINATED' | 'EXPIRED';
   returnType: 'today' | 'early' | 'overdue' | 'completed';
