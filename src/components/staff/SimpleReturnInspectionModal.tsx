@@ -186,20 +186,47 @@ export default function SimpleReturnInspectionModal({
     }
 
     const combinedDesc = `${order.notes || ''} ${order.handoverCondition || ''}`;
-    const penaltyMatch = combinedDesc.match(/\[PENALTY:\s*lateFeePerDay=(\d+),\s*cleaningFee=(\d+),\s*damageFee=(\d+)\]/i);
-    if (penaltyMatch) {
-      unitLateRate = parseInt(penaltyMatch[1], 10) || unitLateRate;
-      unitCleanRate = parseInt(penaltyMatch[2], 10) || unitCleanRate;
-      unitDamageRate = parseInt(penaltyMatch[3], 10) || unitDamageRate;
+    const jsonMatch = combinedDesc.match(/\[PENALTIES_JSON:\s*([\s\S]*?)\]/i);
+    let hasCustomJson = false;
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const late = parsed.find((p: any) => p.code === 'LATE_FEE' || p.isLateFee);
+          if (late && typeof late.amount === 'number') unitLateRate = late.amount;
+
+          const dynamicChecklist = parsed
+            .filter((p: any) => p.code !== 'LATE_FEE' && !p.isLateFee && p.code !== 'CUSTOM')
+            .map((p: any) => ({
+              id: p.code || p.id,
+              label: p.name,
+              price: p.amount || 0,
+            }));
+          dynamicChecklist.push({ id: 'custom', label: 'Phụ thu phát sinh khác', price: 0 });
+          setSurchargeList(dynamicChecklist);
+          hasCustomJson = true;
+        }
+      } catch {}
+    }
+
+    if (!hasCustomJson) {
+      const penaltyMatch = combinedDesc.match(/\[PENALTY:\s*lateFeePerDay=(\d+),\s*cleaningFee=(\d+),\s*damageFee=(\d+)\]/i);
+      if (penaltyMatch) {
+        unitLateRate = parseInt(penaltyMatch[1], 10) || unitLateRate;
+        unitCleanRate = parseInt(penaltyMatch[2], 10) || unitCleanRate;
+        unitDamageRate = parseInt(penaltyMatch[3], 10) || unitDamageRate;
+      }
+
+      setSurchargeList([
+        { id: 'cleaning', label: `Vệ sinh kho (${order.unitType || 'Tiêu chuẩn'})`, price: unitCleanRate },
+        { id: 'scratches', label: 'Trầy xước vách hoặc sàn kho', price: unitDamageRate },
+        { id: 'door_lock', label: 'Hỏng tay nắm / chốt khóa', price: 200000 },
+        { id: 'custom', label: 'Phụ thu phát sinh khác', price: 0 },
+      ]);
     }
 
     setLateFeePerDay(unitLateRate);
-    setSurchargeList([
-      { id: 'cleaning', label: `Vệ sinh kho (${order.unitType || 'Tiêu chuẩn'})`, price: unitCleanRate },
-      { id: 'scratches', label: 'Trầy xước vách hoặc sàn kho', price: unitDamageRate },
-      { id: 'door_lock', label: 'Hỏng tay nắm / chốt khóa', price: 200000 },
-      { id: 'custom', label: 'Phụ thu phát sinh khác', price: 0 },
-    ]);
 
     AsyncStorage.getItem(`unit_smart_pin_${order.unitCode}`)
       .then((savedPin) => {
