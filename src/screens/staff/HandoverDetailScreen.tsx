@@ -145,7 +145,7 @@ export default function HandoverDetailScreen({
 
   // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
   const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityFrontUrl
+    appointment.identityFrontUrl && appointment.identityFrontUrl.startsWith('http')
       ? {
           id: 'cccd-front-initial',
           title: 'Mặt trước CCCD',
@@ -155,7 +155,7 @@ export default function HandoverDetailScreen({
       : null
   );
   const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityBackUrl
+    appointment.identityBackUrl && appointment.identityBackUrl.startsWith('http')
       ? {
           id: 'cccd-back-initial',
           title: 'Mặt sau CCCD',
