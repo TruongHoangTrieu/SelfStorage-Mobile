@@ -7,7 +7,12 @@ import {
   Platform,
   Linking,
   Animated,
+  Modal,
+  TouchableOpacity,
+  Image,
+  ScrollView,
 } from "react-native";
+import { MaterialIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { Facility, UnitType, Reservation, apiRequest, getAuthToken, loginCustomerApi } from "../../api";
 import CustomerBottomNavBar, {
@@ -46,9 +51,17 @@ export default function BookStorageScreen({
   onOpenNotifications,
   unreadNotifCount = 0,
   onOpenAiAssistant,
+  triggerOpenBranchPicker,
 }: Props) {
   // Navigation Flow: step 1 = explore, step 2 = schedule/contract, step 3 = VietQR deposit payment, step 4 = success
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [showBranchSelectModal, setShowBranchSelectModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (triggerOpenBranchPicker) {
+      setShowBranchSelectModal(true);
+    }
+  }, [triggerOpenBranchPicker]);
 
   // Mở Google Maps / Apple Maps chỉ đường đến cơ sở kho
   const handleOpenDirections = (address: string, title: string) => {
@@ -663,6 +676,10 @@ export default function BookStorageScreen({
 
   const handleTabPress = (tab: CustomerTabType) => {
     setCurrentBottomTab(tab);
+    if (tab === "book-new") {
+      setShowBranchSelectModal(true);
+      return;
+    }
     onNavigateTab?.(tab);
   };
 
@@ -764,6 +781,110 @@ export default function BookStorageScreen({
           />
         )}
 
+        {/* MODAL / BOTTOM SHEET: CHỌN CHI NHÁNH THUÊ KHO NHANH */}
+        <Modal
+          visible={showBranchSelectModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBranchSelectModal(false)}
+        >
+          <View style={s.modalOverlay}>
+            <TouchableOpacity
+              style={s.modalBackdropDismiss}
+              activeOpacity={1}
+              onPress={() => setShowBranchSelectModal(false)}
+            />
+            <View style={s.modalSheetContainer}>
+              {/* Thanh kéo trang trí */}
+              <View style={s.modalDragHandle} />
+
+              {/* Header của Sheet */}
+              <View style={s.modalHeader}>
+                <View style={s.modalHeaderLeft}>
+                  <View style={s.modalHeaderIconBadge}>
+                    <MaterialIcons name="storefront" size={22} color="#1d4ed8" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalTitle}>Chọn Cơ Sở Thuê Kho</Text>
+                    <Text style={s.modalSubtitle}>
+                      Chọn chi nhánh gần bạn để xem buồng kho còn trống
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={s.modalCloseBtn}
+                  onPress={() => setShowBranchSelectModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialIcons name="close" size={20} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Danh sách các chi nhánh cơ sở kho */}
+              <ScrollView
+                style={s.modalBranchList}
+                contentContainerStyle={{ paddingBottom: 16 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {dynamicFacilities.map((facItem) => (
+                  <TouchableOpacity
+                    key={facItem.id}
+                    style={s.branchCard}
+                    activeOpacity={0.88}
+                    onPress={() => {
+                      setSelectedFacility(facItem.facility);
+                      setCurrentStep(1);
+                      setShowBranchSelectModal(false);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: facItem.image }}
+                      style={s.branchCardImg}
+                      resizeMode="cover"
+                    />
+                    <View style={s.branchCardInfo}>
+                      <View style={s.branchCardTopRow}>
+                        <Text style={s.branchCardTitle} numberOfLines={1}>
+                          {facItem.title}
+                        </Text>
+                        {facItem.isNearest && (
+                          <View style={s.nearestBadge}>
+                            <Text style={s.nearestBadgeText}>Gần nhất</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={s.branchCardLocRow}>
+                        <MaterialIcons name="location-on" size={13} color="#64748b" />
+                        <Text style={s.branchCardLocText} numberOfLines={1}>
+                          {facItem.location}
+                        </Text>
+                      </View>
+
+                      <View style={s.branchCardMetaRow}>
+                        {facItem.realDistanceKm && (
+                          <View style={s.metaPill}>
+                            <Text style={s.metaPillText}>{facItem.realDistanceKm} km</Text>
+                          </View>
+                        )}
+                        <View style={s.metaPillGreen}>
+                          <Text style={s.metaPillGreenText}>
+                            {facItem.availableCount > 0 ? `Còn ${facItem.availableCount} buồng` : 'Đang hoạt động'}
+                          </Text>
+                        </View>
+                        
+                      </View>
+                    </View>
+
+
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+            </View>
+          </View>
+        </Modal>
+
         {/* Toast thông báo nổi */}
         {toastMessage && (
           <Animated.View
@@ -822,5 +943,197 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    justifyContent: "flex-end",
+  },
+  modalBackdropDismiss: {
+    flex: 1,
+  },
+  modalSheetContainer: {
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    maxHeight: "82%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  modalDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#cbd5e1",
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    marginBottom: 12,
+  },
+  modalHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  modalHeaderIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: 1,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBranchList: {
+    maxHeight: 420,
+  },
+  branchCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    padding: 10,
+    marginBottom: 10,
+    gap: 12,
+  },
+  branchCardImg: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+  },
+  branchCardInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  branchCardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+  },
+  branchCardTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+    flex: 1,
+  },
+  nearestBadge: {
+    backgroundColor: "#dbeafe",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  nearestBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#1d4ed8",
+  },
+  branchCardLocRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  branchCardLocText: {
+    fontSize: 11.5,
+    color: "#64748b",
+    flex: 1,
+  },
+  branchCardMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  metaPill: {
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  metaPillText: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  metaPillGreen: {
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  metaPillGreenText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  branchCardPrice: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#2563eb",
+    marginLeft: "auto",
+  },
+  branchCardPriceUnit: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#64748b",
+  },
+  branchCardArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalFooterHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  modalFooterHintText: {
+    fontSize: 11,
+    color: "#64748b",
+    fontWeight: "500",
   },
 });

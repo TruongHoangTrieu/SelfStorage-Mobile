@@ -92,18 +92,18 @@ export default function CustomerBottomNavBar({
         </TouchableOpacity>
 
         {/* Nút giữa: THUÊ KHO MỚI (Lồi lên nổi bật phong cách FAB) */}
-        <View style={s.centerButtonContainer}>
-          <TouchableOpacity
-            style={s.centerButtonRing}
-            onPress={() => onSelectTab('book-new')}
-            activeOpacity={0.88}
-          >
+        <TouchableOpacity
+          style={s.centerButtonContainer}
+          onPress={() => onSelectTab('book-new')}
+          activeOpacity={0.88}
+        >
+          <View style={s.centerButtonRing}>
             <View style={s.centerButtonInner}>
               <MaterialIcons name="add" size={28} color="#ffffff" />
             </View>
-          </TouchableOpacity>
+          </View>
           <Text style={s.centerButtonLabel}>Thuê kho</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Tab 4: Hỗ trợ CSKH */}
         <TouchableOpacity

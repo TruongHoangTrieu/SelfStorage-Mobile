@@ -45,6 +45,7 @@ export interface Props {
   onOpenNotifications?: () => void;
   unreadNotifCount?: number;
   onOpenAiAssistant?: (prompt?: string) => void;
+  triggerOpenBranchPicker?: number;
 }
 
 export interface StorageDisplayItem {
