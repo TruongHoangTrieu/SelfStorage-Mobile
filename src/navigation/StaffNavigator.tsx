@@ -153,6 +153,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             contractCode={selectedAppointment.contractCode}
             accessPin={selectedAppointment.accessPin}
             signature={selectedAppointment.signature}
+            isEditing={selectedAppointment.status === 'completed' || Boolean(selectedAppointment.contractCode)}
             onBackToQueue={() => {
               setFlowStep('queue');
               setStaffTab('queue');

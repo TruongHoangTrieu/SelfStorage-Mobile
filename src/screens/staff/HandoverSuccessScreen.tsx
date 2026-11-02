@@ -18,6 +18,7 @@ interface HandoverSuccessScreenProps {
   contractCode?: string;
   accessPin?: string;
   signature?: string[];
+  isEditing?: boolean;
   onBackToQueue: () => void;
   onPrintAgain?: () => void;
 }
@@ -48,6 +49,7 @@ export default function HandoverSuccessScreen({
   contractCode = 'CON-20261013-8910AB',
   accessPin = '682914',
   signature,
+  isEditing,
   onBackToQueue,
 }: HandoverSuccessScreenProps) {
   const insets = useSafeAreaInsets();
@@ -83,9 +85,15 @@ export default function HandoverSuccessScreen({
         </View>
 
         {/* Tiêu đề */}
-        <Text style={styles.headline}>Bàn Giao Kho Thành Công</Text>
+        <Text style={styles.headline}>
+          {isEditing || appointment.status === 'completed'
+            ? 'Hoàn Tất Chỉnh Sửa'
+            : 'Bàn Giao Kho Thành Công'}
+        </Text>
         <Text style={styles.subheadline}>
-          Ô kho <Text style={styles.boldDark}>#{assignedUnitCode}</Text> đã sẵn sàng hoạt động.
+          {isEditing || appointment.status === 'completed'
+            ? <>Hồ sơ bàn giao ô kho <Text style={styles.boldDark}>#{assignedUnitCode}</Text> đã được cập nhật thành công.</>
+            : <>Ô kho <Text style={styles.boldDark}>#{assignedUnitCode}</Text> đã sẵn sàng hoạt động.</>}
         </Text>
 
         {/* Khung tóm tắt: Mã Hợp Đồng & Ô Kho */}

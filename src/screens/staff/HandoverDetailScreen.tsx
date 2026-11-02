@@ -100,6 +100,9 @@ export default function HandoverDetailScreen({
   const insets = useSafeAreaInsets();
   // Stepper State 1 -> 5 (giống hệt luồng Web)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const isAlreadyHandedOver =
+    appointment.status === "completed" ||
+    Boolean(appointment.contractCode);
 
   // Bước 1: KYC Định danh & Ô kho (Chuẩn hóa duy nhất CCCD 12 số)
   const identityType = "CCCD";
@@ -647,7 +650,7 @@ export default function HandoverDetailScreen({
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 8 }}>
           <Text style={s.topTitle}>
-            {appointment.status === "completed"
+            {isAlreadyHandedOver
               ? "Chỉnh Sửa Bàn Giao: "
               : "Bàn Giao: "}
             {appointment.customerName}
@@ -1327,7 +1330,7 @@ export default function HandoverDetailScreen({
             </View>
 
             {/* Nút lưu nhanh khi chỉnh sửa đơn đã hoàn tất */}
-            {appointment.status === "completed" && (
+            {isAlreadyHandedOver && (
               <TouchableOpacity
                 style={[
                   s.quickSaveBtn,
@@ -1343,7 +1346,7 @@ export default function HandoverDetailScreen({
                   <>
                     <MaterialIcons name="save" size={18} color="#fff" />
                     <Text style={s.quickSaveBtnText}>
-                      Lưu Thay Đổi Bàn Giao
+                      Hoàn Tất Chỉnh Sửa
                     </Text>
                   </>
                 )}
@@ -1759,8 +1762,8 @@ export default function HandoverDetailScreen({
             ) : (
               <>
                 <Text style={s.finishBtnText}>
-                  {appointment.status === "completed"
-                    ? "Lưu Chỉnh Sửa"
+                  {isAlreadyHandedOver
+                    ? "Hoàn Tất Chỉnh Sửa"
                     : "Hoàn Tất Bàn Giao"}
                 </Text>
                 <MaterialIcons name="check-circle" size={18} color="#fff" />

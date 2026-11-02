@@ -396,6 +396,14 @@ export default function CheckInQueueScreen({
                   {isCheckout ? 'TRẢ KHO' : 'NHẬN KHO'}
                 </Text>
               </View>
+              {isCheckout && item.rawReturnOrder?.overdueDays && item.rawReturnOrder.overdueDays > 0 ? (
+                <View style={styles.overdueDaysPill}>
+                  <MaterialIcons name="warning" size={10} color="#B45309" />
+                  <Text style={styles.overdueDaysPillText}>
+                    Trễ {item.rawReturnOrder.overdueDays} ngày
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.wTimeRow}>
@@ -1146,6 +1154,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  overdueDaysPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  overdueDaysPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
   },
   badgeLabelRow: {
     flexDirection: 'row',

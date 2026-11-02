@@ -11,14 +11,28 @@ export const CURRENT_STAFF_USER: StaffUser = {
 };
 
 export const INITIAL_AVAILABLE_UNITS: AvailableUnit[] = [
-  { id: 'u-101', rawId: 1, code: 'A-101', type: 'Kho Cá nhân Mini', size: '4.9m² (2.1 x 2.3m)', floor: 'Tầng 1', zone: 'Khu A', features: 'Gần cửa xuất nhập, camera 24/7', status: 'vacant' },
+  // Tầng 1
+  { id: 'u-vng101', rawId: 901, code: 'VNG-101', type: 'Kho Mini Cá Nhân', size: '2.0m²', floor: 'Tầng 1', zone: 'Khu A', features: 'Mới 100%, máy lạnh', status: 'occupied' },
+  { id: 'u-vng102', rawId: 902, code: 'VNG-102', type: 'Kho Mini Cá Nhân', size: '2.0m²', floor: 'Tầng 1', zone: 'Khu A', features: 'Gần cửa xuất nhập, Smart PIN', status: 'occupied' },
+  { id: 'u-101', rawId: 1, code: 'A-101', type: 'Kho Cá nhân Mini', size: '4.9m² (2.1 x 2.3m)', floor: 'Tầng 1', zone: 'Khu A', features: 'Gần cửa xuất nhập, camera 24/7', status: 'occupied' },
   { id: 'u-102', rawId: 2, code: 'A-102', type: 'Kho Cá nhân Mini', size: '4.9m² (2.1 x 2.3m)', floor: 'Tầng 1', zone: 'Khu A', features: 'Gần cửa xuất nhập, Smart PIN 24/7', status: 'vacant' },
   { id: 'u-104', rawId: 4, code: 'A-104', type: 'Kho Cá nhân Mini', size: '4.9m² (2.1 x 2.3m)', floor: 'Tầng 1', zone: 'Khu A', features: 'Kế thang máy vận chuyển, kiểm soát nhiệt', status: 'vacant' },
-  { id: 'u-205', rawId: 5, code: 'B-205', type: 'Kho Gia đình Tiêu chuẩn', size: '9.0m² (3.0 x 3.0m)', floor: 'Tầng 2', zone: 'Khu B', features: 'Lối đi rộng 2.5m, pallet lót sẵn', status: 'vacant' },
+
+  // Tầng 2
+  { id: 'u-vng201', rawId: 903, code: 'VNG-201', type: 'Kho Gia Đình Tiêu Chuẩn', size: '9.0m²', floor: 'Tầng 2', zone: 'Khu B', features: 'Lối đi rộng 2.5m, pallet lót sẵn', status: 'vacant' },
+  { id: 'u-std102', rawId: 904, code: 'STD_1-02', type: 'Kho Gia Đình Tiêu Chuẩn', size: '9.0m²', floor: 'Tầng 2', zone: 'Khu B', features: 'Cảm biến nhiệt độ & khói', status: 'occupied' },
+  { id: 'u-205', rawId: 5, code: 'B-205', type: 'Kho Gia đình Tiêu chuẩn', size: '9.0m² (3.0 x 3.0m)', floor: 'Tầng 2', zone: 'Khu B', features: 'Lối đi rộng 2.5m, pallet lót sẵn', status: 'occupied' },
   { id: 'u-208', rawId: 8, code: 'B-208', type: 'Kho Gia đình Tiêu chuẩn', size: '9.0m² (3.0 x 3.0m)', floor: 'Tầng 2', zone: 'Khu B', features: 'Sát lối thoát hiểm, cảm biến khói', status: 'vacant' },
-  { id: 'u-302', rawId: 12, code: 'C-302', type: 'Kho Doanh nghiệp Lớn', size: '14.5m² (3.6 x 4.0m)', floor: 'Tầng 3', zone: 'Khu C', features: 'Cửa cuốn tự động, hỗ trợ xe nâng', status: 'vacant' },
+
+  // Tầng 3
+  { id: 'u-large103', rawId: 905, code: 'LARGE_1-03', type: 'Kho Doanh Nghiệp Lớn', size: '14.5m²', floor: 'Tầng 3', zone: 'Khu C', features: 'Cửa cuốn tự động, hỗ trợ xe nâng', status: 'occupied' },
+  { id: 'u-vng301', rawId: 906, code: 'VNG-301', type: 'Kho Doanh Nghiệp Lớn', size: '14.5m²', floor: 'Tầng 3', zone: 'Khu C', features: 'Sàn chịu tải cao, camera 24/7', status: 'occupied' },
+  { id: 'u-302', rawId: 12, code: 'C-302', type: 'Kho Doanh nghiệp Lớn', size: '14.5m² (3.6 x 4.0m)', floor: 'Tầng 3', zone: 'Khu C', features: 'Cửa cuốn tự động, hỗ trợ xe nâng', status: 'occupied' },
   { id: 'u-305', rawId: 15, code: 'C-305', type: 'Kho Doanh nghiệp Lớn', size: '14.5m² (3.6 x 4.0m)', floor: 'Tầng 3', zone: 'Khu C', features: 'Có ổ điện riêng, ổ khóa kép IoT', status: 'vacant' },
-  { id: 'u-401', rawId: 21, code: 'CL-401', type: 'Kho Mát Bảo Quản (Climate)', size: '6.5m² (2.5 x 2.6m)', floor: 'Tầng 4', zone: 'Khu Mát', features: 'Nhiệt độ 23-25°C, độ ẩm < 55%', status: 'vacant' },
+
+  // Tầng 4
+  { id: 'u-401', rawId: 21, code: 'CL-401', type: 'Kho Mát Bảo Quản (Climate)', size: '6.5m² (2.5 x 2.6m)', floor: 'Tầng 4', zone: 'Khu Mát', features: 'Nhiệt độ 23-25°C, đang bảo trì cảm biến', status: 'maintenance' },
+  { id: 'u-402', rawId: 22, code: 'CL-402', type: 'Kho Mát Bảo Quản (Climate)', size: '6.5m² (2.5 x 2.6m)', floor: 'Tầng 4', zone: 'Khu Mát', features: 'Nhiệt độ 23-25°C, độ ẩm < 55%', status: 'vacant' },
 ];
 
 function getMondayOfCurrentWeek(): Date {
@@ -297,6 +311,34 @@ export const INITIAL_APPOINTMENTS: CheckInAppointment[] = [
 ];
 
 export const INITIAL_RETURN_ORDERS: StaffReturnOrder[] = [
+  {
+    id: '6ae88474c4d97601720ee177',
+    contractCode: 'CON-20261031-OVERDUE2D',
+    customerName: 'Nguyễn Văn Khách Hàng',
+    phone: '0909 123 456',
+    email: 'customer@selfstorage.vn',
+    unitCode: 'VNG-102',
+    smartLockPin: '711483',
+    unitType: 'Kho Mini Cá Nhân',
+    unitSize: '2.0m²',
+    facilityName: 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
+    startDate: '01/10/2026',
+    endDate: '31/10/2026',
+    status: 'OVERDUE',
+    returnType: 'overdue',
+    depositAmount: 500000,
+    unpaidFees: 0,
+    overdueDays: 2,
+    overdueFine: 100000,
+    extraChargesTotal: 100000,
+    notes: 'Hợp đồng trễ hạn 2 ngày (hết hạn ngày 31/10/2026). Phí phạt trễ hạn tự động áp dụng 100.000 đ (50.000 đ/ngày).',
+    handoverPhotos: [
+      'https://res.cloudinary.com/micb9okr/image/upload/v1792946232/selfstorage/storage_units/unit_sto1.png',
+      'https://images.unsplash.com/photo-1595246140625-573b715d11dc?w=600&auto=format&fit=crop&q=80',
+    ],
+    handoverCondition: 'Kho sạch sẽ, không mùi, đèn sáng, ổ khóa tốt, vách ngăn kim loại không móp méo.',
+    handoverDate: '01/10/2026',
+  },
   {
     id: '6ae89b68a10a7090d69228c5',
     contractCode: 'CON-20261102-LARGE103',

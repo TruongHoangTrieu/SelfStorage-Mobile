@@ -177,19 +177,31 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         }
       }
 
-      // Xử lý danh sách ô kho từ Backend
+      // Xử lý danh sách ô kho từ Backend và đồng bộ trạng thái chính xác
       if (Array.isArray(unitsData) && unitsData.length > 0) {
-        const mappedUnits: AvailableUnit[] = unitsData.map((u: any) => ({
-          id: String(u.id),
-          rawId: u.id,
-          code: u.unitNumber,
-          type: u.unitType?.name || 'Kho tiêu chuẩn',
-          size: `${u.unitType?.size || 5}m²`,
-          floor: u.floor || 'Tầng 1',
-          zone: 'Khu A',
-          features: u.condition || 'Khóa Smart PIN 24/7',
-          status: u.status === 'AVAILABLE' ? 'vacant' : 'occupied',
-        }));
+        const mappedUnits: AvailableUnit[] = unitsData.map((u: any) => {
+          let uStatus: 'vacant' | 'occupied' | 'maintenance' = 'vacant';
+          const rawStatus = String(u.status || '').toUpperCase();
+          if (rawStatus === 'OCCUPIED' || rawStatus === 'RENTED') {
+            uStatus = 'occupied';
+          } else if (rawStatus === 'MAINTENANCE' || rawStatus === 'UNDER_MAINTENANCE') {
+            uStatus = 'maintenance';
+          } else if (rawStatus === 'AVAILABLE' || rawStatus === 'VACANT') {
+            uStatus = 'vacant';
+          }
+
+          return {
+            id: String(u.id),
+            rawId: u.id,
+            code: u.unitNumber,
+            type: u.unitType?.name || 'Kho tiêu chuẩn',
+            size: `${u.unitType?.size || 5}m²`,
+            floor: u.floor || 'Tầng 1',
+            zone: 'Khu A',
+            features: u.condition || 'Khóa Smart PIN 24/7',
+            status: uStatus,
+          };
+        });
         setAvailableUnits(mappedUnits);
       }
     } catch (err: any) {

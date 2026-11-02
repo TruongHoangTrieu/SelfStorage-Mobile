@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
+  TextInput,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AvailableUnit } from '../../types/handover';
@@ -19,20 +20,43 @@ interface UnitMapScreenProps {
 export default function UnitMapScreen({
   availableUnits,
   onOpenSidebar,
-  facilityName = 'Trụ sở chính Thủ Đức',
+  facilityName = 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
 }: UnitMapScreenProps) {
   const insets = useSafeAreaInsets();
   const [selectedFloor, setSelectedFloor] = useState<string>('Tất cả');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const floors = ['Tất cả', 'Tầng 1', 'Tầng 2', 'Tầng 3', 'Tầng 4'];
 
-  const filteredUnits = selectedFloor === 'Tất cả'
-    ? availableUnits
-    : availableUnits.filter((u) => u.floor.indexOf(selectedFloor) !== -1);
+  // Thống kê nhanh trạng thái ô kho
+  const stats = useMemo(() => {
+    return {
+      total: availableUnits.length,
+      vacant: availableUnits.filter((u) => u.status === 'vacant').length,
+      occupied: availableUnits.filter((u) => u.status === 'occupied').length,
+      maintenance: availableUnits.filter((u) => u.status === 'maintenance').length,
+    };
+  }, [availableUnits]);
+
+  // Lọc theo tầng và tìm kiếm
+  const filteredUnits = useMemo(() => {
+    return availableUnits.filter((u) => {
+      if (selectedFloor !== 'Tất cả' && (!u.floor || u.floor.indexOf(selectedFloor) === -1)) {
+        return false;
+      }
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      return (
+        u.code.toLowerCase().includes(q) ||
+        u.type.toLowerCase().includes(q) ||
+        (u.floor && u.floor.toLowerCase().includes(q))
+      );
+    });
+  }, [availableUnits, selectedFloor, searchQuery]);
 
   return (
     <View style={styles.container}>
-      {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
+      {/* ─── Top Bar ─── */}
       <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
           <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
@@ -47,48 +71,152 @@ export default function UnitMapScreen({
         </View>
       </View>
 
-      {/* Floor Filter Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterPadding}>
+      {/* ─── Search Bar ─── */}
+      <View style={styles.searchBarWrap}>
+        <View style={styles.searchRow}>
+          <MaterialIcons name="search" size={18} color="#94A3B8" style={{ marginLeft: 10 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Tìm theo mã kho (A-101, VNG-102), loại kho..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 6 }}>
+              <MaterialIcons name="close" size={16} color="#64748B" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
+      {/* ─── Floor Filter Tabs ─── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterBar}
+        contentContainerStyle={styles.filterPadding}
+      >
         {floors.map((fl) => (
           <TouchableOpacity
             key={fl}
             style={[styles.floorPill, selectedFloor === fl && styles.floorPillActive]}
             onPress={() => setSelectedFloor(fl)}
           >
-            <Text style={[styles.floorText, selectedFloor === fl && styles.floorTextActive]}>{fl}</Text>
+            <Text style={[styles.floorText, selectedFloor === fl && styles.floorTextActive]}>
+              {fl}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      {/* Grid of Units */}
+      {/* ─── Main Content: Legend + Grid ─── */}
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPadding}>
-        <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-            <Text style={styles.legendText}>Trống (Vacant)</Text>
+        {/* Hộp chú thích chia làm 2 hàng cân đối, không bị lồi ra ngoài */}
+        <View style={styles.legendContainer}>
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
+              <Text style={styles.legendText}>
+                Trống <Text style={styles.legendCount}>({stats.vacant})</Text>
+              </Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
+              <Text style={styles.legendText}>
+                Đang thuê <Text style={styles.legendCount}>({stats.occupied})</Text>
+              </Text>
+            </View>
           </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} />
-            <Text style={styles.legendText}>Đang thuê (Occupied)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-            <Text style={styles.legendText}>Bảo trì (Maintenance)</Text>
+
+          <View style={styles.legendDivider} />
+
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
+              <Text style={styles.legendText}>
+                Bảo trì <Text style={styles.legendCount}>({stats.maintenance})</Text>
+              </Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#8B5CF6' }]} />
+              <Text style={styles.legendText}>Đã giữ chỗ</Text>
+            </View>
           </View>
         </View>
 
+        {/* Danh sách ô kho theo lưới 2 cột */}
         <View style={styles.unitGrid}>
-          {filteredUnits.map((u) => (
-            <View key={u.id} style={styles.unitCard}>
-              <View style={styles.unitCardTop}>
-                <Text style={styles.unitCode}>{u.code}</Text>
-                <View style={styles.statusDot} />
-              </View>
-              <Text style={styles.unitType} numberOfLines={1}>{u.type}</Text>
-              <Text style={styles.unitDetail}>{u.size} • {u.floor}</Text>
-              <Text style={styles.unitFeatures} numberOfLines={1}>✓ {u.features}</Text>
+          {filteredUnits.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <MaterialIcons name="meeting-room" size={40} color="#CBD5E1" />
+              <Text style={styles.emptyText}>Không tìm thấy ô kho phù hợp</Text>
             </View>
-          ))}
+          ) : (
+            filteredUnits.map((u) => {
+              const isOccupied = u.status === 'occupied';
+              const isMaintenance = u.status === 'maintenance';
+
+              const statusColor = isOccupied
+                ? '#2563EB'
+                : isMaintenance
+                ? '#D97706'
+                : '#059669';
+
+              const statusBg = isOccupied
+                ? '#EFF6FF'
+                : isMaintenance
+                ? '#FFFBEB'
+                : '#ECFDF5';
+
+              const statusBorder = isOccupied
+                ? '#BFDBFE'
+                : isMaintenance
+                ? '#FDE68A'
+                : '#A7F3D0';
+
+              const statusLabel = isOccupied
+                ? 'Đang thuê'
+                : isMaintenance
+                ? 'Bảo trì'
+                : 'Trống';
+
+              return (
+                <View
+                  key={u.id}
+                  style={[
+                    styles.unitCard,
+                    isOccupied && styles.unitCardOccupied,
+                    isMaintenance && styles.unitCardMaintenance,
+                  ]}
+                >
+                  <Text style={styles.unitCode}>{u.code}</Text>
+
+                  <View
+                    style={[
+                      styles.statusBadgePill,
+                      { backgroundColor: statusBg, borderColor: statusBorder },
+                    ]}
+                  >
+                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                      {statusLabel}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.unitType} numberOfLines={1}>
+                    {u.type}
+                  </Text>
+                  <Text style={styles.unitDetail}>
+                    {u.size} • {u.floor}
+                  </Text>
+                  <Text style={styles.unitFeatures} numberOfLines={1}>
+                    ✓ {u.features}
+                  </Text>
+                </View>
+              );
+            })
+          )}
         </View>
       </ScrollView>
     </View>
@@ -98,7 +226,7 @@ export default function UnitMapScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
   },
   topBar: {
     backgroundColor: '#FFFFFF',
@@ -139,37 +267,59 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     marginTop: 2,
   },
+  searchBarWrap: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    height: 38,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#0F172A',
+    paddingHorizontal: 8,
+  },
   filterBar: {
     backgroundColor: '#FFFFFF',
-    maxHeight: 50,
+    maxHeight: 46,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
   filterPadding: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     gap: 8,
     flexDirection: 'row',
   },
   floorPill: {
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 20,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   floorPillActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   floorText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#64748B',
   },
   floorTextActive: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
   scroll: {
     flex: 1,
@@ -178,21 +328,37 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginBottom: 16,
+  // Chú thích 2 hàng gọn gàng, không bị tràn màn hình
+  legendContainer: {
     backgroundColor: '#FFFFFF',
-    padding: 10,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  legendItem: {
+  legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  legendDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
+  legendItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   legendDot: {
     width: 10,
@@ -200,9 +366,14 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendText: {
-    fontSize: 11,
-    color: '#64748B',
+    fontSize: 12,
+    color: '#334155',
     fontWeight: '600',
+  },
+  legendCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
   },
   unitGrid: {
     flexDirection: 'row',
@@ -216,29 +387,51 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  unitCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+  unitCardOccupied: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#FAFCFF',
+  },
+  unitCardMaintenance: {
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFEFA',
   },
   unitCode: {
     fontSize: 16,
     fontWeight: '900',
     color: '#0F172A',
   },
+  statusBadgePill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+    marginBottom: 6,
+  },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10B981',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
   },
   unitType: {
     fontSize: 11,
     fontWeight: '700',
     color: '#2563EB',
-    marginBottom: 2,
+    marginBottom: 3,
   },
   unitDetail: {
     fontSize: 10,
@@ -249,5 +442,16 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#059669',
     marginTop: 2,
+  },
+  emptyWrap: {
+    width: '100%',
+    paddingVertical: 40,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontWeight: '600',
   },
 });
