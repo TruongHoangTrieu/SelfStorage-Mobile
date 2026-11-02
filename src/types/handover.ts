@@ -39,6 +39,10 @@ export interface CheckInAppointment {
   completedAt?: string;
   cancelReason?: string;
   rescheduledAt?: string;
+  photos?: string[];
+  handoverPhotos?: string[];
+  condition?: string;
+  notes?: string;
 }
 
 export interface AvailableUnit {
@@ -101,6 +105,7 @@ export interface StaffReturnOrder {
   handoverDate?: string;
   returnPhotos?: string[]; // Ảnh chụp nghiệm thu lúc trả kho (sau khi thuê - để đối chiếu)
   returnCondition?: string;
+  smartLockPin?: string;
 }
 
 

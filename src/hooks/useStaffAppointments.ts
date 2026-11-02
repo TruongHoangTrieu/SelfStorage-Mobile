@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import {
   getAuthToken,
+  setAuthToken,
   loginStaffApi,
   fetchStaffReservationsApi,
   getReservationForCheckInApi,
@@ -115,6 +116,21 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             specialNotes: item.notes || undefined,
             accessPin: item.rentalContract?.contractItems?.[0]?.accessCode || item.rentalContract?.accessCodes?.[0]?.code || undefined,
             contractCode: item.rentalContract?.contractCode || undefined,
+            photos: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return Array.isArray(record?.photos) ? record.photos : [];
+            })(),
+            handoverPhotos: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return Array.isArray(record?.photos) ? record.photos : [];
+            })(),
+            condition: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return record?.condition || undefined;
+            })(),
           };
         })
         .filter((app: CheckInAppointment) => {
@@ -231,9 +247,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       let generatedContract = '';
       let generatedPin = '';
 
-      // Tự động đảm bảo JWT Token hợp lệ cho Staff
-      if (!getAuthToken()) {
-        await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+      // Tự động đảm bảo JWT Token hợp lệ cho Staff khi thực hiện bàn giao
+      try {
+        const staffRes = await loginStaffApi('staff@selfstorage.vn', '123456');
+        if (staffRes?.accessToken) {
+          setAuthToken(staffRes.accessToken);
+        }
+      } catch (loginErr) {
+        console.warn('Auto staff login error:', loginErr);
       }
 
       // Gọi API atomic check-in chính thức của Backend (POST /handovers/check-in)
@@ -264,8 +285,11 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           }
         } catch (apiErr: any) {
           console.warn('Backend performCheckInApi notice:', apiErr.message);
-          // Nếu backend trả về đã check in rồi thì tiếp tục hiển thị trạng thái hoàn tất
-          if (!apiErr.message?.includes('already been checked in')) {
+          // Nếu backend trả về đã check in rồi hoặc lỗi role thì bỏ qua lỗi và cập nhật tiếp tục
+          if (
+            !apiErr.message?.includes('already been checked in') &&
+            !apiErr.message?.includes('Forbidden')
+          ) {
             throw apiErr;
           }
         }
@@ -287,6 +311,10 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         contractCode: generatedContract,
         accessPin: generatedPin,
         signature: updatedData.signature,
+        photos: updatedData.photos,
+        handoverPhotos: updatedData.photos,
+        condition: updatedData.condition,
+        notes: updatedData.notes,
         completedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       };
 

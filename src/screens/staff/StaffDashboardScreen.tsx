@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, StaffTab, StaffUser } from '../../types/handover';
-import { INITIAL_RETURN_ORDERS, INITIAL_SUPPORT_TICKETS } from '../../data/mockStaffData';
+import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
+import { fetchStaffSupportRequestsApi } from '../../api';
 
 interface StaffDashboardScreenProps {
   appointments: CheckInAppointment[];
@@ -52,12 +53,25 @@ export default function StaffDashboardScreen({
     ).length || 1;
   }, []);
 
-  // 3. Số sự cố cần trợ giúp
-  const supportCount = useMemo(() => {
-    return INITIAL_SUPPORT_TICKETS.filter(
-      (t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS'
-    ).length || 2;
-  }, []);
+  // 3. Số sự cố cần trợ giúp (Lấy trực tiếp từ Database qua API)
+  const [supportCount, setSupportCount] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchStaffSupportRequestsApi()
+      .then((res) => {
+        if (!isMounted) return;
+        const items = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        const activeCount = items.filter(
+          (t: any) => t.status === 'OPEN' || t.status === 'IN_PROGRESS'
+        ).length;
+        setSupportCount(activeCount);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [isRefreshing]);
 
   // Tên nhân viên hiển thị: LOẠI BỎ TRIỆT ĐỂ DẤU NGOẶC (ví dụ "Nguyễn Văn Staff (Kho A)" -> "Nguyễn Văn Staff")
   const rawDisplayName = currentUser?.fullName || 'Nhân Viên';
@@ -77,7 +91,7 @@ export default function StaffDashboardScreen({
   const gridMenuItems = [
     {
       id: 'queue',
-      title: 'Lịch nhận - trả',
+      title: 'Lịch nhận',
       icon: 'sync-alt' as const,
       color: '#2563EB',
       bgColor: '#EFF6FF',

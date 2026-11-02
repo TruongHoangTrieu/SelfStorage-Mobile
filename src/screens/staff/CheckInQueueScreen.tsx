@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   StyleSheet,
   Text,
@@ -137,11 +138,48 @@ export default function CheckInQueueScreen({
   const [selectedReturnOrder, setSelectedReturnOrder] = useState<StaffReturnOrder | null>(null);
   const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
 
-  // Đồng bộ returnOrders khi props thay đổi
+  // Đồng bộ returnOrders kèm các cập nhật/mã PIN đã lưu và khôi phục modal nếu vừa quay lại từ App Ngân Hàng
   React.useEffect(() => {
-    if (returnOrders && returnOrders.length > 0) {
-      setLocalReturnOrders(returnOrders);
+    let isMounted = true;
+    async function syncSavedReturnState() {
+      const baseOrders = returnOrders && returnOrders.length > 0 ? returnOrders : INITIAL_RETURN_ORDERS;
+      const hydrated = await Promise.all(
+        baseOrders.map(async (ord) => {
+          try {
+            const savedOrdStr = await AsyncStorage.getItem(`return_order_state_${ord.id}`);
+            const savedPin = await AsyncStorage.getItem(`unit_smart_pin_${ord.unitCode}`);
+            let merged = { ...ord };
+            if (savedOrdStr) {
+              merged = { ...merged, ...JSON.parse(savedOrdStr) };
+            }
+            if (savedPin && savedPin.trim().length >= 4) {
+              merged.smartLockPin = savedPin.trim();
+            }
+            return merged;
+          } catch {
+            return ord;
+          }
+        })
+      );
+      if (!isMounted) return;
+      setLocalReturnOrders(hydrated);
+
+      // Nếu người dùng vừa chuyển qua app ngân hàng để thanh toán phụ thu thì mở lại đúng modal đơn đó
+      try {
+        const activeModalOrderId = await AsyncStorage.getItem('active_return_inspection_order_id');
+        if (activeModalOrderId && isMounted) {
+          const targetOrder = hydrated.find((o) => o.id === activeModalOrderId);
+          if (targetOrder) {
+            setSelectedReturnOrder(targetOrder);
+            setIsInspectionModalVisible(true);
+          }
+        }
+      } catch {}
     }
+    syncSavedReturnState();
+    return () => {
+      isMounted = false;
+    };
   }, [returnOrders]);
 
   // Tính 7 ngày trong tuần
@@ -195,8 +233,11 @@ export default function CheckInQueueScreen({
 
     // 2. Chuyển đổi các đơn Trả kho (gộp chung vào lịch với màu card khác biệt)
     const checkoutList: UnifiedScheduleItem[] = localReturnOrders.map((ord, idx) => {
-      // Gán ngày trả kho: nếu có endDate thì dùng, hoặc phân bổ vào hôm nay / ngày mai của tuần
-      let returnDateStr = ord.returnType === 'today' ? todayFormatted : normalizeAppointmentDate(ord.endDate);
+      // Gán ngày trả kho: nếu là 'today' hoặc đã 'completed' hoặc 'TERMINATED' thì luôn gán ở ngày hôm nay (todayFormatted), không để bị nhảy về endDate cũ
+      let returnDateStr =
+        ord.returnType === 'today' || ord.returnType === 'completed' || ord.status === 'TERMINATED'
+          ? todayFormatted
+          : normalizeAppointmentDate(ord.endDate);
       if (!returnDateStr) {
         returnDateStr = idx % 2 === 0 ? todayFormatted : tomorrowFormatted;
       }
@@ -274,10 +315,11 @@ export default function CheckInQueueScreen({
 
     const handleCardPress = () => {
       if (isCheckout) {
-        // VÀO THẲNG MODAL NGHIỆM THU TRẢ KHO NGAY TẠI CHỖ (KHÔNG CHUYỂN UI CŨ)
+        // VÀO THẲNG MODAL NGHIỆM THU TRẢ KHO NGAY TẠI CHỖ (KỂ CẢ XEM LẠI / CHỈNH SỬA)
         if (item.rawReturnOrder) {
           setSelectedReturnOrder(item.rawReturnOrder);
           setIsInspectionModalVisible(true);
+          AsyncStorage.setItem('active_return_inspection_order_id', item.rawReturnOrder.id).catch(() => null);
         } else if (onOpenReturnOrder) {
           onOpenReturnOrder(item.rawReturnOrder!);
         }
@@ -298,12 +340,12 @@ export default function CheckInQueueScreen({
         onPress={handleCardPress}
         activeOpacity={0.85}
       >
-        {/* Thanh accent đứng bên trái: Nhận kho = Xanh dương / Vàng hổ phách; Trả kho = Cam đậm */}
+        {/* Thanh accent đứng bên trái: Nhận kho = Xanh dương; Nhận kho xong = Xanh lá; Trả kho = Cam đậm (luôn giữ cam) */}
         <View
           style={[
             styles.wAccent,
             isCheckout ? styles.wAccentCheckout : styles.wAccentCheckin,
-            item.status === 'completed' && { backgroundColor: '#10B981' },
+            !isCheckout && item.status === 'completed' && { backgroundColor: '#10B981' },
             item.status === 'in_progress' && { backgroundColor: '#8B5CF6' },
           ]}
         />
@@ -342,38 +384,11 @@ export default function CheckInQueueScreen({
             </View>
           </View>
 
-          {/* Hàng 2: TÊN KHÁCH (HIỂN THỊ ĐẦY ĐỦ TÊN KHÁCH) <───────────────> NÚT HÀNH ĐỘNG */}
-          <View style={styles.wRow2}>
-            <Text style={styles.wCustomerName}>
+          {/* Hàng 2: TÊN KHÁCH HÀNG (DÒNG RIÊNG BIỆT 100% CHIỀU RỘNG, KHÔNG BỊ CHÈN ÉP) */}
+          <View style={styles.wCustomerRow}>
+            <Text style={styles.wCustomerNameFull} numberOfLines={1}>
               {item.customerName}
             </Text>
-
-            <View
-              style={[
-                styles.wActionButton,
-                isCheckout ? styles.wActionButtonCheckout : styles.wActionButtonCheckin,
-                item.status === 'completed'
-                  ? styles.wActionButtonDone
-                  : item.status === 'in_progress'
-                  ? styles.wActionButtonInProgress
-                  : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.wActionText,
-                  item.status === 'completed' && styles.wActionTextDone,
-                ]}
-              >
-                {item.status === 'completed'
-                  ? (isCheckout ? 'Đã trả kho' : 'Đã bàn giao')
-                  : item.status === 'in_progress'
-                  ? 'Tiếp tục'
-                  : isCheckout
-                  ? 'Nghiệm thu'
-                  : 'Nhận kho'}
-              </Text>
-            </View>
           </View>
 
           {/* Hàng 3: TÊN KHO <─────────────────────> SĐT TO RÕ */}
@@ -392,25 +407,106 @@ export default function CheckInQueueScreen({
             </Text>
           </View>
 
-          {/* Ghi chú nhanh (nếu có) */}
-          {item.specialNotes ? (
-            <View style={[styles.wNoteBox, isCheckout && styles.wNoteBoxCheckout]}>
-              <MaterialIcons
-                name="notes"
-                size={11}
-                color={isCheckout ? '#EA580C' : '#D97706'}
-              />
-              <Text
-                style={[styles.wNoteText, isCheckout && { color: '#9A3412' }]}
-                numberOfLines={1}
-              >
-                {item.specialNotes}
-              </Text>
+          {/* Hàng 4: GHI CHÚ (NẾU CÓ) <─────────────> NÚT THAO TÁC / TRẠNG THÁI */}
+          <View style={styles.wFooterRow}>
+            <View style={styles.wFooterLeft}>
+              {item.specialNotes ? (
+                <View style={[styles.wNoteBox, isCheckout && styles.wNoteBoxCheckout]}>
+                  <MaterialIcons
+                    name="notes"
+                    size={11}
+                    color={isCheckout ? '#EA580C' : '#D97706'}
+                  />
+                  <Text
+                    style={[styles.wNoteText, isCheckout && { color: '#9A3412' }]}
+                    numberOfLines={1}
+                  >
+                    {item.specialNotes}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-          ) : null}
+
+            <View style={styles.wFooterRight}>
+              {isCheckout ? (
+                /* ─── ĐƠN TRẢ KHO ─── */
+                item.status === 'completed' ? (
+                  /* ĐÃ TRẢ KHO: GIỮ NGUYÊN 2 Ô [ ĐÃ TRẢ KHO ] & [ CHỈNH SỬA ] (TẤT CẢ MÀU CAM ĐẶC TRƯNG) */
+                  <View style={styles.completedActionsGroup}>
+                    {/* Ô 1: Trạng thái Đã trả kho (giữ chữ Trả kho, màu cam) */}
+                    <View style={styles.completedBadgePillCheckout}>
+                      <MaterialIcons name="assignment-turned-in" size={13} color="#C2410C" />
+                      <Text style={styles.completedBadgeTextCheckout}>Đã trả kho</Text>
+                    </View>
+
+                    {/* Ô 2: Nút Chỉnh sửa (màu cam đặc trưng của Trả kho) */}
+                    <TouchableOpacity
+                      style={styles.editActionBtnCheckout}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleCardPress();
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons name="edit" size={12} color="#C2410C" />
+                      <Text style={styles.editActionTextCheckout}>Chỉnh sửa</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  /* CHƯA TRẢ KHO: Nút [ Nghiệm thu ] cam */
+                  <View
+                    style={[
+                      styles.wActionButton,
+                      styles.wActionButtonCheckout,
+                      item.status === 'in_progress' ? styles.wActionButtonInProgress : null,
+                    ]}
+                  >
+                    <Text style={styles.wActionText}>
+                      {item.status === 'in_progress' ? 'Tiếp tục' : 'Nghiệm thu'}
+                    </Text>
+                  </View>
+                )
+              ) : (
+                /* ─── ĐƠN NHẬN KHO ─── */
+                item.status === 'completed' ? (
+                  /* ĐÃ NHẬN KHO: 2 Ô: [ Hoàn thành ] (xanh lá) & [ Chỉnh sửa ] (xanh dương) */
+                  <View style={styles.completedActionsGroup}>
+                    <View style={styles.completedBadgePill}>
+                      <MaterialIcons name="check-circle" size={13} color="#16A34A" />
+                      <Text style={styles.completedBadgeText}>Hoàn thành</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.editActionBtn}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleCardPress();
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons name="edit" size={12} color="#004ac6" />
+                      <Text style={styles.editActionText}>Chỉnh sửa</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương */
+                  <View
+                    style={[
+                      styles.wActionButton,
+                      styles.wActionButtonCheckin,
+                      item.status === 'in_progress' ? styles.wActionButtonInProgress : null,
+                    ]}
+                  >
+                    <Text style={styles.wActionText}>
+                      {item.status === 'in_progress' ? 'Tiếp tục' : 'Nhận kho'}
+                    </Text>
+                  </View>
+                )
+              )}
+            </View>
+          </View>
         </View>
-      </TouchableOpacity>
-    );
+      </TouchableOpacity>    );
   };
 
   return (
@@ -649,12 +745,18 @@ export default function CheckInQueueScreen({
       {/* ─── MODAL NGHIỆM THU TRẢ KHO TRỰC TIẾP (TINH GỌN, ÍT CHỮ) ─── */}
       <SimpleReturnInspectionModal
         visible={isInspectionModalVisible}
-        onClose={() => setIsInspectionModalVisible(false)}
+        onClose={() => {
+          setIsInspectionModalVisible(false);
+          AsyncStorage.removeItem('active_return_inspection_order_id').catch(() => null);
+        }}
         order={selectedReturnOrder}
         onSuccess={(updatedOrder) => {
+          setSelectedReturnOrder(updatedOrder);
           setLocalReturnOrders((prev) =>
             prev.map((ord) => (ord.id === updatedOrder.id ? updatedOrder : ord))
           );
+          AsyncStorage.setItem(`return_order_state_${updatedOrder.id}`, JSON.stringify(updatedOrder)).catch(() => null);
+          AsyncStorage.removeItem('active_return_inspection_order_id').catch(() => null);
         }}
       />
     </View>
@@ -1042,55 +1144,24 @@ const styles = StyleSheet.create({
     color: '#71717A',
     marginLeft: 2.5,
   },
-  wRow2: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-    minHeight: 24,
+  // Hàng 2: Tên khách hàng riêng 1 dòng full-width
+  wCustomerRow: {
+    marginTop: 3,
+    marginBottom: 2,
   },
-  wCustomerName: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-    color: '#18181B',
+  wCustomerNameFull: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
     letterSpacing: -0.2,
-    flex: 1,
-    marginRight: 8,
   },
 
-  // Nút hành động
-  wActionButton: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-  },
-  wActionButtonCheckin: {
-    backgroundColor: '#2563EB',
-  },
-  wActionButtonCheckout: {
-    backgroundColor: '#EA580C',
-  },
-  wActionButtonInProgress: {
-    backgroundColor: '#7C3AED',
-  },
-  wActionButtonDone: {
-    backgroundColor: '#DCFCE7',
-  },
-  wActionText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  wActionTextDone: {
-    color: '#15803D',
-  },
-
+  // Hàng 3: Ô kho & Số điện thoại
   wRow3: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 3,
+    marginTop: 2,
   },
   wTitleRow: {
     flexDirection: 'row',
@@ -1116,6 +1187,26 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: 0.2,
   },
+
+  // Hàng 4: Hàng footer chứa ghi chú & cụm nút hành động / trạng thái
+  wFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    minHeight: 26,
+  },
+  wFooterLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+  wFooterRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+
+  // Ghi chú nhanh
   wNoteBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1126,7 +1217,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderWidth: 1,
     borderColor: '#FEF3C7',
-    marginTop: 4,
   },
   wNoteBoxCheckout: {
     backgroundColor: '#FFF7ED',
@@ -1136,5 +1226,101 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: '#92400E',
     flex: 1,
+  },
+
+  // Cụm hành động / Trạng thái
+  completedActionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  completedBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  completedBadgePillCheckout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFEDD5',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  completedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  completedBadgeTextCheckout: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C2410C',
+  },
+  editActionBtnCheckout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editActionTextCheckout: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#C2410C',
+  },
+  editActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#004ac6',
+  },
+  wActionButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  wActionButtonCheckin: {
+    backgroundColor: '#2563EB',
+  },
+  wActionButtonCheckout: {
+    backgroundColor: '#EA580C',
+  },
+  wActionButtonInProgress: {
+    backgroundColor: '#7C3AED',
+  },
+  wActionButtonDone: {
+    backgroundColor: '#DCFCE7',
+  },
+  wActionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  wActionTextDone: {
+    color: '#15803D',
   },
 });

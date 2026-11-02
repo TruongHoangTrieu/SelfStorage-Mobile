@@ -18,6 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { CheckInAppointment, AvailableUnit } from '../../types/handover';
 import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
+import CccdQrScannerModal, { CccdQrData } from '../../components/staff/CccdQrScannerModal';
 import {
   takePhotoWithCamera,
   pickPhotoFromGallery,
@@ -116,6 +117,31 @@ export default function HandoverDetailScreen({
     appointment.assignedUnit || 'A-101'
   );
   const [showUnitPickerModal, setShowUnitPickerModal] = useState<boolean>(false);
+  const [showQrScannerModal, setShowQrScannerModal] = useState<boolean>(false);
+
+  const handleCccdScanSuccess = (data: CccdQrData) => {
+    if (data.cccdNumber) {
+      setIdentityNumber(data.cccdNumber);
+    }
+    if (data.address) {
+      setIdentityAddress(data.address);
+    }
+    setIsCccdVerified(true);
+
+    const infoLines = [
+      data.fullName ? `• Họ tên: ${data.fullName}` : null,
+      `• Số CCCD: ${data.cccdNumber}`,
+      data.address ? `• Địa chỉ: ${data.address}` : null,
+      data.birthDate ? `• Ngày sinh: ${data.birthDate}` : null,
+      data.gender ? `• Giới tính: ${data.gender}` : null,
+    ].filter(Boolean).join('\n');
+
+    Alert.alert(
+      'Quét CCCD thành công',
+      `Đã trích xuất thông tin Căn cước công dân:\n${infoLines}\n\nDữ liệu đã được tự động điền vào hồ sơ bàn giao.`,
+      [{ text: 'Đồng ý' }]
+    );
+  };
 
   // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
   const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
@@ -162,10 +188,35 @@ export default function HandoverDetailScreen({
     setIsCapturingCccd(false);
   };
 
-  // Bước 2: Hiện trạng ô kho & Chụp ảnh (Khởi tạo rỗng, hỗ trợ chọn nhiều ảnh)
-  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  // Bước 2: Hiện trạng ô kho & Chụp ảnh (Nạp ảnh đã có nếu là đơn đã bàn giao / xem lại)
+  const [photos, setPhotos] = useState<CapturedPhoto[]>(() => {
+    const existing = appointment.handoverPhotos || appointment.photos || [];
+    return existing.map((url, idx) => ({
+      id: `existing-photo-${idx}`,
+      title: `Ảnh hiện trạng ${idx + 1}`,
+      uri: url,
+      createdAt: new Date().toISOString(),
+    }));
+  });
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
+
+  useEffect(() => {
+    const existing = appointment.handoverPhotos || appointment.photos;
+    if (existing && existing.length > 0 && photos.length === 0) {
+      setPhotos(
+        existing.map((url, idx) => ({
+          id: `existing-photo-${idx}-${Date.now()}`,
+          title: `Ảnh hiện trạng ${idx + 1}`,
+          uri: url,
+          createdAt: new Date().toISOString(),
+        }))
+      );
+    }
+    if (appointment.condition) {
+      setCondition(appointment.condition);
+    }
+  }, [appointment.id, appointment.handoverPhotos, appointment.photos]);
 
   const handleCapturePhoto = async () => {
     setIsCapturing(true);
@@ -252,8 +303,8 @@ export default function HandoverDetailScreen({
 
   // Cấu hình ngân hàng SePay (ưu tiên từ Backend, sau đó tới biến môi trường, cuối cùng fallback)
   const fallbackBankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
-  const fallbackAccountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0900000000';
-  const fallbackAccountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'SELF STORAGE SYSTEM';
+  const fallbackAccountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0838500046';
+  const fallbackAccountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'TRUONG DINH LONG';
 
   const paymentContent = sepayQrInfo?.transferContent || `THANH TOAN ${appointment.id}`;
   const bankCode = sepayQrInfo?.bankCode || fallbackBankCode;
@@ -494,7 +545,10 @@ export default function HandoverDetailScreen({
           <MaterialIcons name="arrow-back" size={22} color={T.textMain} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 8 }}>
-          <Text style={s.topTitle}>Bàn Giao: {appointment.customerName}</Text>
+          <Text style={s.topTitle}>
+            {appointment.status === 'completed' ? 'Chỉnh Sửa Bàn Giao: ' : 'Bàn Giao: '}
+            {appointment.customerName}
+          </Text>
           <Text style={s.topSub}>
             Đơn #{appointment.id.slice(-6).toUpperCase()} • Ô #{selectedUnitCode}
           </Text>
@@ -577,6 +631,26 @@ export default function HandoverDetailScreen({
                 <Text style={s.infoVal}>{appointment.email || 'customer@example.com'}</Text>
               </View>
             </View>
+
+            {/* ─── Nút Quét Mã QR Trên Thẻ CCCD Tự Động Điền ─── */}
+            <TouchableOpacity
+              style={s.qrScanActionCard}
+              onPress={() => setShowQrScannerModal(true)}
+              activeOpacity={0.85}
+            >
+              <View style={s.qrScanIconWrap}>
+                <MaterialIcons name="qr-code-scanner" size={24} color="#FFFFFF" />
+              </View>
+              <View style={s.qrScanTextWrap}>
+                <View style={s.qrScanBadgeRow}>
+                  <Text style={s.qrScanTitle}>Quét Mã QR Trên Thẻ CCCD</Text>
+                  
+                </View>
+                <Text style={s.qrScanSub}>
+                  Hướng camera vào mã QR góc phải mặt trước thẻ để lấy Số CCCD & Địa chỉ tức thì
+                </Text>
+              </View>
+            </TouchableOpacity>
 
             {/* Chụp 2 mặt Căn cước công dân có đóng dấu Watermark */}
             <Text style={[s.sectionSubtitle, { marginTop: 16 }]}>
@@ -995,6 +1069,25 @@ export default function HandoverDetailScreen({
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* Nút lưu nhanh khi chỉnh sửa đơn đã hoàn tất */}
+            {appointment.status === 'completed' && (
+              <TouchableOpacity
+                style={[s.quickSaveBtn, (isSubmitting || isUploadingPhotos) && { opacity: 0.7 }]}
+                onPress={handleFinish}
+                disabled={isSubmitting || isUploadingPhotos}
+                activeOpacity={0.85}
+              >
+                {isSubmitting || isUploadingPhotos ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <MaterialIcons name="save" size={18} color="#fff" />
+                    <Text style={s.quickSaveBtnText}>Lưu Thay Đổi Bàn Giao</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -1379,7 +1472,9 @@ export default function HandoverDetailScreen({
               </View>
             ) : (
               <>
-                <Text style={s.finishBtnText}>Hoàn Tất & Cấp PIN</Text>
+                <Text style={s.finishBtnText}>
+                  {appointment.status === 'completed' ? 'Lưu Chỉnh Sửa' : 'Hoàn Tất & Cấp PIN'}
+                </Text>
                 <MaterialIcons name="check-circle" size={18} color="#fff" />
               </>
             )}
@@ -1442,12 +1537,69 @@ export default function HandoverDetailScreen({
           setIsContractSigned(true);
         }}
       />
+
+      {/* Modal Quét Mã QR Trên CCCD Trích Xuất Dữ Liệu Tự Động */}
+      <CccdQrScannerModal
+        visible={showQrScannerModal}
+        onClose={() => setShowQrScannerModal(false)}
+        onScanSuccess={handleCccdScanSuccess}
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: T.bg },
+  qrScanActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    padding: 12,
+    marginTop: 14,
+    marginBottom: 4,
+    gap: 12,
+  },
+  qrScanIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qrScanTextWrap: {
+    flex: 1,
+  },
+  qrScanBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  qrScanTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E3A8A',
+  },
+  aiBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  aiBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  qrScanSub: {
+    fontSize: 10.5,
+    color: '#3B82F6',
+    lineHeight: 14,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2257,6 +2409,21 @@ const s = StyleSheet.create({
     backgroundColor: T.primary,
   },
   finishBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  quickSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#004ac6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginTop: 14,
+  },
+  quickSaveBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   modalBackdrop: {
     flex: 1,

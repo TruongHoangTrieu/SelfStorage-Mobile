@@ -86,9 +86,19 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
   const [showStaffNotifModal, setShowStaffNotifModal] = React.useState<boolean>(false);
   const staffNotifState = useNotifications('staff');
 
-  // Luôn mặc định mở Trang Home Nhân Viên khi tài khoản đăng nhập
+  // Mở Trang Home Nhân Viên khi đăng nhập, nhưng nếu đang nghiệm thu trả kho (chuyển qua app ngân hàng quay lại) thì giữ nguyên màn hình Lịch
   useEffect(() => {
-    setStaffTab('dashboard');
+    import('@react-native-async-storage/async-storage')
+      .then(({ default: AsyncStorage }) => AsyncStorage.getItem('active_return_inspection_order_id'))
+      .then((activeOrderId) => {
+        if (activeOrderId) {
+          setStaffTab('queue');
+          setFlowStep('queue');
+        } else {
+          setStaffTab('dashboard');
+        }
+      })
+      .catch(() => setStaffTab('dashboard'));
   }, [currentUser?.id]);
 
   useEffect(() => {

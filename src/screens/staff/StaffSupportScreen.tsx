@@ -13,18 +13,21 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { StaffSupportTicket, TicketStatus, TicketCategory, TicketPriority } from '../../types/handover';
-import { INITIAL_SUPPORT_TICKETS } from '../../data/mockStaffData';
+import {
+  StaffSupportTicket,
+  TicketStatus,
+  TicketCategory,
+  TicketPriority,
+} from '../../types/handover';
 import {
   fetchStaffSupportRequestsApi,
   getSupportRequestDetailApi,
   updateTicketProgressApi,
   addTicketNoteApi,
-  createSupportRequestApi,
 } from '../../api';
-import { formatVietnameseDate } from '../../utils/formatters';
 
 interface StaffSupportScreenProps {
   facilityId?: string | number;
@@ -37,19 +40,17 @@ interface StaffSupportScreenProps {
 
 export default function StaffSupportScreen({
   facilityId,
-  facilityName = 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
   staffUser,
   onOpenSidebar,
-  onOpenNotifications,
-  unreadNotifCount = 0,
 }: StaffSupportScreenProps) {
-  const [tickets, setTickets] = useState<StaffSupportTicket[]>(INITIAL_SUPPORT_TICKETS);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const insets = useSafeAreaInsets();
+
+  // DỮ LIỆU THẬT 100% TỪ BACKEND DATABASE
+  const [tickets, setTickets] = useState<StaffSupportTicket[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const insets = useSafeAreaInsets();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [backendSynced, setBackendSynced] = useState<boolean>(false);
 
   // Modal xem chi tiết & cập nhật tiến độ
   const [selectedTicket, setSelectedTicket] = useState<StaffSupportTicket | null>(null);
@@ -61,63 +62,68 @@ export default function StaffSupportScreen({
   const [resolutionNote, setResolutionNote] = useState<string>('');
   const [isUpdatingProgress, setIsUpdatingProgress] = useState<boolean>(false);
 
-  // Modal tạo ticket báo cáo sự cố mới
-  const [isCreateModalVisible, setIsCreateModalVisible] = useState<boolean>(false);
-  const [newCategory, setNewCategory] = useState<TicketCategory>('LOCK');
-  const [newPriority, setNewPriority] = useState<TicketPriority>('MEDIUM');
-  const [newSubject, setNewSubject] = useState<string>('');
-  const [newDescription, setNewDescription] = useState<string>('');
-  const [newUnitCode, setNewUnitCode] = useState<string>('');
-  const [isCreatingTicket, setIsCreatingTicket] = useState<boolean>(false);
-
-  // Tải danh sách ticket từ Backend API
+  // Tải danh sách yêu cầu sự cố từ Backend API
   const loadTickets = useCallback(async () => {
     try {
       setIsLoading(true);
       const res = await fetchStaffSupportRequestsApi(facilityId).catch(() => null);
 
-      if (res && Array.isArray(res.data) && res.data.length > 0) {
-        setBackendSynced(true);
-        const mapped: StaffSupportTicket[] = res.data.map((item: any) => ({
+      const rawItems = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res)
+        ? res
+        : [];
+
+      // Ánh xạ đúng 100% các trường dữ liệu từ Backend
+      const mapped: StaffSupportTicket[] = rawItems.map((item: any) => {
+        const unitNumber =
+          item.contractItem?.unit?.unitNumber ||
+          (item.unitNumber ? String(item.unitNumber) : '') ||
+          (item.unitCode ? String(item.unitCode) : '');
+
+        let dateStr = 'Hôm nay';
+        if (item.createdAt) {
+          const d = new Date(item.createdAt);
+          if (!isNaN(d.getTime())) {
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            dateStr = `${day}/${month}/${year}`;
+          }
+        }
+
+        return {
           id: item.id,
-          requestCode: item.requestCode || `TK-${item.id.slice(-6).toUpperCase()}`,
-          subject: item.subject || 'Sự cố hỗ trợ',
+          requestCode: item.requestCode || String(item.id).slice(-6).toUpperCase(),
+          subject: item.subject || 'Yêu cầu hỗ trợ',
           description: item.description || '',
-          category: item.category || 'OTHER',
-          priority: item.priority || 'MEDIUM',
-          status: item.status || 'OPEN',
+          category: (item.category as TicketCategory) || 'OTHER',
+          priority: (item.priority as TicketPriority) || 'MEDIUM',
+          status: (item.status as TicketStatus) || 'OPEN',
           customerId: item.customerId,
           customerName: item.customer?.fullName || 'Khách hàng',
-          customerPhone: item.customer?.phone || '0908 123 456',
+          customerPhone: item.customer?.phone || '',
           customerEmail: item.customer?.email,
-          unitCode: item.contractItem?.unit?.unitNumber || (item.unitNumber ? String(item.unitNumber) : undefined),
+          unitCode: unitNumber || undefined,
           facilityId: item.facilityId,
-          facilityName: item.facility?.name || facilityName,
+          facilityName: item.facility?.name,
           assignedStaffId: item.assignedStaffId,
           assignedStaffName: item.assignedStaff?.fullName,
           photos: item.photos || [],
-          createdAt: item.createdAt ? formatVietnameseDate(item.createdAt) : 'Hôm nay',
-          resolvedAt: item.resolvedAt ? formatVietnameseDate(item.resolvedAt) : undefined,
+          createdAt: dateStr,
+          resolvedAt: item.resolvedAt,
           logs: item.logs || [],
-        }));
+        };
+      });
 
-        // Ghép danh sách backend và mock để luôn có dữ liệu
-        const existingCodes = new Set(mapped.map((m) => m.requestCode));
-        const merged = [...mapped];
-        INITIAL_SUPPORT_TICKETS.forEach((mock) => {
-          if (!existingCodes.has(mock.requestCode)) {
-            merged.push(mock);
-          }
-        });
-        setTickets(merged);
-      }
+      setTickets(mapped);
     } catch (err: any) {
-      console.warn('Backend loadTickets notice:', err.message);
+      console.warn('Lỗi tải dữ liệu sự cố từ BE:', err.message);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [facilityId, facilityName]);
+  }, [facilityId]);
 
   useEffect(() => {
     loadTickets();
@@ -128,7 +134,7 @@ export default function StaffSupportScreen({
     loadTickets();
   };
 
-  // Thống kê nhanh
+  // Thống kê số lượng theo trạng thái
   const stats = useMemo(() => {
     return {
       total: tickets.length,
@@ -138,7 +144,7 @@ export default function StaffSupportScreen({
     };
   }, [tickets]);
 
-  // Bộ lọc tìm kiếm
+  // Bộ lọc tìm kiếm & trạng thái
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const q = searchQuery.trim().toLowerCase();
@@ -161,7 +167,7 @@ export default function StaffSupportScreen({
     });
   }, [tickets, searchQuery, selectedStatus]);
 
-  // Mở modal chi tiết ticket
+  // Mở modal xem chi tiết
   const handleOpenDetail = async (ticket: StaffSupportTicket) => {
     setSelectedTicket(ticket);
     setTargetStatus(ticket.status === 'OPEN' ? 'IN_PROGRESS' : ticket.status);
@@ -181,29 +187,28 @@ export default function StaffSupportScreen({
         }));
       }
     } catch {
-      // Dùng dữ liệu hiện tại nếu offline
+      // Dùng dữ liệu hiện tại nếu API chi tiết không phản hồi
     } finally {
       setIsLoadingDetail(false);
     }
   };
 
-  // Cập nhật trạng thái / tiến độ ticket
+  // Cập nhật trạng thái sự cố
   const handleUpdateProgress = async (newStatus: TicketStatus) => {
     if (!selectedTicket) return;
 
     try {
       setIsUpdatingProgress(true);
-      const note = resolutionNote.trim() || `Nhân viên đã cập nhật trạng thái sang ${newStatus}`;
+      const note = resolutionNote.trim() || `Cập nhật trạng thái sang ${newStatus}`;
 
       await updateTicketProgressApi(selectedTicket.id, newStatus, note).catch((err) => {
-        console.warn('API updateProgress fallback:', err.message);
+        console.warn('API updateTicketProgress fallback:', err.message);
       });
 
-      // Cập nhật state cục bộ
       const updatedTicket: StaffSupportTicket = {
         ...selectedTicket,
         status: newStatus,
-        resolvedAt: newStatus === 'RESOLVED' ? 'Vừa xong' : selectedTicket.resolvedAt,
+        resolvedAt: newStatus === 'RESOLVED' ? new Date().toISOString() : selectedTicket.resolvedAt,
         logs: [
           ...(selectedTicket.logs || []),
           {
@@ -226,20 +231,24 @@ export default function StaffSupportScreen({
       setSelectedTicket(updatedTicket);
       setResolutionNote('');
 
-      Alert.alert(
-        'Thành công! ✓',
+      const msg =
         newStatus === 'RESOLVED'
-          ? `Đã đánh dấu hoàn tất xử lý sự cố #${selectedTicket.requestCode}`
-          : `Đã chuyển ticket #${selectedTicket.requestCode} sang trạng thái ${newStatus}`
-      );
+          ? `Đã xử lý xong yêu cầu ${selectedTicket.requestCode}`
+          : `Đã cập nhật trạng thái sang ${newStatus}`;
+
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert('Thành công', msg);
+      }
     } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể cập nhật trạng thái sự cố.');
+      Alert.alert('Lỗi', err?.message || 'Không thể cập nhật trạng thái.');
     } finally {
       setIsUpdatingProgress(false);
     }
   };
 
-  // Thêm ghi chú / phản hồi vào ticket
+  // Thêm ghi chú / phản hồi
   const handleAddNote = async () => {
     if (!selectedTicket || !newNoteText.trim()) return;
 
@@ -270,120 +279,33 @@ export default function StaffSupportScreen({
       );
       setNewNoteText('');
     } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể gửi phản hồi.');
+      Alert.alert('Lỗi', err?.message || 'Không thể gửi ghi chú.');
     } finally {
       setIsSubmittingNote(false);
     }
   };
 
-  // Tạo ticket mới từ phía nhân viên
-  const handleCreateTicket = async () => {
-    if (!newSubject.trim() || !newDescription.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tiêu đề và mô tả sự cố.');
-      return;
-    }
-
-    try {
-      setIsCreatingTicket(true);
-      const res = await createSupportRequestApi({
-        facilityId: facilityId || 1,
-        category: newCategory,
-        priority: newPriority,
-        subject: newSubject.trim(),
-        description: newDescription.trim(),
-      }).catch(() => null);
-
-      const newTicket: StaffSupportTicket = {
-        id: res?.id || `tk-local-${Date.now()}`,
-        requestCode: res?.requestCode || `TK-LOC-${Date.now().toString(36).toUpperCase().slice(-4)}`,
-        subject: newSubject.trim(),
-        description: newDescription.trim(),
-        category: newCategory,
-        priority: newPriority,
-        status: 'OPEN',
-        customerId: String(staffUser?.id || 'staff'),
-        customerName: `${staffUser?.fullName || 'Nhân viên kho'} (Nội bộ)`,
-        customerPhone: staffUser?.phone || '0907654321',
-        facilityId: facilityId || 1,
-        facilityName,
-        unitCode: newUnitCode.trim() || undefined,
-        createdAt: 'Hôm nay',
-        logs: [
-          {
-            id: `log-${Date.now()}`,
-            userId: String(staffUser?.id || 'staff'),
-            note: 'Nhân viên phát hiện và tạo báo cáo sự cố tại hiện trường',
-            createdAt: 'Hôm nay',
-          },
-        ],
-      };
-
-      setTickets([newTicket, ...tickets]);
-      setIsCreateModalVisible(false);
-      setNewSubject('');
-      setNewDescription('');
-      setNewUnitCode('');
-
-      Alert.alert('Thành công! 🎉', `Đã ghi nhận sự cố #${newTicket.requestCode}`);
-    } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể tạo báo cáo sự cố.');
-    } finally {
-      setIsCreatingTicket(false);
-    }
-  };
-
-  // Helpers render Badge
-  const renderPriorityBadge = (priority: TicketPriority) => {
-    switch (priority) {
-      case 'URGENT':
-        return (
-          <View style={[styles.priorityBadge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
-            <MaterialIcons name="flash-on" size={11} color="#DC2626" />
-            <Text style={[styles.priorityText, { color: '#DC2626' }]}>Khẩn cấp</Text>
-          </View>
-        );
-      case 'HIGH':
-        return (
-          <View style={[styles.priorityBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-            <MaterialIcons name="priority-high" size={11} color="#D97706" />
-            <Text style={[styles.priorityText, { color: '#D97706' }]}>Ưu tiên cao</Text>
-          </View>
-        );
-      case 'MEDIUM':
-        return (
-          <View style={[styles.priorityBadge, { backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }]}>
-            <Text style={[styles.priorityText, { color: '#2563EB' }]}>Trung bình</Text>
-          </View>
-        );
-      default:
-        return (
-          <View style={[styles.priorityBadge, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
-            <Text style={[styles.priorityText, { color: '#64748B' }]}>Thấp</Text>
-          </View>
-        );
-    }
-  };
-
+  // Helper render Trạng thái chuẩn từ BE
   const renderStatusBadge = (status: TicketStatus) => {
     switch (status) {
       case 'OPEN':
         return (
-          <View style={[styles.statusBadge, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+          <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
             <View style={[styles.badgeDot, { backgroundColor: '#D97706' }]} />
-            <Text style={[styles.statusBadgeText, { color: '#B45309' }]}>Chờ tiếp nhận</Text>
+            <Text style={[styles.statusBadgeText, { color: '#B45309' }]}>Chờ xử lý</Text>
           </View>
         );
       case 'IN_PROGRESS':
         return (
-          <View style={[styles.statusBadge, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#7C3AED' }]} />
-            <Text style={[styles.statusBadgeText, { color: '#7C3AED' }]}>Đang xử lý</Text>
+          <View style={[styles.statusBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+            <View style={[styles.badgeDot, { backgroundColor: '#2563EB' }]} />
+            <Text style={[styles.statusBadgeText, { color: '#1D4ED8' }]}>Đang xử lý</Text>
           </View>
         );
       case 'RESOLVED':
         return (
           <View style={[styles.statusBadge, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
-            <MaterialIcons name="check" size={12} color="#15803D" />
+            <MaterialIcons name="check" size={11} color="#15803D" />
             <Text style={[styles.statusBadgeText, { color: '#15803D' }]}>Đã giải quyết</Text>
           </View>
         );
@@ -398,97 +320,54 @@ export default function StaffSupportScreen({
     }
   };
 
-  const renderCategoryName = (category: TicketCategory) => {
-    switch (category) {
-      case 'LOCK':
-        return 'Ổ khóa Smart Lock';
-      case 'UNIT':
-        return 'Ngăn kho / Cơ sở vật chất';
-      case 'ACCESS_CODE':
-        return 'Mã PIN truy cập';
-      case 'PAYMENT':
-        return 'Thanh toán & Phụ phí';
-      case 'DAMAGE':
-        return 'Hư hỏng / Bồi thường';
-      case 'CLEANING':
-        return 'Vệ sinh & Môi trường';
-      default:
-        return 'Hỗ trợ chung';
-    }
-  };
-
   return (
     <View style={styles.container}>
-      {/* ─── Top Bar Header ─── */}
-      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
+      {/* ─── Top Bar: Chỉ có nút Quay lại & Tiêu đề (ĐÃ BỎ NÚT RELOAD) ─── */}
+      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 8 : 16 }]}>
         <View style={styles.topBarMainRow}>
-          <TouchableOpacity style={styles.sidebarToggleBtn} onPress={onOpenSidebar}>
-            <MaterialIcons name="arrow-back" size={24} color="#1E293B" />
+          <TouchableOpacity style={styles.backBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
+            <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
           </TouchableOpacity>
 
-          <View style={styles.topBarTitleWrap}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.topBarMainTitle}>Hỗ Trợ & Sự Cố</Text>
-              {backendSynced && (
-                <View style={styles.liveBadge}>
-                  <Text style={styles.liveBadgeText}>Live BE</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.topBarSubtitle} numberOfLines={1}>
-              {facilityName}
-            </Text>
-          </View>
+          <Text style={styles.topBarMainTitle}>Xử Lý Sự Cố</Text>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity
-              style={styles.createBtn}
-              onPress={() => setIsCreateModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="add" size={18} color="#FFFFFF" />
-              <Text style={styles.createBtnText}>Báo sự cố</Text>
-            </TouchableOpacity>
-
-            {onOpenNotifications && (
-              <TouchableOpacity style={styles.notifBtn} onPress={onOpenNotifications}>
-                <MaterialIcons name="notifications-none" size={22} color="#1E293B" />
-                {unreadNotifCount > 0 && (
-                  <View style={styles.notifBadge}>
-                    <Text style={styles.notifBadgeText}>
-                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
+          <View style={{ width: 36 }} />
         </View>
 
         {/* Thanh tìm kiếm nhanh */}
         <View style={styles.searchRow}>
-          <MaterialIcons name="search" size={20} color="#94A3B8" style={{ marginLeft: 10 }} />
+          <MaterialIcons name="search" size={18} color="#94A3B8" style={{ marginLeft: 10 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm theo mã ticket, tên khách, số ĐT, mã ô kho..."
+            placeholder="Tìm theo mã sự cố, tên khách, số ô kho..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 6 }}>
-              <MaterialIcons name="close" size={18} color="#94A3B8" />
+              <MaterialIcons name="close" size={16} color="#94A3B8" />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Filter Pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsPillRow}>
+        {/* Filter Tabs phân loại trạng thái */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.statsPillRow}
+        >
           <TouchableOpacity
             style={[styles.statPill, selectedStatus === 'all' && styles.statPillActive]}
             onPress={() => setSelectedStatus('all')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.statPillLabel, selectedStatus === 'all' && styles.statPillLabelActive]}>
+            <Text
+              style={[
+                styles.statPillLabel,
+                selectedStatus === 'all' && styles.statPillLabelActive,
+              ]}
+            >
               Tất cả ({stats.total})
             </Text>
           </TouchableOpacity>
@@ -496,17 +375,29 @@ export default function StaffSupportScreen({
           <TouchableOpacity
             style={[styles.statPill, selectedStatus === 'OPEN' && styles.statPillActive]}
             onPress={() => setSelectedStatus('OPEN')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.statPillLabel, selectedStatus === 'OPEN' && styles.statPillLabelActive]}>
-              Chờ tiếp nhận ({stats.open})
+            <Text
+              style={[
+                styles.statPillLabel,
+                selectedStatus === 'OPEN' && styles.statPillLabelActive,
+              ]}
+            >
+              Chờ xử lý ({stats.open})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.statPill, selectedStatus === 'IN_PROGRESS' && styles.statPillActive]}
             onPress={() => setSelectedStatus('IN_PROGRESS')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.statPillLabel, selectedStatus === 'IN_PROGRESS' && styles.statPillLabelActive]}>
+            <Text
+              style={[
+                styles.statPillLabel,
+                selectedStatus === 'IN_PROGRESS' && styles.statPillLabelActive,
+              ]}
+            >
               Đang xử lý ({stats.in_progress})
             </Text>
           </TouchableOpacity>
@@ -514,15 +405,21 @@ export default function StaffSupportScreen({
           <TouchableOpacity
             style={[styles.statPill, selectedStatus === 'RESOLVED' && styles.statPillActive]}
             onPress={() => setSelectedStatus('RESOLVED')}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.statPillLabel, selectedStatus === 'RESOLVED' && styles.statPillLabelActive]}>
-              Đã giải quyết ({stats.resolved})
+            <Text
+              style={[
+                styles.statPillLabel,
+                selectedStatus === 'RESOLVED' && styles.statPillLabelActive,
+              ]}
+            >
+              Hoàn tất ({stats.resolved})
             </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
 
-      {/* ─── Danh sách Ticket Sự cố ─── */}
+      {/* ─── Danh sách Card Sự cố (Các trường rõ ràng, không chung hàng) ─── */}
       <ScrollView
         style={styles.listContainer}
         contentContainerStyle={styles.listContent}
@@ -531,14 +428,16 @@ export default function StaffSupportScreen({
         {isLoading && !isRefreshing ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color="#2563EB" />
-            <Text style={styles.loadingText}>Đang tải danh sách sự cố...</Text>
+            <Text style={styles.loadingText}>Đang tải sự cố từ hệ thống...</Text>
           </View>
         ) : filteredTickets.length === 0 ? (
           <View style={styles.emptyBox}>
-            <MaterialIcons name="support-agent" size={54} color="#CBD5E1" />
+            <MaterialIcons name="check-circle-outline" size={48} color="#94A3B8" />
             <Text style={styles.emptyTitle}>Không có sự cố nào</Text>
             <Text style={styles.emptySubtitle}>
-              Tất cả hệ thống kho và thiết bị hiện đang hoạt động bình thường, ổn định.
+              {searchQuery.trim()
+                ? 'Không tìm thấy sự cố nào phù hợp với từ khóa.'
+                : 'Các ô kho và thiết bị hiện đang hoạt động bình thường.'}
             </Text>
           </View>
         ) : (
@@ -550,86 +449,55 @@ export default function StaffSupportScreen({
                 key={ticket.id}
                 style={[styles.ticketCard, isResolved && styles.ticketCardResolved]}
                 onPress={() => handleOpenDetail(ticket)}
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
-                {/* Hàng 1: Mã ticket & Badges */}
+                {/* Dòng 1: Mã yêu cầu & Trạng thái (Trực tiếp từ BE, KHÔNG chế thêm tag gấp) */}
                 <View style={styles.cardHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.requestCodeText}>{ticket.requestCode}</Text>
-                    <View style={styles.categoryPill}>
-                      <Text style={styles.categoryPillText}>{renderCategoryName(ticket.category)}</Text>
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {renderPriorityBadge(ticket.priority)}
-                    {renderStatusBadge(ticket.status)}
-                  </View>
+                  <Text style={styles.requestCodeText}>{ticket.requestCode}</Text>
+                  {renderStatusBadge(ticket.status)}
                 </View>
 
-                {/* Hàng 2: Tiêu đề sự cố */}
-                <Text style={styles.ticketSubject} numberOfLines={1}>
+                {/* Dòng 2: Tiêu đề sự cố */}
+                <Text style={styles.ticketSubject} numberOfLines={2}>
                   {ticket.subject}
                 </Text>
 
-                {/* Hàng 3: Mô tả ngắn gọn */}
-                <Text style={styles.ticketDesc} numberOfLines={2}>
-                  {ticket.description}
-                </Text>
+                {/* Dòng 3: Mô tả ngắn gọn */}
+                {ticket.description ? (
+                  <Text style={styles.ticketDesc} numberOfLines={2}>
+                    {ticket.description}
+                  </Text>
+                ) : null}
 
-                {/* Hàng 4: Khách hàng & Ô kho */}
-                <View style={styles.ticketMetaRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
-                    <MaterialIcons name="person" size={13} color="#64748B" />
-                    <Text style={styles.customerNameText} numberOfLines={1}>
-                      {ticket.customerName}
-                    </Text>
-                    {ticket.customerPhone ? (
-                      <TouchableOpacity
-                        onPress={() => Linking.openURL(`tel:${ticket.customerPhone}`)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 6 }}
-                      >
-                        <MaterialIcons name="phone" size={12} color="#2563EB" />
-                        <Text style={styles.phoneLinkText}>{ticket.customerPhone}</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
+                {/* Dòng phân cách nhẹ */}
+                <View style={styles.cardDivider} />
 
-                  {ticket.unitCode && (
-                    <View style={styles.unitBadge}>
-                      <MaterialIcons name="meeting-room" size={12} color="#1E3A8A" />
-                      <Text style={styles.unitBadgeText}>Ô {ticket.unitCode}</Text>
-                    </View>
-                  )}
+                {/* Dòng 4 RIÊNG BIỆT: Tên khách hàng & Số điện thoại */}
+                <View style={styles.customerRow}>
+                  <MaterialIcons name="person" size={15} color="#64748B" />
+                  <Text style={styles.customerLabel}>Khách hàng:</Text>
+                  <Text style={styles.customerValue} numberOfLines={1}>
+                    {ticket.customerName}
+                    {ticket.customerPhone ? ` • ${ticket.customerPhone}` : ''}
+                  </Text>
                 </View>
 
-                {/* Hàng 5: Nút hành động */}
-                <View style={styles.actionRow}>
-                  <Text style={styles.timeAgoText}>{ticket.createdAt}</Text>
+                {/* Dòng 5 RIÊNG BIỆT: Ô kho & Ngày tạo (TÁCH BIỆT HOÀN TOÀN VỚI TÊN KHÁCH) */}
+                <View style={styles.unitAndDateRow}>
+                  {ticket.unitCode ? (
+                    <View style={styles.unitBadgeWrap}>
+                      <MaterialIcons name="meeting-room" size={14} color="#1D4ED8" />
+                      <Text style={styles.unitBadgeText}>Ô kho: #{ticket.unitCode}</Text>
+                    </View>
+                  ) : (
+                    <View />
+                  )}
 
-                  <TouchableOpacity
-                    style={[
-                      styles.actionBtn,
-                      ticket.status === 'OPEN'
-                        ? styles.actionBtnOpen
-                        : ticket.status === 'IN_PROGRESS'
-                        ? styles.actionBtnInProgress
-                        : styles.actionBtnResolved,
-                    ]}
-                    onPress={() => handleOpenDetail(ticket)}
-                  >
-                    <Text
-                      style={[
-                        styles.actionBtnText,
-                        isResolved && { color: '#15803D' },
-                      ]}
-                    >
-                      {ticket.status === 'OPEN'
-                        ? 'Tiếp nhận xử lý →'
-                        : ticket.status === 'IN_PROGRESS'
-                        ? 'Cập nhật tiến độ →'
-                        : 'Xem nhật ký ✓'}
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={styles.dateWrap}>
+                    <MaterialIcons name="schedule" size={13} color="#94A3B8" />
+                    <Text style={styles.dateText}>{ticket.createdAt}</Text>
+                    <MaterialIcons name="chevron-right" size={16} color="#94A3B8" />
+                  </View>
                 </View>
               </TouchableOpacity>
             );
@@ -637,79 +505,109 @@ export default function StaffSupportScreen({
         )}
       </ScrollView>
 
-      {/* ─── MODAL XEM CHI TIẾT & TIẾN ĐỘ TICKET ─── */}
+      {/* ─── MODAL XEM CHI TIẾT & CẬP NHẬT TIẾN ĐỘ ─── */}
       <Modal
         visible={isDetailModalVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setIsDetailModalVisible(false)}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalCard}>
             {/* Header Modal */}
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={styles.modalTitle}>{selectedTicket?.requestCode}</Text>
-                  {selectedTicket && renderStatusBadge(selectedTicket.status)}
+                  {selectedTicket?.unitCode && (
+                    <Text style={styles.modalUnitTag}>• Ô #{selectedTicket.unitCode}</Text>
+                  )}
                 </View>
                 <Text style={styles.modalSubtitle} numberOfLines={1}>
                   {selectedTicket?.subject}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setIsDetailModalVisible(false)} style={styles.closeBtn}>
-                <MaterialIcons name="close" size={22} color="#64748B" />
+              <TouchableOpacity
+                onPress={() => setIsDetailModalVisible(false)}
+                style={styles.closeBtn}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Thông tin đối chiếu */}
+              {/* Thông tin đối chiếu trực tiếp từ BE */}
               <View style={styles.detailCard}>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Khách hàng:</Text>
                   <Text style={styles.detailVal}>{selectedTicket?.customerName}</Text>
                 </View>
-                {selectedTicket?.customerPhone && (
+                {selectedTicket?.customerPhone ? (
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Số điện thoại:</Text>
-                    <TouchableOpacity onPress={() => Linking.openURL(`tel:${selectedTicket?.customerPhone}`)}>
+                    <Text style={styles.detailLabel}>Điện thoại:</Text>
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL(`tel:${selectedTicket?.customerPhone}`)}
+                      activeOpacity={0.7}
+                    >
                       <Text style={[styles.detailVal, { color: '#2563EB', fontWeight: '700' }]}>
-                        {selectedTicket?.customerPhone} (Gọi ngay)
+                        {selectedTicket?.customerPhone} (Gọi điện)
                       </Text>
                     </TouchableOpacity>
                   </View>
-                )}
+                ) : null}
                 {selectedTicket?.unitCode && (
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Ngăn kho:</Text>
-                    <Text style={[styles.detailVal, { fontWeight: '700' }]}>Ô {selectedTicket?.unitCode}</Text>
+                    <Text style={styles.detailLabel}>Ô kho:</Text>
+                    <Text style={[styles.detailVal, { color: '#1D4ED8', fontWeight: '700' }]}>
+                      #{selectedTicket.unitCode}
+                    </Text>
                   </View>
                 )}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Phân loại sự cố:</Text>
-                  <Text style={styles.detailVal}>{selectedTicket && renderCategoryName(selectedTicket.category)}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Mức ưu tiên:</Text>
-                  <View>{selectedTicket && renderPriorityBadge(selectedTicket.priority)}</View>
+                  <Text style={styles.detailLabel}>Ngày tạo:</Text>
+                  <Text style={styles.detailVal}>{selectedTicket?.createdAt}</Text>
                 </View>
               </View>
 
-              {/* Mô tả chi tiết sự cố */}
-              <Text style={styles.sectionHeader}>Mô tả chi tiết sự cố</Text>
+              {/* Mô tả chi tiết hiện trường */}
+              <Text style={styles.sectionHeader}>MÔ TẢ CHI TIẾT</Text>
               <View style={styles.descBox}>
                 <Text style={styles.descFullText}>{selectedTicket?.description}</Text>
               </View>
 
-              {/* Cập nhật nhanh trạng thái (Dành cho Nhân viên) */}
-              <Text style={[styles.sectionHeader, { marginTop: 14 }]}>Cập nhật trạng thái xử lý</Text>
+              {/* Cập nhật trạng thái xử lý */}
+              <Text style={[styles.sectionHeader, { marginTop: 12 }]}>CẬP NHẬT TRẠNG THÁI</Text>
               <View style={styles.statusActionRow}>
                 <TouchableOpacity
                   style={[
                     styles.statusChoiceBtn,
-                    targetStatus === 'IN_PROGRESS' && styles.statusChoiceActive,
+                    targetStatus === 'OPEN' && styles.statusChoiceActiveYellow,
+                  ]}
+                  onPress={() => setTargetStatus('OPEN')}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.statusChoiceText,
+                      targetStatus === 'OPEN' && styles.statusChoiceTextActive,
+                    ]}
+                  >
+                    Chờ xử lý
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.statusChoiceBtn,
+                    targetStatus === 'IN_PROGRESS' && styles.statusChoiceActiveBlue,
                   ]}
                   onPress={() => setTargetStatus('IN_PROGRESS')}
+                  activeOpacity={0.8}
                 >
                   <Text
                     style={[
@@ -727,6 +625,7 @@ export default function StaffSupportScreen({
                     targetStatus === 'RESOLVED' && styles.statusChoiceActiveGreen,
                   ]}
                   onPress={() => setTargetStatus('RESOLVED')}
+                  activeOpacity={0.8}
                 >
                   <Text
                     style={[
@@ -737,38 +636,21 @@ export default function StaffSupportScreen({
                     Đã giải quyết ✓
                   </Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.statusChoiceBtn,
-                    targetStatus === 'CLOSED' && styles.statusChoiceActiveGray,
-                  ]}
-                  onPress={() => setTargetStatus('CLOSED')}
-                >
-                  <Text
-                    style={[
-                      styles.statusChoiceText,
-                      targetStatus === 'CLOSED' && styles.statusChoiceTextActive,
-                    ]}
-                  >
-                    Đóng ticket
-                  </Text>
-                </TouchableOpacity>
               </View>
 
               <TextInput
                 style={styles.resolutionInput}
-                placeholder="Ghi chú phương án khắc phục tại hiện trường..."
+                placeholder="Ghi chú kết quả xử lý..."
                 placeholderTextColor="#94A3B8"
                 value={resolutionNote}
                 onChangeText={setResolutionNote}
-                multiline
               />
 
               <TouchableOpacity
                 style={[styles.saveProgressBtn, isUpdatingProgress && { opacity: 0.6 }]}
                 onPress={() => handleUpdateProgress(targetStatus)}
                 disabled={isUpdatingProgress}
+                activeOpacity={0.85}
               >
                 {isUpdatingProgress ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
@@ -777,10 +659,10 @@ export default function StaffSupportScreen({
                 )}
               </TouchableOpacity>
 
-              {/* Nhật ký xử lý & Trao đổi */}
-              <Text style={[styles.sectionHeader, { marginTop: 18 }]}>Nhật ký & Trao đổi sự cố</Text>
+              {/* Nhật ký xử lý & Ghi chú */}
+              <Text style={[styles.sectionHeader, { marginTop: 14 }]}>NHẬT KÝ XỬ LÝ</Text>
               {isLoadingDetail ? (
-                <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 10 }} />
+                <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 8 }} />
               ) : selectedTicket?.logs && selectedTicket.logs.length > 0 ? (
                 <View style={styles.logsContainer}>
                   {selectedTicket.logs.map((log, idx) => (
@@ -797,120 +679,33 @@ export default function StaffSupportScreen({
                   ))}
                 </View>
               ) : (
-                <Text style={styles.noLogsText}>Chưa có trao đổi nào thêm cho yêu cầu này.</Text>
+                <Text style={styles.noLogsText}>Chưa có ghi chú nào thêm.</Text>
               )}
 
               {/* Nhập phản hồi nhanh */}
               <View style={styles.addNoteRow}>
                 <TextInput
                   style={styles.addNoteInput}
-                  placeholder="Nhắn phản hồi cho khách..."
+                  placeholder="Nhập ghi chú / phản hồi..."
                   placeholderTextColor="#94A3B8"
                   value={newNoteText}
                   onChangeText={setNewNoteText}
                 />
                 <TouchableOpacity
-                  style={[styles.sendNoteBtn, (!newNoteText.trim() || isSubmittingNote) && { opacity: 0.5 }]}
+                  style={[
+                    styles.sendNoteBtn,
+                    (!newNoteText.trim() || isSubmittingNote) && { opacity: 0.5 },
+                  ]}
                   onPress={handleAddNote}
                   disabled={!newNoteText.trim() || isSubmittingNote}
+                  activeOpacity={0.8}
                 >
-                  <MaterialIcons name="send" size={18} color="#FFFFFF" />
+                  <MaterialIcons name="send" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
             </ScrollView>
           </View>
-        </View>
-      </Modal>
-
-      {/* ─── MODAL TẠO BÁO CÁO SỰ CỐ MỚI ─── */}
-      <Modal
-        visible={isCreateModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsCreateModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Báo Cáo Sự Cố Hiện Trường</Text>
-              <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.closeBtn}>
-                <MaterialIcons name="close" size={22} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.formLabel}>Phân loại sự cố</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-                {(['LOCK', 'UNIT', 'ACCESS_CODE', 'CLEANING', 'OTHER'] as TicketCategory[]).map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categoryChoice, newCategory === cat && styles.categoryChoiceActive]}
-                    onPress={() => setNewCategory(cat)}
-                  >
-                    <Text style={[styles.categoryChoiceText, newCategory === cat && styles.categoryChoiceTextActive]}>
-                      {renderCategoryName(cat)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={[styles.formLabel, { marginTop: 12 }]}>Mức độ ưu tiên</Text>
-              <View style={styles.priorityRow}>
-                {(['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as TicketPriority[]).map((pri) => (
-                  <TouchableOpacity
-                    key={pri}
-                    style={[styles.priorityChoice, newPriority === pri && styles.priorityChoiceActive]}
-                    onPress={() => setNewPriority(pri)}
-                  >
-                    <Text style={[styles.priorityChoiceText, newPriority === pri && styles.priorityChoiceTextActive]}>
-                      {pri === 'URGENT' ? 'Khẩn cấp' : pri === 'HIGH' ? 'Cao' : pri === 'MEDIUM' ? 'Bình thường' : 'Thấp'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={[styles.formLabel, { marginTop: 12 }]}>Mã ngăn kho (nếu có)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Ví dụ: A-101, VNG-302..."
-                placeholderTextColor="#94A3B8"
-                value={newUnitCode}
-                onChangeText={setNewUnitCode}
-              />
-
-              <Text style={[styles.formLabel, { marginTop: 12 }]}>Tiêu đề sự cố *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Ví dụ: Đèn hành lang tầng 2 không sáng, Khóa kẹt..."
-                placeholderTextColor="#94A3B8"
-                value={newSubject}
-                onChangeText={setNewSubject}
-              />
-
-              <Text style={[styles.formLabel, { marginTop: 12 }]}>Mô tả chi tiết *</Text>
-              <TextInput
-                style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top' }]}
-                placeholder="Mô tả cụ thể vị trí, tình trạng và phương án đề xuất..."
-                placeholderTextColor="#94A3B8"
-                value={newDescription}
-                onChangeText={setNewDescription}
-                multiline
-              />
-
-              <TouchableOpacity
-                style={[styles.confirmCreateBtn, isCreatingTicket && { opacity: 0.6 }]}
-                onPress={handleCreateTicket}
-                disabled={isCreatingTicket}
-              >
-                {isCreatingTicket ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.confirmCreateBtnText}>GỬI BÁO CÁO SỰ CỐ</Text>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -925,107 +720,56 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    paddingTop: Platform.OS === 'ios' ? 44 : 12,
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   topBarMainRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  sidebarToggleBtn: {
-    padding: 6,
+  backBtn: {
+    width: 36,
+    height: 36,
     borderRadius: 8,
     backgroundColor: '#F1F5F9',
-  },
-  topBarTitleWrap: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  topBarMainTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  topBarSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  liveBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  liveBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#15803D',
-  },
-  createBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  createBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  notifBtn: {
-    position: 'relative',
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-  },
-  notifBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    backgroundColor: '#EF4444',
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  notifBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
+  topBarMainTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
+
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
-    marginBottom: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    fontSize: 13,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 12.5,
     color: '#0F172A',
   },
+
   statsPillRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     paddingVertical: 2,
   },
   statPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 16,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1035,29 +779,31 @@ const styles = StyleSheet.create({
     borderColor: '#2563EB',
   },
   statPillLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#475569',
   },
   statPillLabelActive: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
+
   listContainer: {
     flex: 1,
   },
   listContent: {
-    padding: 16,
-    gap: 12,
+    padding: 12,
+    gap: 10,
   },
   loadingBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
-    gap: 10,
+    padding: 24,
+    gap: 8,
   },
   loadingText: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748B',
   },
   emptyBox: {
@@ -1067,75 +813,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#334155',
-    marginTop: 12,
+    marginTop: 10,
   },
   emptySubtitle: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12,
+    color: '#94A3B8',
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
+
+  // Ticket Card sạch sẽ, phân định rõ ràng
   ticketCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
   },
   ticketCardResolved: {
     backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
     opacity: 0.85,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   requestCodeText: {
     fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
   },
-  categoryPill: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  categoryPillText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  priorityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    gap: 3,
-  },
-  priorityText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
+
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
+    paddingVertical: 2.5,
+    borderRadius: 6,
     borderWidth: 1,
     gap: 4,
   },
@@ -1145,106 +864,115 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   statusBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
   },
+
   ticketSubject: {
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
+    lineHeight: 19,
     marginBottom: 4,
   },
   ticketDesc: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
-    lineHeight: 18,
-    marginBottom: 10,
+    lineHeight: 17,
+    marginBottom: 8,
   },
-  ticketMetaRow: {
+
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 6,
+  },
+
+  // DÒNG KHÁCH HÀNG RIÊNG BIỆT
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  customerLabel: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  customerValue: {
+    fontSize: 12,
+    color: '#1E293B',
+    fontWeight: '700',
+    flex: 1,
+  },
+
+  // DÒNG Ô KHO & NGÀY RIÊNG BIỆT
+  unitAndDateRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
   },
-  customerNameText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  phoneLinkText: {
-    fontSize: 12,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  unitBadge: {
+  unitBadgeWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 4,
-    gap: 3,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
   unitBadgeText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#1E3A8A',
+    fontWeight: '800',
+    color: '#1D4ED8',
   },
-  actionRow: {
+  dateWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    gap: 4,
   },
-  timeAgoText: {
+  dateText: {
     fontSize: 11,
     color: '#94A3B8',
   },
-  actionBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  actionBtnOpen: {
-    backgroundColor: '#2563EB',
-  },
-  actionBtnInProgress: {
-    backgroundColor: '#7C3AED',
-  },
-  actionBtnResolved: {
-    backgroundColor: '#DCFCE7',
-  },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+
+  // Modal Overlay
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    width: '100%',
+    maxWidth: 400,
     maxHeight: '90%',
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#0F172A',
+  },
+  modalUnitTag: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
   },
   modalSubtitle: {
     fontSize: 12,
@@ -1252,129 +980,142 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeBtn: {
-    padding: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBody: {
-    padding: 16,
+    marginTop: 8,
   },
+
   detailCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
+    gap: 6,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 6,
-    marginBottom: 12,
   },
   detailRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   detailLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#64748B',
+    fontWeight: '600',
   },
   detailVal: {
     fontSize: 12,
-    color: '#1E293B',
+    color: '#0F172A',
     fontWeight: '600',
   },
+
   sectionHeader: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 4,
   },
   descBox: {
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
-    padding: 10,
+    padding: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    marginBottom: 8,
   },
   descFullText: {
-    fontSize: 13,
-    color: '#334155',
-    lineHeight: 18,
+    fontSize: 12,
+    color: '#1E293B',
+    lineHeight: 17,
   },
+
   statusActionRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 8,
   },
   statusChoiceBtn: {
     flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
+    paddingVertical: 7,
     borderRadius: 6,
     backgroundColor: '#F1F5F9',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
   },
-  statusChoiceActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
+  statusChoiceActiveYellow: {
+    backgroundColor: '#D97706',
+    borderColor: '#D97706',
+  },
+  statusChoiceActiveBlue: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
   statusChoiceActiveGreen: {
-    backgroundColor: '#15803D',
-    borderColor: '#15803D',
-  },
-  statusChoiceActiveGray: {
-    backgroundColor: '#475569',
-    borderColor: '#475569',
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
   },
   statusChoiceText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#475569',
   },
   statusChoiceTextActive: {
     color: '#FFFFFF',
-    fontWeight: '700',
   },
+
   resolutionInput: {
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
     borderRadius: 8,
-    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     fontSize: 12,
-    color: '#1E293B',
-    minHeight: 50,
-    marginBottom: 10,
+    color: '#0F172A',
+    marginBottom: 8,
   },
   saveProgressBtn: {
     backgroundColor: '#2563EB',
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 8,
     alignItems: 'center',
+    marginBottom: 8,
   },
   saveProgressBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
   },
+
   logsContainer: {
-    gap: 10,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 8,
   },
   logItem: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   logDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: '#2563EB',
     marginTop: 5,
   },
   logContent: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 8,
+    borderRadius: 6,
+    padding: 6,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -1384,125 +1125,47 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   logUser: {
-    fontSize: 11.5,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#1E293B',
   },
   logTime: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#94A3B8',
   },
   logNote: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#334155',
   },
   noLogsText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     fontStyle: 'italic',
-    marginBottom: 12,
+    marginBottom: 8,
   },
+
   addNoteRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
+    gap: 6,
+    marginTop: 4,
   },
   addNoteInput: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 12,
-    color: '#0F172A',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 11.5,
+    color: '#0F172A',
   },
   sendNoteBtn: {
-    backgroundColor: '#2563EB',
-    padding: 10,
+    width: 34,
+    height: 34,
     borderRadius: 8,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  formLabel: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 6,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingBottom: 4,
-  },
-  categoryChoice: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  categoryChoiceActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  categoryChoiceText: {
-    fontSize: 11.5,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  categoryChoiceTextActive: {
-    color: '#FFFFFF',
-  },
-  priorityRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  priorityChoice: {
-    flex: 1,
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderRadius: 6,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  priorityChoiceActive: {
-    backgroundColor: '#D97706',
-    borderColor: '#D97706',
-  },
-  priorityChoiceText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  priorityChoiceTextActive: {
-    color: '#FFFFFF',
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 12.5,
-    color: '#1E293B',
-  },
-  confirmCreateBtn: {
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 18,
-    marginBottom: 16,
-  },
-  confirmCreateBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
 });
-
