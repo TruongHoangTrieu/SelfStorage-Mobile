@@ -35,9 +35,14 @@ export interface CheckInAppointment {
   accessPin?: string;
   rfidCard?: string;
   contractCode?: string;
+  signature?: string[];
   completedAt?: string;
   cancelReason?: string;
   rescheduledAt?: string;
+  photos?: string[];
+  handoverPhotos?: string[];
+  condition?: string;
+  notes?: string;
 }
 
 export interface AvailableUnit {
@@ -71,3 +76,77 @@ export type StaffTab =
   | 'settings';  // Cài đặt
 
 export type FlowStep = 'queue' | 'handover' | 'success';
+
+export type ReturnCategory = 'all' | 'today' | 'early' | 'overdue' | 'completed';
+
+export interface StaffReturnOrder {
+  id: string; // contractId
+  contractCode: string;
+  customerName: string;
+  phone: string;
+  email?: string;
+  unitCode: string;
+  unitType?: string;
+  unitSize?: string;
+  facilityName?: string;
+  startDate: string;
+  endDate: string;
+  status: 'ACTIVE' | 'OVERDUE' | 'TERMINATED' | 'EXPIRED';
+  returnType: 'today' | 'early' | 'overdue' | 'completed';
+  depositAmount: number; // Tiền cọc ban đầu (đã cấn trừ trực tiếp vào tiền thuê phòng khi nhận kho)
+  unpaidFees: number;
+  overdueDays: number;
+  overdueFine: number;
+  extraChargesTotal: number; // Phụ phí phát sinh khi trả kho (quá hạn, hư hại)
+  estimatedRefund?: number;
+  notes?: string;
+  handoverPhotos?: string[]; // Ảnh hiện trạng khi bàn giao kho (trước khi thuê)
+  handoverCondition?: string; // Tình trạng ô kho lúc bàn giao
+  handoverDate?: string;
+  returnPhotos?: string[]; // Ảnh chụp nghiệm thu lúc trả kho (sau khi thuê - để đối chiếu)
+  returnCondition?: string;
+  smartLockPin?: string;
+}
+
+
+export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'CANCELLED';
+export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type TicketCategory = 'UNIT' | 'LOCK' | 'ACCESS_CODE' | 'PAYMENT' | 'STORED_ITEMS' | 'LOST_KEY' | 'DAMAGE' | 'CLEANING' | 'OTHER';
+
+export interface TicketLog {
+  id: string;
+  userId: string;
+  note: string;
+  oldStatus?: string | null;
+  newStatus?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    fullName: string;
+    role?: string;
+  };
+}
+
+export interface StaffSupportTicket {
+  id: string;
+  requestCode: string;
+  subject: string;
+  description: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  unitCode?: string;
+  unitId?: string | number;
+  facilityId: string | number;
+  facilityName?: string;
+  assignedStaffId?: string;
+  assignedStaffName?: string;
+  photos?: string[];
+  createdAt: string;
+  resolvedAt?: string;
+  logs?: TicketLog[];
+}

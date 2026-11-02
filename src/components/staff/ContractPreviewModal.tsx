@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,13 +8,17 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { CheckInAppointment } from '../../types/handover';
+import SignaturePadModal from '../common/SignaturePadModal';
 
 interface ContractPreviewModalProps {
   visible: boolean;
   onClose: () => void;
   appointment?: CheckInAppointment | null;
   assignedUnitCode?: string;
+  onSignContract?: (signaturePaths: string[]) => void;
+  initialSignature?: string[];
 }
 
 export default function ContractPreviewModal({
@@ -22,6 +26,8 @@ export default function ContractPreviewModal({
   onClose,
   appointment,
   assignedUnitCode,
+  onSignContract,
+  initialSignature,
 }: ContractPreviewModalProps) {
   if (!appointment) return null;
 
@@ -33,6 +39,25 @@ export default function ContractPreviewModal({
   const finalUnit = assignedUnitCode || appointment.assignedUnit || 'A-101';
   const cleanId = (appointment.id || '').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
   const contractNumber = appointment.contractCode || `SS-HĐ-${cleanId}/${yearStr}`;
+
+  const [customerSignature, setCustomerSignature] = useState<string[]>(initialSignature || appointment.signature || []);
+  const [showSignPad, setShowSignPad] = useState<boolean>(false);
+  const [signedTime, setSignedTime] = useState<string>('');
+
+  useEffect(() => {
+    const sig = initialSignature || appointment.signature;
+    if (sig && sig.length > 0) {
+      setCustomerSignature(sig);
+    }
+  }, [initialSignature, appointment.signature]);
+
+  const handleSaveSignature = (paths: string[]) => {
+    setCustomerSignature(paths);
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} ${dayStr}/${monthStr}/${yearStr}`;
+    setSignedTime(timeStr);
+    onSignContract?.(paths);
+  };
 
   return (
     <Modal
@@ -302,25 +327,104 @@ export default function ContractPreviewModal({
                   <View style={styles.signColumn}>
                     <Text style={styles.signRoleTitle}>ĐẠI DIỆN BÊN B</Text>
                     <Text style={styles.signRoleSubtitle}>(Ký và ghi rõ họ tên)</Text>
-                    <View style={styles.stampBox}>
-                      <Text style={styles.signCustomerName}>{appointment.customerName}</Text>
-                      <Text style={styles.signCustomerPhone}>SĐT: {appointment.phone}</Text>
-                      <Text style={styles.stampTime}>Ngày ký: {dayStr}/{monthStr}/{yearStr}</Text>
-                    </View>
+                    {customerSignature.length > 0 ? (
+                      <View style={styles.signedStampBox}>
+                        <View style={styles.stampVerifiedBadge}>
+                          <MaterialIcons name="verified" size={11} color="#059669" />
+                          <Text style={styles.stampVerifiedBadgeText}>✓ ĐÃ KÝ ĐIỆN TỬ</Text>
+                        </View>
+                        <View style={styles.signatureDrawingBox}>
+                          <Svg width={130} height={55} viewBox="0 0 320 160">
+                            {customerSignature.map((p, i) => (
+                              <Path
+                                key={i}
+                                d={p}
+                                stroke="#004AC6"
+                                strokeWidth={4.2}
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            ))}
+                          </Svg>
+                        </View>
+                        <Text style={styles.signCustomerName}>{appointment.customerName}</Text>
+                        <Text style={styles.signCustomerPhone}>SĐT: {appointment.phone}</Text>
+                        <Text style={styles.stampTime}>Ký lúc: {signedTime || `${dayStr}/${monthStr}/${yearStr}`}</Text>
+                        <TouchableOpacity
+                          style={styles.reSignBtn}
+                          onPress={() => setShowSignPad(true)}
+                          activeOpacity={0.7}
+                        >
+                          <MaterialIcons name="edit" size={11} color="#004AC6" />
+                          <Text style={styles.reSignBtnText}>Ký lại</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.emptySignBox}
+                        onPress={() => setShowSignPad(true)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.emptySignIconCircle}>
+                          <MaterialIcons name="draw" size={20} color="#004AC6" />
+                        </View>
+                        <Text style={styles.emptySignTitle}>Bấm để ký tên</Text>
+                        <Text style={styles.emptySignSub}>Vẽ chữ ký trực tiếp</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </View>
+
+              {/* Nút Ký Hợp Đồng Ngay ở dưới văn bản */}
+              {customerSignature.length === 0 ? (
+                <View style={styles.signActionArea}>
+                  <TouchableOpacity
+                    style={styles.mainSignBtn}
+                    onPress={() => setShowSignPad(true)}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialIcons name="draw" size={20} color="#FFFFFF" />
+                    <Text style={styles.mainSignBtnText}>Ký Hợp Đồng Ngay</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.signHintText}>
+                    Khách hàng vẽ chữ ký trực tiếp trên màn hình, chữ ký sẽ được in vào văn bản hợp đồng
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.signedSuccessArea}>
+                  <MaterialIcons name="check-circle" size={18} color="#059669" />
+                  <Text style={styles.signedSuccessText}>
+                    Chữ ký đã được in vào văn bản hợp đồng thành công
+                  </Text>
+                </View>
+              )}
             </View>
           </ScrollView>
 
           {/* Footer Close Button */}
           <View style={styles.footerRow}>
-            <TouchableOpacity style={styles.closeFullBtn} onPress={onClose} activeOpacity={0.85}>
-              <Text style={styles.closeFullBtnText}>Đóng bản xem hợp đồng</Text>
+            <TouchableOpacity
+              style={[styles.closeFullBtn, customerSignature.length > 0 && { backgroundColor: '#004AC6' }]}
+              onPress={onClose}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.closeFullBtnText}>
+                {customerSignature.length > 0 ? 'Xác Nhận & Đóng Hợp Đồng' : 'Đóng bản xem hợp đồng'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Modal Vẽ Chữ Ký */}
+      <SignaturePadModal
+        visible={showSignPad}
+        onClose={() => setShowSignPad(false)}
+        onSaveSignature={handleSaveSignature}
+        customerName={appointment.customerName}
+      />
     </Modal>
   );
 }
@@ -628,4 +732,139 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  // Styles cho ô ký và in chữ ký vào hợp đồng
+  signedStampBox: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#004AC6',
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  stampVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  stampVerifiedBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  signatureDrawingBox: {
+    width: 130,
+    height: 55,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  reSignBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+  },
+  reSignBtnText: {
+    fontSize: 10,
+    color: '#004AC6',
+    fontWeight: '700',
+  },
+  emptySignBox: {
+    marginTop: 10,
+    padding: 14,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#004AC6',
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  emptySignIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySignTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#004AC6',
+  },
+  emptySignSub: {
+    fontSize: 9.5,
+    color: '#64748B',
+  },
+  signActionArea: {
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mainSignBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#004AC6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: '#004AC6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  mainSignBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  signHintText: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    paddingHorizontal: 12,
+  },
+  signedSuccessArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  signedSuccessText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+  },
+
 });

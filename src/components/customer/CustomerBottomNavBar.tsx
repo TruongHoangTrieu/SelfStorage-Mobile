@@ -7,6 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ─── Design Tokens ────────────────────────────────────────────────────────
 const T = {
@@ -29,9 +30,13 @@ export default function CustomerBottomNavBar({
   activeTab,
   onSelectTab,
 }: CustomerBottomNavBarProps) {
+  const insets = useSafeAreaInsets();
+  // Safe area bottom padding: Tự động điều chỉnh để không bị thanh điều khiển (3 nút Android / iOS Home Indicator) đè lên
+  const safeBottom = insets.bottom > 0 ? insets.bottom + 6 : (Platform.OS === 'ios' ? 24 : 12);
+
   return (
-    <View style={s.wrapper}>
-      <View style={s.container}>
+    <View style={[s.wrapper, { backgroundColor: T.surfaceLowest }]}>
+      <View style={[s.container, { paddingBottom: safeBottom }]}>
         {/* Tab 1: Trang chủ / Khám phá */}
         <TouchableOpacity
           style={s.tab}
@@ -169,7 +174,6 @@ const s = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 8,
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
     backgroundColor: T.surfaceLowest,
     borderTopWidth: 1,
     borderTopColor: T.outlineVariant,
@@ -179,7 +183,6 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 10,
     width: '100%',
-    minHeight: 58,
   },
   tab: {
     flex: 1,

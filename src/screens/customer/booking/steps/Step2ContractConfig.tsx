@@ -518,7 +518,7 @@ export default function Step2ContractConfig({
       </ScrollView>
 
       {/* Sticky Bottom Action Bar */}
-      <View style={s.stickyBottomBar}>
+      <View style={[s.stickyBottomBar, { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 20 }]}>
         <View style={s.stickyTopRow}>
           <View>
             <Text style={s.stickyLabel}>Tiền cọc thanh toán ngay</Text>

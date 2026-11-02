@@ -155,6 +155,58 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
 /**
  * Upload ảnh lên Cloudinary (nếu có cấu hình), hoặc fallback sang Base64 / Local URI
  */
+
+/**
+ * Xin quyền và Chọn NHIỀU ảnh cùng một lúc từ Thư viện ảnh (Gallery)
+ */
+export async function pickMultiplePhotosFromGallery(maxPhotos: number = 10): Promise<CapturedPhoto[]> {
+  try {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert(
+        'Quyền thư viện ảnh',
+        'Ứng dụng cần quyền truy cập thư viện để chọn ảnh hiện trạng ô kho.'
+      );
+      return [];
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: maxPhotos,
+      quality: 0.85,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const timeStr = hours + ':' + minutes;
+
+    return result.assets.map((asset, index) => {
+      const formattedBase64 = asset.base64
+        ? (asset.base64.startsWith('data:') ? asset.base64 : 'data:image/jpeg;base64,' + asset.base64)
+        : undefined;
+
+      return {
+        id: 'photo-' + Date.now() + '-' + index + '-' + Math.floor(Math.random() * 1000),
+        uri: asset.uri || formattedBase64 || '',
+        base64: formattedBase64,
+        title: 'Ảnh #' + (index + 1) + ' lúc ' + timeStr,
+        createdAt: now.toISOString(),
+      };
+    });
+  } catch (err: any) {
+    console.error('Lỗi khi chọn nhiều ảnh từ thư viện:', err);
+    Alert.alert('Lỗi Thư Viện', err.message || 'Không thể truy cập thư viện ảnh.');
+    return [];
+  }
+}
+
 export async function uploadImageToStorage(photo: CapturedPhoto): Promise<string> {
   // Nếu ảnh đã là URL online (https://res.cloudinary.com... hoặc ảnh web), không cần upload lại
   if (photo.uri && (photo.uri.startsWith('http://') || photo.uri.startsWith('https://')) && !photo.uri.startsWith('file://')) {

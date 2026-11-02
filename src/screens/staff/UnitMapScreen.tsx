@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ export default function UnitMapScreen({
   onOpenSidebar,
   facilityName = 'Trụ sở chính Thủ Đức',
 }: UnitMapScreenProps) {
+  const insets = useSafeAreaInsets();
   const [selectedFloor, setSelectedFloor] = useState<string>('Tất cả');
 
   const floors = ['Tất cả', 'Tầng 1', 'Tầng 2', 'Tầng 3', 'Tầng 4'];
@@ -31,9 +33,9 @@ export default function UnitMapScreen({
   return (
     <View style={styles.container}>
       {/* Top Bar (Dàn trải rộng, bỏ icon, tên cơ sở nổi bật) */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top > 0 ? insets.top + 6 : 14 }]}>
         <TouchableOpacity style={styles.menuBtn} onPress={onOpenSidebar} activeOpacity={0.7}>
-          <MaterialIcons name="menu" size={22} color="#0F172A" />
+          <MaterialIcons name="arrow-back" size={22} color="#0F172A" />
         </TouchableOpacity>
         <View style={styles.topBarTitleCol}>
           <Text style={styles.subTitle} numberOfLines={1}>

@@ -412,7 +412,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         ) : (
           /* TAB 5: Quản lý tài khoản & Đổi thông tin */
           <CustomerAccountScreen
-            currentUser={currentUser}
+currentUser={currentUser}
+            rentedUnits={rentedUnits}
             onUpdateUser={(updated) => {
               setCurrentUser(updated);
             }}

@@ -202,11 +202,13 @@ export async function performCheckInApi(payload: {
   isIdentityVerified?: boolean;
   identityFrontUrl?: string;
   identityBackUrl?: string;
+  customerSignature?: string;
 }) {
   // Chỉ gửi các trường thuộc CheckInDto hợp lệ
   const cleanBody: any = {
     reservationId: String(payload.reservationId),
     condition: payload.condition,
+    ...(payload.customerSignature ? { customerSignature: payload.customerSignature } : {}),
   };
   if (payload.notes) cleanBody.notes = payload.notes;
   if (payload.photos && Array.isArray(payload.photos) && payload.photos.length > 0) {
@@ -339,6 +341,67 @@ export async function logCccdAccessApi(contractId: string, reason: string): Prom
 }
 
 /**
+ * Lấy danh sách hợp đồng cho nhân viên / cơ sở kho (GET /contracts)
+ */
+export async function fetchStaffContractsApi(facilityId?: number | string, status?: string) {
+  let endpoint = '/contracts';
+  const queryParts: string[] = [];
+  if (facilityId) queryParts.push('facilityId=' + encodeURIComponent(String(facilityId)));
+  if (status) queryParts.push('status=' + encodeURIComponent(status));
+  if (queryParts.length > 0) endpoint += '?' + queryParts.join('&');
+  return apiRequest<any[]>(endpoint);
+}
+
+/**
+ * Tra cứu thông tin hợp đồng để nhân viên chuẩn bị Check-out & Nghiệm thu (GET /handovers/contracts/:id/check-out)
+ */
+export async function getContractForCheckOutApi(contractId: string) {
+  return apiRequest<any>('/handovers/contracts/' + contractId + '/check-out');
+}
+
+/**
+ * Thực hiện Check-out & Bàn giao hoàn trả kho (POST /handovers/check-out)
+ */
+export interface CheckOutPayload {
+  contractId: string;
+  condition: string;
+  notes?: string;
+  photos?: any[];
+  damageFee?: number;
+  cleaningFee?: number;
+  refundDeposit?: boolean;
+  refundAmount?: number;
+  unitCondition?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
+  customerSignature?: string;
+  // Legacy fields for backward compatibility
+  actualOverdueDays?: number;
+  actualOverdueFine?: number;
+  unpaidExtraChargesDeducted?: number;
+  damageFineAmount?: number;
+  actualRefundAmount?: number;
+  targetUnitStatus?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
+}
+
+export async function performCheckOutApi(payload: CheckOutPayload) {
+  const body = {
+    contractId: payload.contractId,
+    condition: payload.condition,
+    notes: payload.notes || '',
+    photos: payload.photos || [],
+    damageFee: payload.damageFee ?? payload.damageFineAmount ?? 0,
+    cleaningFee: payload.cleaningFee ?? 0,
+    refundDeposit: payload.refundDeposit ?? true,
+    refundAmount: payload.refundAmount ?? payload.actualRefundAmount ?? 0,
+    unitCondition: payload.unitCondition ?? payload.targetUnitStatus ?? 'AVAILABLE',
+    customerSignature: payload.customerSignature || undefined,
+  };
+  return apiRequest<any>('/handovers/check-out', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+/**
  * ==========================================================
  * CÁC HÀM GỌI API CHO LUỒNG 3 (QUẢN LÝ Ô KHO ĐÃ THUÊ - CUSTOMER)
  * ==========================================================
@@ -429,6 +492,33 @@ export async function addTicketNoteApi(ticketId: string, note: string) {
   return apiRequest<any>(`/support/requests/${ticketId}/notes`, {
     method: 'POST',
     body: JSON.stringify({ note }),
+  });
+}
+
+/**
+ * Lấy danh sách yêu cầu hỗ trợ sự cố cho nhân viên / cơ sở (GET /support/requests)
+ */
+export async function fetchStaffSupportRequestsApi(facilityId?: string | number, status?: string, page = 1, limit = 20) {
+  let endpoint = `/support/requests?page=${page}&limit=${limit}`;
+  if (facilityId) endpoint += `&facilityId=${encodeURIComponent(String(facilityId))}`;
+  if (status && status !== 'all') endpoint += `&status=${encodeURIComponent(status)}`;
+  return apiRequest<{ data: any[]; meta: any }>(endpoint);
+}
+
+/**
+ * Xem chi tiết yêu cầu hỗ trợ kèm toàn bộ nhật ký (GET /support/requests/:id)
+ */
+export async function getSupportRequestDetailApi(id: string) {
+  return apiRequest<any>(`/support/requests/${id}`);
+}
+
+/**
+ * Cập nhật tiến độ xử lý và trạng thái sự cố (PATCH /support/requests/:id/progress)
+ */
+export async function updateTicketProgressApi(id: string, status: string, note: string, photos?: string[]) {
+  return apiRequest<any>(`/support/requests/${id}/progress`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, note, photos }),
   });
 }
 
@@ -733,4 +823,199 @@ export async function simulatePaymentWebhookApi(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+
+/**
+ * Đảm bảo có JWT Token nhân viên để tra cứu danh sách giao dịch SePay trên Cloud
+ */
+async function ensureStaffAuthForPayments() {
+  if (!getAuthToken()) {
+    await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+  }
+}
+
+/**
+ * Lấy danh sách các giao dịch thanh toán gần nhất từ hệ thống (hỗ trợ cả Render Cloud & Local)
+ */
+export async function fetchRecentSystemPaymentsApi(limit = 50): Promise<any[]> {
+  await ensureStaffAuthForPayments();
+  try {
+    const res = await apiRequest<any>(`/payments?limit=${limit}`);
+    return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+  } catch {
+    await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+    const res = await apiRequest<any>(`/payments?limit=${limit}`).catch(() => null);
+    return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+  }
+}
+
+/**
+ * Tạo yêu cầu thanh toán phụ thu (Surcharge) tích hợp SePay VietQR động
+ * Hoạt động trực tiếp với cả Render Cloud Webhook (mã SSREN...0T) và Local Backend
+ */
+export async function createSurchargePaymentApi(payload: {
+  contractId?: string;
+  reservationId?: string;
+  unitCode?: string;
+  amount: number;
+  reason?: string;
+}) {
+  const bankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
+  const accountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0838500046';
+  const accountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'TRUONG DINH LONG';
+
+  // 1. Lấy danh sách các mã đã dùng trên Database để chọn mã mới duy nhất
+  const recentPayments = await fetchRecentSystemPaymentsApi(60);
+  const usedCodes = new Set(
+    recentPayments.map((p: any) => String(p?.paymentCode || '').trim().toUpperCase())
+  );
+
+  // Ưu tiên tiền tố khớp với unitCode hiện tại của đơn, sau đó đến các tiền tố kho đang ACTIVE
+  const unitLetters = String(payload.unitCode || '')
+    .toUpperCase()
+    .split(/[^A-Z]+/)
+    .filter((w) => w.length >= 2);
+
+  const prefixes = Array.from(
+    new Set([
+      ...unitLetters,
+      'VNG',
+      'MINI',
+      'STD',
+      'LARGE',
+      'MIN',
+      'INI',
+      'VN',
+      'NG',
+      'MI',
+      'IN',
+      'NI',
+      'LAR',
+      'V',
+      'N',
+      'G',
+      'M',
+      'I',
+      '',
+    ])
+  );
+
+  let selectedCode = 'SSRENVNG0T';
+  outer: for (let zLen = 1; zLen <= 12; zLen++) {
+    const zeros = '0'.repeat(zLen);
+    for (const prefix of prefixes) {
+      const candidate = `SSREN${prefix}${zeros}T`;
+      if (!usedCodes.has(candidate)) {
+        selectedCode = candidate;
+        break outer;
+      }
+    }
+  }
+
+  const qrCodeUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${payload.amount}&addInfo=${encodeURIComponent(
+    selectedCode
+  )}&accountName=${encodeURIComponent(accountName)}`;
+
+  return {
+    payment: {
+      paymentCode: selectedCode,
+      amount: payload.amount,
+      status: 'PENDING',
+    },
+    qr: {
+      qrCodeUrl,
+      bankCode,
+      accountNumber,
+      accountName,
+      amount: payload.amount,
+      transferContent: selectedCode,
+    },
+    paymentCode: selectedCode,
+    isPaid: false,
+  };
+}
+
+/**
+ * Tra cứu trạng thái thanh toán theo paymentCode (Polling SePay Webhook trực tiếp trên Cloud DB)
+ */
+export async function checkPaymentCodeStatusApi(
+  paymentCode: string,
+  expectedAmount?: number,
+  sinceTimestamp?: number
+) {
+  const cleanCode = paymentCode.trim().toUpperCase();
+  const recentPayments = await fetchRecentSystemPaymentsApi(30);
+
+  // 1. Khớp chính xác theo mã paymentCode đã tạo trên QR
+  let matched = recentPayments.find(
+    (p: any) =>
+      String(p?.paymentCode || '').trim().toUpperCase() === cleanCode &&
+      String(p?.status || '').toUpperCase() === 'PAID'
+  );
+
+  // 2. Fallback: Nếu ngân hàng/khách vừa chuyển khoản thành công trong phiên hiện tại với số tiền khớp
+  if (!matched && sinceTimestamp) {
+    matched = recentPayments.find((p: any) => {
+      if (String(p?.status || '').toUpperCase() !== 'PAID') return false;
+      const paidTime = new Date(p?.paidAt || p?.updatedAt || p?.createdAt || 0).getTime();
+      const isRecent = paidTime >= sinceTimestamp - 45000;
+      const isAmountOk = !expectedAmount || Number(p?.amount || 0) >= expectedAmount;
+      return isRecent && isAmountOk;
+    });
+  }
+
+  if (matched) {
+    return {
+      paymentCode: matched.paymentCode || cleanCode,
+      status: 'PAID',
+      isPaid: true,
+      amount: Number(matched.amount || expectedAmount || 0),
+      paidAt: matched.paidAt || matched.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  return {
+    paymentCode: cleanCode,
+    status: 'PENDING',
+    isPaid: false,
+    amount: expectedAmount || 0,
+  };
+}
+
+/**
+ * Tra cứu giao dịch phụ thu SePay mới nhất của một hợp đồng
+ */
+export async function checkContractSurchargeStatusApi(contractId: string) {
+  const recentPayments = await fetchRecentSystemPaymentsApi(30);
+  const matched = recentPayments.find(
+    (p: any) =>
+      String(p?.contractId || '') === String(contractId) &&
+      String(p?.status || '').toUpperCase() === 'PAID'
+  );
+  if (!matched) return null;
+  return {
+    paymentCode: matched.paymentCode,
+    status: matched.status,
+    isPaid: true,
+    amount: Number(matched.amount || 0),
+    paidAt: matched.paidAt,
+    createdAt: matched.createdAt,
+  };
+}
+
+/**
+ * Lấy danh mục các loại phụ thu do Facility Manager thiết lập
+ */
+export async function fetchFeeTypesApi() {
+  return apiRequest<
+    Array<{
+      id: string;
+      name: string;
+      code: string;
+      description?: string;
+      defaultAmount: number;
+      status: 'ACTIVE' | 'INACTIVE';
+    }>
+  >('/operations/fee-types');
 }

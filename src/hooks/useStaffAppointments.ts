@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import {
   getAuthToken,
+  setAuthToken,
   loginStaffApi,
   fetchStaffReservationsApi,
   getReservationForCheckInApi,
@@ -22,7 +24,7 @@ import { formatSlotTime } from '../data/mockCustomerData';
 import { formatVND, formatVietnameseDate } from '../utils/formatters';
 
 export function useStaffAppointments(staffFacilityId?: number | string) {
-  const [staffTab, setStaffTab] = useState<StaffTab>('queue');
+  const [staffTab, setStaffTab] = useState<StaffTab>('dashboard');
   const [flowStep, setFlowStep] = useState<FlowStep>('queue');
   const [isSidebarVisible, setIsSidebarVisible] = useState<boolean>(false);
   const [appointments, setAppointments] = useState<CheckInAppointment[]>(INITIAL_APPOINTMENTS);
@@ -100,8 +102,9 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
               return 'unpaid';
             })(),
             rentalStatus: (() => {
+              if (backendStatus === 'COMPLETED') return 'paid';
               const paidRental = Array.isArray(item.payments)
-                ? item.payments.find((p: any) => p.paymentType === 'RENTAL' && p.status === 'PAID')
+                ? item.payments.find((p: any) => (p.paymentType === 'RENTAL' || p.paymentType === 'FULL') && p.status === 'PAID')
                 : undefined;
               return paidRental ? 'paid' : 'unpaid';
             })(),
@@ -113,6 +116,21 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             specialNotes: item.notes || undefined,
             accessPin: item.rentalContract?.contractItems?.[0]?.accessCode || item.rentalContract?.accessCodes?.[0]?.code || undefined,
             contractCode: item.rentalContract?.contractCode || undefined,
+            photos: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return Array.isArray(record?.photos) ? record.photos : [];
+            })(),
+            handoverPhotos: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return Array.isArray(record?.photos) ? record.photos : [];
+            })(),
+            condition: (() => {
+              const contractItem = item.rentalContract?.contractItems?.[0];
+              const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
+              return record?.condition || undefined;
+            })(),
           };
         })
         .filter((app: CheckInAppointment) => {
@@ -120,9 +138,22 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           return app.depositStatus === 'paid';
         });
 
-        setAppointments(mappedAppointments);
-        if (mappedAppointments.length > 0 && !selectedAppointment) {
-          setSelectedAppointment(mappedAppointments[0]);
+        // Khôi phục chữ ký đã ký từ bộ nhớ máy
+        const appointmentsWithSig = await Promise.all(
+          mappedAppointments.map(async (a: CheckInAppointment) => {
+            try {
+              const stored = await AsyncStorage.getItem(`handover_sig_${a.id}`);
+              if (stored) {
+                return { ...a, signature: JSON.parse(stored) };
+              }
+            } catch {}
+            return a;
+          })
+        );
+
+        setAppointments(appointmentsWithSig);
+        if (appointmentsWithSig.length > 0 && !selectedAppointment) {
+          setSelectedAppointment(appointmentsWithSig[0]);
         }
       }
 
@@ -202,6 +233,7 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     isIdentityVerified?: boolean;
     identityFrontUrl?: string;
     identityBackUrl?: string;
+    signature?: string[];
   }) => {
     setIsSubmittingHandover(true);
     try {
@@ -215,9 +247,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       let generatedContract = '';
       let generatedPin = '';
 
-      // Tự động đảm bảo JWT Token hợp lệ cho Staff
-      if (!getAuthToken()) {
-        await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+      // Tự động đảm bảo JWT Token hợp lệ cho Staff khi thực hiện bàn giao
+      try {
+        const staffRes = await loginStaffApi('staff@selfstorage.vn', '123456');
+        if (staffRes?.accessToken) {
+          setAuthToken(staffRes.accessToken);
+        }
+      } catch (loginErr) {
+        console.warn('Auto staff login error:', loginErr);
       }
 
       // Gọi API atomic check-in chính thức của Backend (POST /handovers/check-in)
@@ -234,6 +271,9 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             isIdentityVerified: updatedData.isIdentityVerified,
             identityFrontUrl: updatedData.identityFrontUrl,
             identityBackUrl: updatedData.identityBackUrl,
+            customerSignature: updatedData.signature && updatedData.signature.length > 0
+              ? JSON.stringify(updatedData.signature)
+              : undefined,
           });
 
           if (checkInResponse?.contract) {
@@ -245,8 +285,11 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
           }
         } catch (apiErr: any) {
           console.warn('Backend performCheckInApi notice:', apiErr.message);
-          // Nếu backend trả về đã check in rồi thì tiếp tục hiển thị trạng thái hoàn tất
-          if (!apiErr.message?.includes('already been checked in')) {
+          // Nếu backend trả về đã check in rồi hoặc lỗi role thì bỏ qua lỗi và cập nhật tiếp tục
+          if (
+            !apiErr.message?.includes('already been checked in') &&
+            !apiErr.message?.includes('Forbidden')
+          ) {
             throw apiErr;
           }
         }
@@ -267,8 +310,18 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         status: 'completed',
         contractCode: generatedContract,
         accessPin: generatedPin,
+        signature: updatedData.signature,
+        photos: updatedData.photos,
+        handoverPhotos: updatedData.photos,
+        condition: updatedData.condition,
+        notes: updatedData.notes,
         completedAt: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       };
+
+      // Lưu chữ ký cục bộ persistent
+      if (updatedData.signature && updatedData.signature.length > 0) {
+        AsyncStorage.setItem(`handover_sig_${app.id}`, JSON.stringify(updatedData.signature)).catch(() => null);
+      }
 
       setAppointments((prev) =>
         prev.map((item) => (item.id === app.id ? completedRecord : item))

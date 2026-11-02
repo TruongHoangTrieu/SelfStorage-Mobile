@@ -406,7 +406,7 @@ export default function RenewContractModal({
                         color="#DC2626"
                       />
                       <Text style={[styles.copyBtnTextSmall, { color: '#DC2626' }]}>
-                        {copiedField === 'CONTENT' ? 'Đã chép' : 'Sao chép ND'}
+                        {copiedField === 'CONTENT' ? 'Đã chép' : 'Sao chép'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -430,7 +430,7 @@ export default function RenewContractModal({
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.confirmBtn} onPress={handleProceedToPayment} disabled={isSubmitting}>
-                  <Text style={styles.confirmBtnText}>Tiếp tục thanh toán ({formatVND(netRent)}) →</Text>
+                  <Text style={styles.confirmBtnText}>Tiếp tục thanh toán →</Text>
                 </TouchableOpacity>
               </>
             ) : (

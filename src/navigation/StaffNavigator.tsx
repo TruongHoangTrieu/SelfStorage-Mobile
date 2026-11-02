@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import StaffSidebar from '../components/staff/StaffSidebar';
+import { View } from 'react-native';
 import CheckInQueueScreen from '../screens/staff/CheckInQueueScreen';
 import HandoverDetailScreen from '../screens/staff/HandoverDetailScreen';
 import HandoverSuccessScreen from '../screens/staff/HandoverSuccessScreen';
 import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
 import UnitMapScreen from '../screens/staff/UnitMapScreen';
 import StaffSettingsScreen from '../screens/staff/StaffSettingsScreen';
+import StaffReturnQueueScreen from '../screens/staff/StaffReturnQueueScreen';
+import StaffSupportScreen from '../screens/staff/StaffSupportScreen';
 import PrintReceiptModal from '../components/staff/PrintReceiptModal';
 import NotificationsModal from '../components/common/NotificationsModal';
 import { useNotifications } from '../hooks/useNotifications';
@@ -14,7 +15,7 @@ import { CURRENT_STAFF_USER } from '../data/mockStaffData';
 import { useStaffAppointments } from '../hooks/useStaffAppointments';
 import { useAppMode } from '../context/AppModeContext';
 import { useAuth } from '../context/AuthContext';
-import styles from '../styles/appStyles';
+import { StaffTab } from '../types/handover';
 
 interface StaffNavigatorProps {
   staffAppointmentsState?: ReturnType<typeof useStaffAppointments>;
@@ -59,8 +60,6 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
     setStaffTab,
     flowStep,
     setFlowStep,
-    isSidebarVisible,
-    setIsSidebarVisible,
     appointments,
     availableUnits,
     selectedAppointment,
@@ -73,9 +72,34 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
     handleCompleteHandover,
   } = staffState;
 
+  // Điều hướng về Trang Home Nhân Viên
+  const handleBackToHome = () => {
+    setStaffTab('dashboard');
+  };
+
+  const handleNavigateTab = (tab: StaffTab) => {
+    setStaffTab(tab);
+    if (tab === 'queue') setFlowStep('queue');
+  };
+
   // Trung tâm thông báo Nhân viên
   const [showStaffNotifModal, setShowStaffNotifModal] = React.useState<boolean>(false);
   const staffNotifState = useNotifications('staff');
+
+  // Mở Trang Home Nhân Viên khi đăng nhập, nhưng nếu đang nghiệm thu trả kho (chuyển qua app ngân hàng quay lại) thì giữ nguyên màn hình Lịch
+  useEffect(() => {
+    import('@react-native-async-storage/async-storage')
+      .then(({ default: AsyncStorage }) => AsyncStorage.getItem('active_return_inspection_order_id'))
+      .then((activeOrderId) => {
+        if (activeOrderId) {
+          setStaffTab('queue');
+          setFlowStep('queue');
+        } else {
+          setStaffTab('dashboard');
+        }
+      })
+      .catch(() => setStaffTab('dashboard'));
+  }, [currentUser?.id]);
 
   useEffect(() => {
     loadStaffData();
@@ -83,39 +107,37 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Thanh Sidebar (Drawer) 6 mục */}
-      <StaffSidebar
-        visible={isSidebarVisible}
-        onClose={() => setIsSidebarVisible(false)}
-        activeTab={staffTab}
-        onSelectTab={(tab) => {
-          setStaffTab(tab);
-          if (tab === 'queue') setFlowStep('queue');
-        }}
-        currentUser={dynamicStaffUser}
-        pendingCount={appointments.filter((a) => a.status === 'pending' || a.status === 'arrived').length}
-        onSwitchToCustomer={handleSwitchToCustomerAndLogout}
-        onLogout={handleLogout}
-        onOpenNotifications={() => setShowStaffNotifModal(true)}
-        unreadNotifCount={staffNotifState.unreadCount}
-      />
-
-      {/* Render Nội Dung Staff Theo Tab & FlowStep */}
-      {staffTab === 'queue' ? (
+      {/* ─── Render Nội Dung Staff Theo Tab & FlowStep (Không dùng tab menu / sidebar) ─── */}
+      {staffTab === 'dashboard' ? (
+        /* TRANG CHÍNH: Home Nhân Viên (Dashboard có đầy đủ các nút chức năng) */
+        <StaffDashboardScreen
+          appointments={appointments}
+          onNavigateTab={handleNavigateTab}
+          facilityName={dynamicStaffUser.facilityName}
+          currentUser={dynamicStaffUser}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+          onLogout={handleLogout}
+          onSwitchToCustomer={handleSwitchToCustomerAndLogout}
+          onRefresh={loadStaffData}
+          isRefreshing={isStaffLoading}
+        />
+      ) : staffTab === 'queue' ? (
         flowStep === 'queue' ? (
-          /* TRANG A: Hàng đợi Nhận kho trong ngày */
+          /* MỤC 1: Lịch nhận & trả kho hợp nhất */
           <CheckInQueueScreen
             appointments={appointments}
             onStartHandover={handleStartHandover}
+            onOpenReturnOrder={(order) => setStaffTab('checkout')}
             onRefresh={loadStaffData}
             isRefreshing={isStaffLoading}
-            onOpenSidebar={() => setIsSidebarVisible(true)}
+            onOpenSidebar={handleBackToHome}
             facilityName={dynamicStaffUser.facilityName}
             onOpenNotifications={() => setShowStaffNotifModal(true)}
             unreadNotifCount={staffNotifState.unreadCount}
           />
         ) : flowStep === 'handover' && selectedAppointment ? (
-          /* TRANG B: Xác thực khách hàng & Bàn giao kho */
+          /* Xác thực khách hàng & Bàn giao kho */
           <HandoverDetailScreen
             appointment={selectedAppointment}
             availableUnits={availableUnits}
@@ -124,12 +146,13 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             isSubmitting={isSubmittingHandover}
           />
         ) : flowStep === 'success' && selectedAppointment ? (
-          /* TRANG C: Hoàn tất Bàn giao */
+          /* Hoàn tất Bàn giao */
           <HandoverSuccessScreen
             appointment={selectedAppointment}
             assignedUnitCode={selectedAppointment.assignedUnit}
             contractCode={selectedAppointment.contractCode}
             accessPin={selectedAppointment.accessPin}
+            signature={selectedAppointment.signature}
             onBackToQueue={() => {
               setFlowStep('queue');
               setStaffTab('queue');
@@ -143,76 +166,59 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             onStartHandover={handleStartHandover}
             onRefresh={loadStaffData}
             isRefreshing={isStaffLoading}
-            onOpenSidebar={() => setIsSidebarVisible(true)}
+            onOpenSidebar={handleBackToHome}
             facilityName={dynamicStaffUser.facilityName}
             onOpenNotifications={() => setShowStaffNotifModal(true)}
             unreadNotifCount={staffNotifState.unreadCount}
           />
         )
-      ) : staffTab === 'dashboard' ? (
-        /* TAB 1: Bảng điều khiển (Tổng quan hôm nay) */
-        <StaffDashboardScreen
-          appointments={appointments}
-          onGoToQueue={() => {
-            setStaffTab('queue');
-            setFlowStep('queue');
-          }}
-          onOpenSidebar={() => setIsSidebarVisible(true)}
+      ) : staffTab === 'facility' ? (
+        /* MỤC 3: Sơ đồ cơ sở & Trạng thái ô kho */
+        <UnitMapScreen
+          availableUnits={availableUnits}
+          onOpenSidebar={handleBackToHome}
           facilityName={dynamicStaffUser.facilityName}
+        />
+      ) : staffTab === 'checkout' ? (
+        /* MỤC 2: Trả kho & Thanh lý hợp đồng */
+        <StaffReturnQueueScreen
+          facilityId={dynamicStaffUser.facilityId}
+          facilityName={dynamicStaffUser.facilityName}
+          onOpenSidebar={handleBackToHome}
           onOpenNotifications={() => setShowStaffNotifModal(true)}
           unreadNotifCount={staffNotifState.unreadCount}
         />
-      ) : staffTab === 'facility' ? (
-        /* TAB 4: Sơ đồ cơ sở & Trạng thái ô kho */
-        <UnitMapScreen
-          availableUnits={availableUnits}
-          onOpenSidebar={() => setIsSidebarVisible(true)}
-          facilityName={dynamicStaffUser.facilityName}
-        />
       ) : staffTab === 'settings' ? (
-        /* TAB 6: Cài đặt nhân viên */
+        /* MỤC 5: Cài đặt nhân viên & Giao ca */
         <StaffSettingsScreen
           currentUser={dynamicStaffUser}
-          onOpenSidebar={() => setIsSidebarVisible(true)}
+          onOpenSidebar={handleBackToHome}
           onSwitchToCustomer={handleSwitchToCustomerAndLogout}
         />
+      ) : staffTab === 'support' ? (
+        /* MỤC 4: Hỗ trợ & Xử lý sự cố tại chỗ (Tickets) */
+        <StaffSupportScreen
+          facilityId={dynamicStaffUser.facilityId}
+          facilityName={dynamicStaffUser.facilityName}
+          staffUser={dynamicStaffUser}
+          onOpenSidebar={handleBackToHome}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+        />
       ) : (
-        /* Các tab khác: Checkout / Support */
-        <View style={styles.otherTabContainer}>
-          <View style={styles.otherTabTopBar}>
-            <TouchableOpacity
-              style={styles.menuIconBtn}
-              onPress={() => setIsSidebarVisible(true)}
-            >
-              <Text style={{ color: '#fff', fontSize: 20 }}>☰</Text>
-            </TouchableOpacity>
-            <Text style={styles.otherTabTitle}>
-              {staffTab === 'checkout' ? '📤 TRẢ KHO / THANH LÝ' : '🛠️ HỖ TRỢ & SỰ CỐ'}
-            </Text>
-          </View>
-          <View style={styles.otherTabBody}>
-            <Text style={{ fontSize: 40, marginBottom: 10 }}>
-              {staffTab === 'checkout' ? '📤' : '🛠️'}
-            </Text>
-            <Text style={styles.otherTabHeadline}>
-              {staffTab === 'checkout'
-                ? 'Phân hệ Trả kho & Nghiệm thu hoàn cọc'
-                : 'Phân hệ Xử lý sự cố tại chỗ (Ticket)'}
-            </Text>
-            <Text style={styles.otherTabDesc}>
-              Tính năng đang kết nối với hệ thống Backend. Bạn có thể chuyển sang Hàng Đợi Nhận Kho (Luồng 2) để tiếp tục thao tác.
-            </Text>
-            <TouchableOpacity
-              style={styles.backToQueueActionBtn}
-              onPress={() => {
-                setStaffTab('queue');
-                setFlowStep('queue');
-              }}
-            >
-              <Text style={styles.backToQueueActionText}>Vào Hàng Đợi Nhận Kho (Luồng 2) →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        /* Fallback về Trang Home Nhân Viên */
+        <StaffDashboardScreen
+          appointments={appointments}
+          onNavigateTab={handleNavigateTab}
+          facilityName={dynamicStaffUser.facilityName}
+          currentUser={dynamicStaffUser}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+          onLogout={handleLogout}
+          onSwitchToCustomer={handleSwitchToCustomerAndLogout}
+          onRefresh={loadStaffData}
+          isRefreshing={isStaffLoading}
+        />
       )}
 
       {/* Quick Print Modal khi in lại ở Trang C */}

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   StyleSheet,
   Text,
@@ -7,303 +8,652 @@ import {
   TouchableOpacity,
   TextInput,
   RefreshControl,
+  Platform,
 } from 'react-native';
-import { CheckInAppointment } from '../../types/handover';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CheckInAppointment, StaffReturnOrder } from '../../types/handover';
+import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
 import { MaterialIcons } from '@expo/vector-icons';
+import SimpleReturnInspectionModal from '../../components/staff/SimpleReturnInspectionModal';
+
+// Mục lịch hợp nhất bao gồm cả Nhận kho và Trả kho
+export interface UnifiedScheduleItem {
+  id: string;
+  orderType: 'checkin' | 'checkout';
+  customerName: string;
+  phone: string;
+  assignedUnit: string;
+  unitSize?: string;
+  unitType?: string;
+  startDate: string; // DD/MM/YYYY
+  slotTime: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  specialNotes?: string;
+  rawCheckIn?: CheckInAppointment;
+  rawReturnOrder?: StaffReturnOrder;
+}
 
 interface CheckInQueueScreenProps {
   appointments: CheckInAppointment[];
   onStartHandover: (appointment: CheckInAppointment) => void;
+  returnOrders?: StaffReturnOrder[];
+  onOpenReturnOrder?: (order: StaffReturnOrder) => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
   facilityName?: string;
   onOpenSidebar: () => void;
   onOpenNotifications?: () => void;
   unreadNotifCount?: number;
+  initialTypeFilter?: 'all' | 'checkin' | 'checkout';
+}
+
+// Tên 7 thứ trong tuần tiếng Việt
+const DAY_NAMES = ['CN', 'THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7'];
+
+// Lấy thứ Hai đầu tuần của 1 ngày bất kỳ
+function getMonday(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+// Lấy 7 ngày trong tuần từ thứ Hai đến Chủ Nhật
+function getWeekDays(monday: Date): Date[] {
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const next = new Date(monday);
+    next.setDate(monday.getDate() + i);
+    days.push(next);
+  }
+  return days;
+}
+
+// Format DD/MM
+function formatDayMonth(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+}
+
+// Format DD/MM/YYYY
+function formatDateKey(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+// Kiểm tra có phải ngày hôm nay không
+function isTodayDate(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}
+
+// Chuẩn hóa chuỗi ngày của lịch hẹn về DD/MM/YYYY
+function normalizeAppointmentDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  const trimmed = dateStr.trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const [d, m, y] = trimmed.split('/');
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+  }
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return formatDateKey(parsed);
+    }
+  }
+  return trimmed;
 }
 
 export default function CheckInQueueScreen({
   appointments,
   onStartHandover,
+  returnOrders = INITIAL_RETURN_ORDERS,
+  onOpenReturnOrder,
   onRefresh,
   isRefreshing = false,
   facilityName = 'Trụ sở chính Thủ Đức',
   onOpenSidebar,
   onOpenNotifications,
   unreadNotifCount = 0,
+  initialTypeFilter = 'all',
 }: CheckInQueueScreenProps) {
+  const insets = useSafeAreaInsets();
+
+  // Tuần đang chọn (mặc định là thứ Hai của tuần hiện tại)
+  const [selectedMonday, setSelectedMonday] = useState<Date>(() => getMonday(new Date()));
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'slots' | 'kanban'>('slots');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'checkin' | 'checkout'>(initialTypeFilter);
 
-  // Thống kê nhanh
-  const stats = useMemo(() => {
-    return {
-      total: appointments.length,
-      pending: appointments.filter((a) => a.status === 'pending' || a.status === 'confirmed').length,
-      arrived: appointments.filter((a) => a.status === 'arrived').length,
-      in_progress: appointments.filter((a) => a.status === 'in_progress').length,
-      completed: appointments.filter((a) => a.status === 'completed').length,
-      cancelled: appointments.filter((a) => a.status === 'cancelled' || a.status === 'expired').length,
-    };
-  }, [appointments]);
+  // Quản lý Modal Nghiệm Thu Trả Kho (MỞ THẲNG MODAL TẠI CHỖ, KHÔNG CHUYỂN UI CŨ)
+  const [localReturnOrders, setLocalReturnOrders] = useState<StaffReturnOrder[]>(returnOrders);
+  const [selectedReturnOrder, setSelectedReturnOrder] = useState<StaffReturnOrder | null>(null);
+  const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
 
-  // Bộ lọc tìm kiếm
-  const filteredAppointments = useMemo(() => {
-    return appointments.filter((app) => {
-      const matchSearch =
-        searchQuery.trim() === '' ||
-        app.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.phone.includes(searchQuery) ||
-        app.assignedUnit.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.id.toLowerCase().includes(searchQuery.toLowerCase());
+  // Đồng bộ returnOrders kèm các cập nhật/mã PIN đã lưu và khôi phục modal nếu vừa quay lại từ App Ngân Hàng
+  React.useEffect(() => {
+    let isMounted = true;
+    async function syncSavedReturnState() {
+      const baseOrders = returnOrders && returnOrders.length > 0 ? returnOrders : INITIAL_RETURN_ORDERS;
+      const hydrated = await Promise.all(
+        baseOrders.map(async (ord) => {
+          try {
+            const savedOrdStr = await AsyncStorage.getItem(`return_order_state_${ord.id}`);
+            const savedPin = await AsyncStorage.getItem(`unit_smart_pin_${ord.unitCode}`);
+            let merged = { ...ord };
+            if (savedOrdStr) {
+              merged = { ...merged, ...JSON.parse(savedOrdStr) };
+            }
+            if (savedPin && savedPin.trim().length >= 4) {
+              merged.smartLockPin = savedPin.trim();
+            }
+            return merged;
+          } catch {
+            return ord;
+          }
+        })
+      );
+      if (!isMounted) return;
+      setLocalReturnOrders(hydrated);
 
-      const matchStatus =
-        selectedStatus === 'all'
-          ? true
-          : selectedStatus === 'cancelled'
-          ? app.status === 'cancelled' || app.status === 'expired'
-          : selectedStatus === 'pending'
-          ? app.status === 'pending' || app.status === 'confirmed'
-          : app.status === selectedStatus;
-
-      return matchSearch && matchStatus;
-    });
-  }, [appointments, searchQuery, selectedStatus]);
-
-  // Nhóm theo khung giờ
-  const groupedBySlot = useMemo(() => {
-    const groups: Record<string, CheckInAppointment[]> = {};
-    filteredAppointments.forEach((app) => {
-      const slot = app.slotTime || 'Khung giờ khác';
-      if (!groups[slot]) groups[slot] = [];
-      groups[slot].push(app);
-    });
-    return groups;
-  }, [filteredAppointments]);
-
-  // Helper render Badge (Tối giản, chuyên nghiệp, không dùng emoji thô)
-  const renderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#D97706' }]} />
-            <Text style={[styles.badgeText, { color: '#B45309' }]}>Chờ xử lý</Text>
-          </View>
-        );
-      case 'confirmed':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#0284C7' }]} />
-            <Text style={[styles.badgeText, { color: '#0369A1' }]}>Đã xác nhận</Text>
-          </View>
-        );
-      case 'arrived':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#2563EB' }]} />
-            <Text style={[styles.badgeText, { color: '#1D4ED8' }]}>Đã đến quầy</Text>
-          </View>
-        );
-      case 'in_progress':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#9333EA' }]} />
-            <Text style={[styles.badgeText, { color: '#7E22CE' }]}>Đang xử lý</Text>
-          </View>
-        );
-      case 'completed':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#16A34A' }]} />
-            <Text style={[styles.badgeText, { color: '#15803D' }]}>Đã bàn giao</Text>
-          </View>
-        );
-      case 'cancelled':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#DC2626' }]} />
-            <Text style={[styles.badgeText, { color: '#DC2626' }]}>Đã hủy</Text>
-          </View>
-        );
-      case 'expired':
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
-            <View style={[styles.badgeDot, { backgroundColor: '#64748B' }]} />
-            <Text style={[styles.badgeText, { color: '#64748B' }]}>Hết hạn</Text>
-          </View>
-        );
-      default:
-        return (
-          <View style={[styles.badge, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
-            <Text style={[styles.badgeText, { color: '#475569' }]}>{status}</Text>
-          </View>
-        );
+      // Nếu người dùng vừa chuyển qua app ngân hàng để thanh toán phụ thu thì mở lại đúng modal đơn đó
+      try {
+        const activeModalOrderId = await AsyncStorage.getItem('active_return_inspection_order_id');
+        if (activeModalOrderId && isMounted) {
+          const targetOrder = hydrated.find((o) => o.id === activeModalOrderId);
+          if (targetOrder) {
+            setSelectedReturnOrder(targetOrder);
+            setIsInspectionModalVisible(true);
+          }
+        }
+      } catch {}
     }
+    syncSavedReturnState();
+    return () => {
+      isMounted = false;
+    };
+  }, [returnOrders]);
+
+  // Tính 7 ngày trong tuần
+  const weekDays = useMemo(() => getWeekDays(selectedMonday), [selectedMonday]);
+  const sunday = useMemo(() => weekDays[6], [weekDays]);
+
+  // Điều hướng tuần
+  const handlePrevWeek = () => {
+    setSelectedMonday((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() - 7);
+      return next;
+    });
   };
 
-  // Helper render card theo phong cách Kanban chuẩn mực (nhỏ gọn, thanh lịch, chống tràn chữ 100%)
-  const renderAppointmentCard = (app: CheckInAppointment) => {
+  const handleNextWeek = () => {
+    setSelectedMonday((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + 7);
+      return next;
+    });
+  };
+
+  const handleGoToday = () => {
+    setSelectedMonday(getMonday(new Date()));
+  };
+
+  // ─── HỢP NHẤT DANH SÁCH NHẬN KHO VÀ TRẢ KHO TRÊN CÙNG LỊCH ───
+  const unifiedItems = useMemo(() => {
+    const today = new Date();
+    const todayFormatted = formatDateKey(today);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowFormatted = formatDateKey(tomorrow);
+
+    // 1. Chuyển đổi các đơn Nhận kho
+    const checkinList: UnifiedScheduleItem[] = appointments.map((app) => ({
+      id: `checkin-${app.id}`,
+      orderType: 'checkin',
+      customerName: app.customerName,
+      phone: app.phone,
+      assignedUnit: app.assignedUnit || 'A-101',
+      unitSize: app.unitSize,
+      unitType: app.unitType,
+      startDate: normalizeAppointmentDate(app.startDate) || todayFormatted,
+      slotTime: app.slotTime || '09:00 AM',
+      status: app.status === 'completed' ? 'completed' : app.status === 'in_progress' ? 'in_progress' : 'pending',
+      specialNotes: app.specialNotes,
+      rawCheckIn: app,
+    }));
+
+    // 2. Chuyển đổi các đơn Trả kho (gộp chung vào lịch với màu card khác biệt)
+    const checkoutList: UnifiedScheduleItem[] = localReturnOrders.map((ord, idx) => {
+      // Gán ngày trả kho: nếu là 'today' hoặc đã 'completed' hoặc 'TERMINATED' thì luôn gán ở ngày hôm nay (todayFormatted), không để bị nhảy về endDate cũ
+      let returnDateStr =
+        ord.returnType === 'today' || ord.returnType === 'completed' || ord.status === 'TERMINATED'
+          ? todayFormatted
+          : normalizeAppointmentDate(ord.endDate);
+      if (!returnDateStr) {
+        returnDateStr = idx % 2 === 0 ? todayFormatted : tomorrowFormatted;
+      }
+
+      return {
+        id: `checkout-${ord.id || ord.contractCode}`,
+        orderType: 'checkout',
+        customerName: ord.customerName,
+        phone: ord.phone,
+        assignedUnit: ord.unitCode,
+        unitSize: ord.unitSize,
+        unitType: ord.unitType || 'Kho Gia đình',
+        startDate: returnDateStr,
+        slotTime: idx % 2 === 0 ? '02:00 PM' : '10:30 AM',
+        status: ord.status === 'TERMINATED' || ord.returnType === 'completed' ? 'completed' : 'pending',
+        specialNotes: ord.notes || 'Hẹn trả ô kho & kiểm tra tài sản',
+        rawReturnOrder: ord,
+      };
+    });
+
+    return [...checkinList, ...checkoutList];
+  }, [appointments, localReturnOrders]);
+
+  // Lọc theo tìm kiếm và bộ lọc loại đơn (Tất cả / Nhận kho / Trả kho)
+  const filteredItems = useMemo(() => {
+    return unifiedItems.filter((item) => {
+      // Lọc theo loại
+      if (typeFilter !== 'all' && item.orderType !== typeFilter) {
+        return false;
+      }
+
+      // Lọc theo từ khóa tìm kiếm
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        item.customerName.toLowerCase().includes(query) ||
+        item.phone.includes(query) ||
+        item.assignedUnit.toLowerCase().includes(query) ||
+        item.id.toLowerCase().includes(query)
+      );
+    });
+  }, [unifiedItems, typeFilter, searchQuery]);
+
+  // Nhóm các mục lịch theo từng ngày trong tuần
+  const itemsByDay = useMemo(() => {
+    const map = new Map<string, UnifiedScheduleItem[]>();
+
+    weekDays.forEach((d) => {
+      map.set(formatDateKey(d), []);
+    });
+
+    filteredItems.forEach((item) => {
+      const dateKey = normalizeAppointmentDate(item.startDate);
+      if (map.has(dateKey)) {
+        map.get(dateKey)!.push(item);
+      }
+    });
+
+    return map;
+  }, [weekDays, filteredItems]);
+
+  // ─── RENDER CARD HỢP NHẤT: NHẬN KHO (XANH/TRẮNG) & TRẢ KHO (MÀU CAM NỔI BẬT) ───
+  const renderScheduleCard = (item: UnifiedScheduleItem) => {
+    const isCheckout = item.orderType === 'checkout';
+
+    // Tách giờ '1:00' và 'PM'
+    const timeParts = (item.slotTime || (isCheckout ? '02:00 PM' : '09:00 AM')).trim().split(/\s+/);
+    const timeMain = timeParts[0] || '1:00';
+    const timePeriod = timeParts[1] || 'PM';
+
+    // Nhãn kích thước kho
+    const unitSizeLabel = item.unitSize
+      ? item.unitSize.split(' ')[0]
+      : (item.unitType ? item.unitType.replace('Kho ', '') : 'Tiêu chuẩn');
+
+    const handleCardPress = () => {
+      if (isCheckout) {
+        // VÀO THẲNG MODAL NGHIỆM THU TRẢ KHO NGAY TẠI CHỖ (KỂ CẢ XEM LẠI / CHỈNH SỬA)
+        if (item.rawReturnOrder) {
+          setSelectedReturnOrder(item.rawReturnOrder);
+          setIsInspectionModalVisible(true);
+          AsyncStorage.setItem('active_return_inspection_order_id', item.rawReturnOrder.id).catch(() => null);
+        } else if (onOpenReturnOrder) {
+          onOpenReturnOrder(item.rawReturnOrder!);
+        }
+      } else {
+        if (item.rawCheckIn) {
+          onStartHandover(item.rawCheckIn);
+        }
+      }
+    };
+
     return (
-      <View key={app.id} style={styles.appointmentCard}>
-        {/* Hàng 1: Khung giờ bên trái + Ô kho & Badge trạng thái bên phải */}
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.slotBadge}>
-            <MaterialIcons name="schedule" size={12} color="#1D4ED8" />
-            <Text style={styles.slotBadgeText}>{app.slotTime}</Text>
-          </View>
-          <View style={styles.unitRightGroup}>
-            <Text style={styles.unitNumberText}>#{app.assignedUnit}</Text>
-            {renderStatusBadge(app.status)}
-          </View>
-        </View>
+      <TouchableOpacity
+        key={item.id}
+        style={[
+          styles.wCard,
+          isCheckout && styles.wCardCheckout, // Card trả kho có màu nền & viền khác biệt
+        ]}
+        onPress={handleCardPress}
+        activeOpacity={0.85}
+      >
+        {/* Thanh accent đứng bên trái: Nhận kho = Xanh dương; Nhận kho xong = Xanh lá; Trả kho = Cam đậm (luôn giữ cam) */}
+        <View
+          style={[
+            styles.wAccent,
+            isCheckout ? styles.wAccentCheckout : styles.wAccentCheckin,
+            !isCheckout && item.status === 'completed' && { backgroundColor: '#10B981' },
+            item.status === 'in_progress' && { backgroundColor: '#8B5CF6' },
+          ]}
+        />
 
-        {/* Hàng 2: Tên khách hàng & Số điện thoại */}
-        <View style={styles.cardCustomerSection}>
-          <Text style={styles.customerName} numberOfLines={1}>
-            {app.customerName}
-          </Text>
-          <View style={styles.customerPhoneRow}>
-            <MaterialIcons name="phone" size={12} color="#64748B" />
-            <Text style={styles.customerPhoneText}>{app.phone}</Text>
-          </View>
-        </View>
-
-        {/* Hàng 3: Hộp thông tin loại kho & thanh toán (chuẩn Kanban FE) */}
-        <View style={styles.unitInfoBox}>
-          <Text style={styles.unitTypeBoxText} numberOfLines={1}>
-            {app.unitType || 'Kho lưu trữ'}
-          </Text>
-          <View style={styles.paymentStatusGroup}>
-            <Text
-              style={[
-                styles.paymentStatusText,
-                { color: app.depositStatus === 'paid' ? '#15803D' : '#D97706' },
-              ]}
-            >
-              {app.depositStatus === 'paid' ? 'Đã cọc' : 'Chưa cọc'}
-            </Text>
-            <Text style={styles.paymentDot}>•</Text>
-            <Text
-              style={[
-                styles.paymentStatusText,
-                { color: app.rentalStatus === 'paid' ? '#15803D' : '#D97706' },
-              ]}
-            >
-              {app.rentalStatus === 'paid' ? 'Đã thu thuê' : 'Chưa thu thuê'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Ghi chú nhanh (nếu có) */}
-        {app.specialNotes ? (
-          <View style={styles.noteBox}>
-            <MaterialIcons name="notes" size={12} color="#D97706" />
-            <Text style={styles.noteText} numberOfLines={1}>
-              {app.specialNotes}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Hàng 4: Nút hành động */}
-        <View style={styles.cardActionRow}>
-          {app.status === 'completed' ? (
-            <View style={styles.completedTag}>
-              <MaterialIcons name="check" size={13} color="#15803D" />
-              <Text style={styles.completedTagText}>Đã bàn giao</Text>
+        <View style={styles.wBody}>
+          {/* Hàng 1: [NHẬN KHO / TRẢ KHO] (Trái) <───────────────────────────> 1:00 PM (Phải) */}
+          <View style={styles.wRow1}>
+            <View style={styles.badgeLabelRow}>
+              <View
+                style={[
+                  styles.orderTypeTag,
+                  isCheckout ? styles.orderTypeTagCheckout : styles.orderTypeTagCheckin,
+                ]}
+              >
+                <MaterialIcons
+                  name={isCheckout ? 'exit-to-app' : 'assignment-turned-in'}
+                  size={11}
+                  color={isCheckout ? '#C2410C' : '#1D4ED8'}
+                />
+                <Text
+                  style={[
+                    styles.orderTypeText,
+                    isCheckout ? styles.orderTypeTextCheckout : styles.orderTypeTextCheckin,
+                  ]}
+                >
+                  {isCheckout ? 'TRẢ KHO' : 'NHẬN KHO'}
+                </Text>
+              </View>
             </View>
-          ) : app.status === 'cancelled' ? (
-            <View style={styles.cancelledTag}>
-              <Text style={styles.cancelledTagText}>Đã hủy</Text>
-            </View>
-          ) : app.status === 'expired' ? (
-            <View style={styles.expiredTag}>
-              <Text style={styles.expiredTagText}>Quá hạn</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.startHandoverBtn,
-                app.status === 'in_progress' && styles.startHandoverBtnInProgress,
-              ]}
-              onPress={() => onStartHandover(app)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.startHandoverText}>
-                {app.status === 'in_progress' ? 'Tiếp tục bàn giao →' : 'Bắt đầu nhận kho →'}
+
+            <View style={styles.wTimeRow}>
+              <Text style={[styles.wTimeMain, isCheckout && { color: '#C2410C' }]}>
+                {timeMain}
               </Text>
-            </TouchableOpacity>
-          )}
+              <Text style={styles.wTimePeriod}>{timePeriod}</Text>
+            </View>
+          </View>
+
+          {/* Hàng 2: TÊN KHÁCH HÀNG (DÒNG RIÊNG BIỆT 100% CHIỀU RỘNG, KHÔNG BỊ CHÈN ÉP) */}
+          <View style={styles.wCustomerRow}>
+            <Text style={styles.wCustomerNameFull} numberOfLines={1}>
+              {item.customerName}
+            </Text>
+          </View>
+
+          {/* Hàng 3: TÊN KHO <─────────────────────> SĐT TO RÕ */}
+          <View style={styles.wRow3}>
+            <View style={styles.wTitleRow}>
+              <Text style={[styles.wTitle, isCheckout && { color: '#9A3412' }]} numberOfLines={1}>
+                {item.assignedUnit || 'A-101'}
+              </Text>
+              <Text style={styles.wTitleSub} numberOfLines={1}>
+                {unitSizeLabel}
+              </Text>
+            </View>
+
+            <Text style={styles.wBigPhone}>
+              {item.phone}
+            </Text>
+          </View>
+
+          {/* Hàng 4: GHI CHÚ (NẾU CÓ) <─────────────> NÚT THAO TÁC / TRẠNG THÁI */}
+          <View style={styles.wFooterRow}>
+            <View style={styles.wFooterLeft}>
+              {item.specialNotes ? (
+                <View style={[styles.wNoteBox, isCheckout && styles.wNoteBoxCheckout]}>
+                  <MaterialIcons
+                    name="notes"
+                    size={11}
+                    color={isCheckout ? '#EA580C' : '#D97706'}
+                  />
+                  <Text
+                    style={[styles.wNoteText, isCheckout && { color: '#9A3412' }]}
+                    numberOfLines={1}
+                  >
+                    {item.specialNotes}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.wFooterRight}>
+              {isCheckout ? (
+                /* ─── ĐƠN TRẢ KHO ─── */
+                item.status === 'completed' ? (
+                  /* ĐÃ TRẢ KHO: GIỮ NGUYÊN 2 Ô [ ĐÃ TRẢ KHO ] & [ CHỈNH SỬA ] (TẤT CẢ MÀU CAM ĐẶC TRƯNG) */
+                  <View style={styles.completedActionsGroup}>
+                    {/* Ô 1: Trạng thái Đã trả kho (giữ chữ Trả kho, màu cam) */}
+                    <View style={styles.completedBadgePillCheckout}>
+                      <MaterialIcons name="assignment-turned-in" size={13} color="#C2410C" />
+                      <Text style={styles.completedBadgeTextCheckout}>Đã trả kho</Text>
+                    </View>
+
+                    {/* Ô 2: Nút Chỉnh sửa (màu cam đặc trưng của Trả kho) */}
+                    <TouchableOpacity
+                      style={styles.editActionBtnCheckout}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleCardPress();
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons name="edit" size={12} color="#C2410C" />
+                      <Text style={styles.editActionTextCheckout}>Chỉnh sửa</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  /* CHƯA TRẢ KHO: Nút [ Nghiệm thu ] cam */
+                  <View
+                    style={[
+                      styles.wActionButton,
+                      styles.wActionButtonCheckout,
+                      item.status === 'in_progress' ? styles.wActionButtonInProgress : null,
+                    ]}
+                  >
+                    <Text style={styles.wActionText}>
+                      {item.status === 'in_progress' ? 'Tiếp tục' : 'Nghiệm thu'}
+                    </Text>
+                  </View>
+                )
+              ) : (
+                /* ─── ĐƠN NHẬN KHO ─── */
+                item.status === 'completed' ? (
+                  /* ĐÃ NHẬN KHO: 2 Ô: [ Hoàn thành ] (xanh lá) & [ Chỉnh sửa ] (xanh dương) */
+                  <View style={styles.completedActionsGroup}>
+                    <View style={styles.completedBadgePill}>
+                      <MaterialIcons name="check-circle" size={13} color="#16A34A" />
+                      <Text style={styles.completedBadgeText}>Hoàn thành</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.editActionBtn}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleCardPress();
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons name="edit" size={12} color="#004ac6" />
+                      <Text style={styles.editActionText}>Chỉnh sửa</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương */
+                  <View
+                    style={[
+                      styles.wActionButton,
+                      styles.wActionButtonCheckin,
+                      item.status === 'in_progress' ? styles.wActionButtonInProgress : null,
+                    ]}
+                  >
+                    <Text style={styles.wActionText}>
+                      {item.status === 'in_progress' ? 'Tiếp tục' : 'Nhận kho'}
+                    </Text>
+                  </View>
+                )
+              )}
+            </View>
+          </View>
         </View>
-      </View>
-    );
+      </TouchableOpacity>    );
   };
 
   return (
     <View style={styles.container}>
-      {/* ─── Top Bar Header (Gọn gàng, loại bỏ các thanh phụ cồng kềnh) ─── */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarMainRow}>
+      {/* ─── Top Bar Header Xanh Dương Chuẩn Thương Hiệu (Safe Area chống tràn) ─── */}
+      <View
+        style={[
+          styles.blueHeader,
+          {
+            paddingTop: insets.top > 0 ? insets.top + 8 : 16,
+          },
+        ]}
+      >
+        <View style={styles.headerRow}>
+          {/* Nút quay lại Trang Home Nhân Viên */}
           <TouchableOpacity
-            style={styles.sidebarToggleBtn}
+            style={styles.headerIconButton}
             onPress={onOpenSidebar}
             activeOpacity={0.7}
           >
-            <MaterialIcons name="menu" size={22} color="#0F172A" />
+            <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <View style={styles.topBarTitleCol}>
-            <Text style={styles.topBarFacility} numberOfLines={1}>
+          {/* Tiêu đề đã đổi tên bao quát cả Nhận & Trả kho */}
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitleText}>Lịch nhận & trả kho</Text>
+            <Text style={styles.headerSubFacility} numberOfLines={1}>
               {facilityName}
-            </Text>
-            <Text style={styles.topBarTitle} numberOfLines={1}>
-              Hàng đợi nhận kho
             </Text>
           </View>
 
-          {/* Nút chuyển đổi giao diện Khung Giờ / Kanban ngay trên TopBar */}
-          <TouchableOpacity
-            style={styles.viewModeTopBtn}
-            onPress={() => setViewMode(viewMode === 'slots' ? 'kanban' : 'slots')}
-            activeOpacity={0.75}
-          >
-            <MaterialIcons
-              name={viewMode === 'slots' ? 'view-kanban' : 'schedule'}
-              size={18}
-              color="#1D4ED8"
-            />
-            <Text style={styles.viewModeTopText}>
-              {viewMode === 'slots' ? 'Kanban' : 'Khung giờ'}
-            </Text>
-          </TouchableOpacity>
-
-          {onOpenNotifications && (
-            <TouchableOpacity
-              style={styles.notifBtn}
-              onPress={onOpenNotifications}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="notifications-none" size={20} color="#0F172A" />
-              {unreadNotifCount > 0 ? (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>
-                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
-                  </Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          )}
+          <View style={styles.headerActions}>
+            {onOpenNotifications && (
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={onOpenNotifications}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="notifications-none" size={24} color="#FFFFFF" />
+                {unreadNotifCount > 0 && (
+                  <View style={styles.headerBadge}>
+                    <Text style={styles.headerBadgeText}>
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* Thanh Tìm Kiếm Tối Giản */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBox}>
-          <MaterialIcons name="search" size={18} color="#64748B" />
+      {/* ─── Thanh điều hướng Tuần & Bộ lọc loại đơn [Tất cả / Nhận kho / Trả kho] ─── */}
+      <View style={styles.navBarCard}>
+        {/* Hàng trên: Nút [Hôm nay] + Mũi tên < > & Tiêu đề Tháng */}
+        <View style={styles.weekNavInner}>
+          <View style={styles.leftNavGroup}>
+            <TouchableOpacity
+              style={styles.todayPillBtn}
+              onPress={handleGoToday}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.todayPillText}>Hôm nay</Text>
+            </TouchableOpacity>
+
+            <View style={styles.arrowGroup}>
+              <TouchableOpacity
+                style={styles.arrowBtn}
+                onPress={handlePrevWeek}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="chevron-left" size={22} color="#1D4ED8" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.arrowBtn}
+                onPress={handleNextWeek}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="chevron-right" size={22} color="#1D4ED8" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.monthCenterCol}>
+            <Text style={styles.monthTitle}>
+              Tháng {selectedMonday.getMonth() + 1} {selectedMonday.getFullYear()}
+            </Text>
+            <Text style={styles.dateRangeSubtitle}>
+              {formatDayMonth(selectedMonday)} - {formatDayMonth(sunday)}
+            </Text>
+          </View>
+
+          {/* Khoảng trống cân đối */}
+          <View style={styles.rightNavPlaceholder} />
+        </View>
+
+        {/* Hàng giữa: 3 nút lọc nhanh [Tất cả] [Nhận kho] [Trả kho] */}
+        <View style={styles.filterPillRow}>
+          <TouchableOpacity
+            style={[styles.filterPill, typeFilter === 'all' && styles.filterPillActive]}
+            onPress={() => setTypeFilter('all')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.filterPillText, typeFilter === 'all' && styles.filterPillTextActive]}>
+              Tất cả
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterPill, typeFilter === 'checkin' && styles.filterPillActiveCheckin]}
+            onPress={() => setTypeFilter('checkin')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.dotCheckin} />
+            <Text
+              style={[
+                styles.filterPillText,
+                typeFilter === 'checkin' && styles.filterPillTextActiveCheckin,
+              ]}
+            >
+              Nhận kho
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterPill, typeFilter === 'checkout' && styles.filterPillActiveCheckout]}
+            onPress={() => setTypeFilter('checkout')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.dotCheckout} />
+            <Text
+              style={[
+                styles.filterPillText,
+                typeFilter === 'checkout' && styles.filterPillTextActiveCheckout,
+              ]}
+            >
+              Trả kho
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Hàng dưới: Thanh tìm kiếm nhanh */}
+        <View style={styles.searchRow}>
+          <MaterialIcons name="search" size={17} color="#64748B" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm tên khách, SĐT, số ô kho..."
+            placeholder="Tìm theo tên khách, SĐT hoặc số ô kho..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -316,120 +666,99 @@ export default function CheckInQueueScreen({
         </View>
       </View>
 
-      {/* Thống kê / Bộ lọc trạng thái tinh gọn */}
-      <View style={styles.filterBarWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statContainer}>
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'all' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('all')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'all' && styles.statLabelActive]}>
-              Tất cả ({stats.total})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'pending' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('pending')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'pending' && styles.statLabelActive]}>
-              Chờ ({stats.pending})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'arrived' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('arrived')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'arrived' && styles.statLabelActive]}>
-              Đã đến ({stats.arrived})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'in_progress' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('in_progress')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'in_progress' && styles.statLabelActive]}>
-              Đang xử lý ({stats.in_progress})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.statPill, selectedStatus === 'completed' && styles.statPillActive]}
-            onPress={() => setSelectedStatus('completed')}
-          >
-            <Text style={[styles.statLabel, selectedStatus === 'completed' && styles.statLabelActive]}>
-              Hoàn tất ({stats.completed})
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* Danh Sách Hàng Đợi */}
+      {/* ─── DANH SÁCH LỊCH 7 NGÀY THEO TUẦN ─── */}
       <ScrollView
-        style={styles.listScroll}
-        contentContainerStyle={styles.listPadding}
+        style={styles.calendarScrollView}
+        contentContainerStyle={[
+          styles.calendarContent,
+          { paddingBottom: insets.bottom > 0 ? insets.bottom + 24 : 36 },
+        ]}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          onRefresh ? <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} /> : undefined
+          onRefresh ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#1D4ED8"
+              colors={['#1D4ED8']}
+            />
+          ) : undefined
         }
       >
-        {filteredAppointments.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <MaterialIcons name="inbox" size={40} color="#CBD5E1" style={{ marginBottom: 6 }} />
-            <Text style={styles.emptyTitle}>Không có đơn hẹn</Text>
-            <Text style={styles.emptyDesc}>
-              {searchQuery ? 'Thử tìm với từ khóa khác' : 'Hôm nay chưa có đơn hẹn nhận kho mới.'}
-            </Text>
-          </View>
-        ) : viewMode === 'slots' ? (
-          // CHẾ ĐỘ XEM THEO KHUNG GIỜ
-          Object.entries(groupedBySlot).map(([slot, items]) => (
-            <View key={slot} style={styles.slotGroup}>
-              <View style={styles.slotHeader}>
-                <View style={styles.slotTimeBadge}>
-                  <MaterialIcons name="schedule" size={12} color="#64748B" />
-                  <Text style={styles.slotTimeText}>{slot}</Text>
-                </View>
-                <Text style={styles.slotCountText}>{items.length} khách</Text>
+        {weekDays.map((dayDate) => {
+          const dateKey = formatDateKey(dayDate);
+          const dayItems = itemsByDay.get(dateKey) || [];
+          const isToday = isTodayDate(dayDate);
+          const dayIndex = dayDate.getDay();
+          const dayNameLabel = DAY_NAMES[dayIndex];
+          const dayNumberStr = String(dayDate.getDate());
+
+          return (
+            <View
+              key={dateKey}
+              style={[
+                styles.dayTimelineRow,
+                isToday && styles.dayTimelineRowToday,
+              ]}
+            >
+              {/* Cột trái: Thứ & Số ngày & Badge HÔM NAY */}
+              <View style={styles.dayLeftCol}>
+                <Text
+                  style={[
+                    styles.dayOfWeekText,
+                    isToday && styles.dayOfWeekTextToday,
+                  ]}
+                >
+                  {dayNameLabel}
+                </Text>
+
+                {isToday ? (
+                  <View style={styles.todayBlueCircle}>
+                    <Text style={styles.todayCircleText}>{dayNumberStr}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.normalDayNumber}>{dayNumberStr}</Text>
+                )}
+
+                {isToday ? (
+                  <View style={styles.todayBadgePill}>
+                    <Text style={styles.todayBadgePillText}>HÔM NAY</Text>
+                  </View>
+                ) : null}
               </View>
 
-              {items.map((app) => renderAppointmentCard(app))}
-            </View>
-          ))
-        ) : (
-          // CHẾ ĐỘ KANBAN THEO CỘT
-          <View style={styles.kanbanContainer}>
-            {['pending', 'arrived', 'in_progress', 'completed'].map((colStatus) => {
-              const colItems = filteredAppointments.filter((a) => {
-                if (colStatus === 'pending') return a.status === 'pending' || a.status === 'confirmed';
-                return a.status === colStatus;
-              });
-              const colTitle =
-                colStatus === 'pending' ? 'Chờ xử lý' :
-                colStatus === 'arrived' ? 'Đã đến quầy' :
-                colStatus === 'in_progress' ? 'Đang xử lý' : 'Đã bàn giao';
-
-              return (
-                <View key={colStatus} style={styles.kanbanCol}>
-                  <View style={styles.kanbanColHeader}>
-                    <Text style={styles.kanbanColTitle}>{colTitle}</Text>
-                    <View style={styles.kanbanColCount}>
-                      <Text style={styles.kanbanColCountText}>{colItems.length}</Text>
-                    </View>
+              {/* Cột phải: Danh sách đơn nhận & trả kho với màu sắc card riêng biệt */}
+              <View style={styles.dayRightCol}>
+                {dayItems.length === 0 ? (
+                  <View style={styles.emptyDayWrap}>
+                    <Text style={styles.emptyDayText}>Trống lịch hẹn</Text>
                   </View>
-
-                  {colItems.length === 0 ? (
-                    <Text style={styles.kanbanColEmpty}>Không có đơn nào</Text>
-                  ) : (
-                    colItems.map((app) => renderAppointmentCard(app))
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
+                ) : (
+                  dayItems.map((item) => renderScheduleCard(item))
+                )}
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
+
+      {/* ─── MODAL NGHIỆM THU TRẢ KHO TRỰC TIẾP (TINH GỌN, ÍT CHỮ) ─── */}
+      <SimpleReturnInspectionModal
+        visible={isInspectionModalVisible}
+        onClose={() => {
+          setIsInspectionModalVisible(false);
+          AsyncStorage.removeItem('active_return_inspection_order_id').catch(() => null);
+        }}
+        order={selectedReturnOrder}
+        onSuccess={(updatedOrder) => {
+          setSelectedReturnOrder(updatedOrder);
+          setLocalReturnOrders((prev) =>
+            prev.map((ord) => (ord.id === updatedOrder.id ? updatedOrder : ord))
+          );
+          AsyncStorage.setItem(`return_order_state_${updatedOrder.id}`, JSON.stringify(updatedOrder)).catch(() => null);
+          AsyncStorage.removeItem('active_return_inspection_order_id').catch(() => null);
+        }}
+      />
     </View>
   );
 }
@@ -439,78 +768,53 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  topBar: {
-    backgroundColor: '#FFFFFF',
+
+  // Header xanh dương chuẩn thương hiệu
+  blueHeader: {
+    backgroundColor: '#1D4ED8',
     paddingHorizontal: 16,
-    paddingTop: 12,
     paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
   },
-  topBarMainRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
   },
-  sidebarToggleBtn: {
+  headerIconButton: {
     width: 38,
     height: 38,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topBarTitleCol: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  topBarFacility: {
-    color: '#1D4ED8',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  topBarTitle: {
-    color: '#0F172A',
-    fontSize: 17,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-    marginTop: 1,
-  },
-  viewModeTopBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  viewModeTopText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1D4ED8',
-  },
-  notifBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     position: 'relative',
   },
-  notifBadge: {
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleText: {
+    fontSize: 17.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  headerSubFacility: {
+    fontSize: 11,
+    color: '#BFDBFE',
+    marginTop: 1,
+    fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerBadge: {
     position: 'absolute',
-    top: -3,
-    right: -3,
+    top: -2,
+    right: -2,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -521,346 +825,502 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  notifBadgeText: {
+  headerBadgeText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
   },
-  searchSection: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    backgroundColor: '#FFFFFF',
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 38,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  filterBarWrapper: {
+
+  // Thanh điều hướng tuần
+  navBarCard: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingTop: 8,
     paddingBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  statContainer: {
-    paddingHorizontal: 16,
-    gap: 6,
+  weekNavInner: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  statPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
+  leftNavGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  todayPillBtn: {
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 12,
   },
-  statPillActive: {
-    borderColor: '#1D4ED8',
+  todayPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  arrowGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    paddingHorizontal: 1,
+  },
+  arrowBtn: {
+    padding: 3,
+  },
+  monthCenterCol: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dateRangeSubtitle: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  rightNavPlaceholder: {
+    width: 90,
+  },
+
+  // Bộ lọc loại đơn [Tất cả] [Nhận kho] [Trả kho]
+  filterPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+  },
+  filterPillActive: {
+    backgroundColor: '#1E293B',
+  },
+  filterPillActiveCheckin: {
     backgroundColor: '#1D4ED8',
   },
-  statLabel: {
+  filterPillActiveCheckout: {
+    backgroundColor: '#EA580C',
+  },
+  filterPillText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#64748B',
   },
-  statLabelActive: {
+  filterPillTextActive: {
     color: '#FFFFFF',
   },
-  listScroll: {
-    flex: 1,
+  filterPillTextActiveCheckin: {
+    color: '#FFFFFF',
   },
-  listPadding: {
-    padding: 14,
-    paddingBottom: 40,
+  filterPillTextActiveCheckout: {
+    color: '#FFFFFF',
   },
-  slotGroup: {
-    marginBottom: 16,
-  },
-  slotHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 2,
-  },
-  slotTimeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  slotTimeText: {
-    color: '#475569',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  slotCountText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  appointmentCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  slotBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  slotBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  unitRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  unitNumberText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#1D4ED8',
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  badgeDot: {
+  dotCheckin: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    backgroundColor: '#2563EB',
   },
-  badgeText: {
-    fontSize: 10.5,
+  dotCheckout: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EA580C',
+  },
+
+  // Thanh tìm kiếm
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 34,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#0F172A',
+  },
+
+  // Danh sách lịch theo ngày (Daily timeline)
+  calendarScrollView: {
+    flex: 1,
+  },
+  calendarContent: {
+    paddingTop: 2,
+  },
+  dayTimelineRow: {
+    flexDirection: 'row',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 2,
+  },
+  dayTimelineRowToday: {
+    backgroundColor: '#F8FAFC',
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#1D4ED8',
+  },
+  dayLeftCol: {
+    width: 54,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  dayOfWeekText: {
+    fontSize: 9.5,
     fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 3,
+    textTransform: 'uppercase',
   },
-  cardCustomerSection: {
-    marginBottom: 8,
+  dayOfWeekTextToday: {
+    color: '#1D4ED8',
+    fontWeight: '900',
   },
-  customerName: {
-    fontSize: 14.5,
+  normalDayNumber: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  todayBlueCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#1D4ED8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayCircleText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  todayBadgePill: {
+    marginTop: 3,
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 4,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  todayBadgePillText: {
+    fontSize: 7.5,
+    fontWeight: '900',
+    color: '#1D4ED8',
+    letterSpacing: 0.3,
+  },
+
+  // Cột phải: chứa các card
+  dayRightCol: {
+    flex: 1,
+    paddingLeft: 6,
+  },
+  emptyDayWrap: {
+    paddingVertical: 12,
+    justifyContent: 'center',
+  },
+  emptyDayText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+
+  // ─── STYLES CARD NHẬN KHO (NỀN TRẮNG, VIỀN XANH) ───
+  wCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingTop: 8,
+    paddingBottom: 7,
+    paddingLeft: 9,
+    paddingRight: 10,
+    marginBottom: 6,
+    shadowColor: '#1E293B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  // ─── STYLES CARD TRẢ KHO (MÀU CARD KHÁC: NỀN CAM NHẠT, VIỀN CAM HỔ PHÁCH) ───
+  wCardCheckout: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  wAccent: {
+    width: 3,
+    borderRadius: 1.5,
+    marginRight: 9,
+    alignSelf: 'stretch',
+    marginVertical: 1,
+  },
+  wAccentCheckin: {
+    backgroundColor: '#2563EB',
+  },
+  wAccentCheckout: {
+    backgroundColor: '#EA580C',
+  },
+  wBody: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  wRow1: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  badgeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  orderTypeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  orderTypeTagCheckin: {
+    backgroundColor: '#EFF6FF',
+  },
+  orderTypeTagCheckout: {
+    backgroundColor: '#FFEDD5',
+  },
+  orderTypeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  orderTypeTextCheckin: {
+    color: '#1D4ED8',
+  },
+  orderTypeTextCheckout: {
+    color: '#C2410C',
+  },
+
+  wTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  wTimeMain: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#18181B',
+    letterSpacing: -0.3,
+  },
+  wTimePeriod: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#71717A',
+    marginLeft: 2.5,
+  },
+  // Hàng 2: Tên khách hàng riêng 1 dòng full-width
+  wCustomerRow: {
+    marginTop: 3,
+    marginBottom: 2,
+  },
+  wCustomerNameFull: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.2,
   },
-  customerPhoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  customerPhoneText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  unitInfoBox: {
+
+  // Hàng 3: Ô kho & Số điện thoại
+  wRow3: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    marginBottom: 8,
+    marginTop: 2,
   },
-  unitTypeBoxText: {
-    fontSize: 11.5,
-    fontWeight: '600',
+  wTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+    flex: 1,
+    marginRight: 6,
+  },
+  wTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
     color: '#334155',
+    letterSpacing: -0.2,
+  },
+  wTitleSub: {
+    fontSize: 10.5,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  wBigPhone: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.2,
+  },
+
+  // Hàng 4: Hàng footer chứa ghi chú & cụm nút hành động / trạng thái
+  wFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    minHeight: 26,
+  },
+  wFooterLeft: {
     flex: 1,
     marginRight: 8,
   },
-  paymentStatusGroup: {
+  wFooterRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+
+  // Ghi chú nhanh
+  wNoteBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  paymentStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  paymentDot: {
-    fontSize: 10,
-    color: '#CBD5E1',
-  },
-  noteBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     backgroundColor: '#FFFBEB',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
     borderWidth: 1,
     borderColor: '#FEF3C7',
-    marginBottom: 8,
   },
-  noteText: {
-    fontSize: 11,
+  wNoteBoxCheckout: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FFEDD5',
+  },
+  wNoteText: {
+    fontSize: 9.5,
     color: '#92400E',
     flex: 1,
   },
-  cardActionRow: {
+
+  // Cụm hành động / Trạng thái
+  completedActionsGroup: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F8FAFC',
-    paddingTop: 8,
+    gap: 6,
   },
-  startHandoverBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  startHandoverBtnInProgress: {
-    backgroundColor: '#7E22CE',
-  },
-  startHandoverText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 11.5,
-  },
-  completedTag: {
+  completedBadgePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  completedTagText: {
-    color: '#15803D',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cancelledTag: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  cancelledTagText: {
-    color: '#DC2626',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  expiredTag: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  expiredTagText: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  kanbanContainer: {
-    gap: 12,
-  },
-  kanbanCol: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#F0FDF4',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  kanbanColHeader: {
+  completedBadgePillCheckout: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  kanbanColTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  kanbanColCount: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  kanbanColCountText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#475569',
-  },
-  kanbanColEmpty: {
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-    paddingVertical: 14,
-  },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 28,
-    alignItems: 'center',
-    marginTop: 30,
+    gap: 4,
+    backgroundColor: '#FFEDD5',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#FDBA74',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  emptyTitle: {
-    fontSize: 14,
+  completedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  completedBadgeTextCheckout: {
+    fontSize: 11,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#C2410C',
   },
-  emptyDesc: {
-    fontSize: 11.5,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 2,
+  editActionBtnCheckout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editActionTextCheckout: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#C2410C',
+  },
+  editActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#004ac6',
+  },
+  wActionButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  wActionButtonCheckin: {
+    backgroundColor: '#2563EB',
+  },
+  wActionButtonCheckout: {
+    backgroundColor: '#EA580C',
+  },
+  wActionButtonInProgress: {
+    backgroundColor: '#7C3AED',
+  },
+  wActionButtonDone: {
+    backgroundColor: '#DCFCE7',
+  },
+  wActionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  wActionTextDone: {
+    color: '#15803D',
   },
 });
