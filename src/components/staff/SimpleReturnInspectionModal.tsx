@@ -50,7 +50,6 @@ const DEFAULT_SURCHARGE_ITEMS: SurchargeItem[] = [
   { id: 'cleaning', label: 'Vệ sinh / dọn rác trong kho', price: 50000 },
   { id: 'scratches', label: 'Trầy xước vách hoặc sàn kho', price: 100000 },
   { id: 'door_lock', label: 'Hỏng tay nắm / chốt khóa', price: 200000 },
-  { id: 'late_fee', label: 'Trả kho trễ hẹn quá giờ quy định', price: 100000 },
   { id: 'custom', label: 'Phụ thu phát sinh khác', price: 0 },
 ];
 
@@ -80,6 +79,8 @@ export default function SimpleReturnInspectionModal({
 
   // Danh mục phụ thu lấy từ Backend (do Facility Manager cấu hình)
   const [surchargeList, setSurchargeList] = useState<SurchargeItem[]>(DEFAULT_SURCHARGE_ITEMS);
+  // Đơn giá phạt trễ hẹn mỗi ngày do Manager quy định (mặc định 50k/ngày, tối đa 30 ngày)
+  const [lateFeePerDay, setLateFeePerDay] = useState<number>(50000);
 
   // Thông tin thanh toán SePay VietQR động
   const [sepayPayment, setSepayPayment] = useState<{
@@ -107,14 +108,30 @@ export default function SimpleReturnInspectionModal({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
 
-    // Tải danh mục loại phụ thu từ Backend (do Facility Manager quản lý)
+  // Tải danh mục loại phụ thu từ Backend (do Facility Manager quản lý)
   useEffect(() => {
     let isMounted = true;
     async function loadFeeTypes() {
       try {
         const types = await fetchFeeTypesApi();
         if (isMounted && Array.isArray(types) && types.length > 0) {
-          const activeTypes = types.filter((t) => t.status !== 'INACTIVE');
+          // 1. Tìm đơn giá phạt trễ hẹn theo ngày do Manager cấu hình
+          const lateType = types.find(
+            (t) => t.code === 'LATE_FEE' || t.code === 'LATE_RETURN' || t.code === 'LATE_RETURN_FEE'
+          );
+          if (lateType && typeof lateType.defaultAmount === 'number') {
+            setLateFeePerDay(lateType.defaultAmount);
+          }
+
+          // 2. Danh mục checklist (loại bỏ LATE_FEE vì đã tính riêng theo số ngày trễ hẹn)
+          const activeTypes = types.filter(
+            (t) =>
+              t.status !== 'INACTIVE' &&
+              t.code !== 'LATE_FEE' &&
+              t.code !== 'LATE_RETURN' &&
+              t.code !== 'LATE_RETURN_FEE' &&
+              t.code !== 'CUSTOM'
+          );
           const dynamicItems: SurchargeItem[] = activeTypes.map((t) => ({
             id: t.code || t.id,
             label: t.name,
@@ -148,6 +165,41 @@ export default function SimpleReturnInspectionModal({
     // 1. Lấy đúng mã PIN hiện tại của ô kho từ DB (tuyệt đối KHÔNG sinh ngẫu nhiên khi mở modal)
     const defaultDbPin = order.smartLockPin || BE_UNIT_PIN_MAP[order.unitCode] || '821301';
     setNewSmartPin(defaultDbPin);
+
+    // 1.1. Cấu hình biểu phí phạt theo từng loại kho (Unit Type):
+    // Kho Mini (<6m²): 50.000 đ/ngày trễ, 50k vệ sinh, 100k hư hại
+    // Kho Tiêu chuẩn (6-12m²): 75.000 đ/ngày trễ, 70k vệ sinh, 150k hư hại
+    // Kho Lớn / Doanh nghiệp (>12m²): 100.000 đ/ngày trễ, 100k vệ sinh, 200k hư hại
+    const sizeNum = parseFloat(order.unitSize || '5') || 5;
+    let unitLateRate = 50000;
+    let unitCleanRate = 50000;
+    let unitDamageRate = 100000;
+
+    if (sizeNum > 12 || (order.unitType && /doanh nghiệp|lớn|large/i.test(order.unitType))) {
+      unitLateRate = 100000;
+      unitCleanRate = 100000;
+      unitDamageRate = 200000;
+    } else if (sizeNum >= 6 || (order.unitType && /tiêu chuẩn|standard/i.test(order.unitType))) {
+      unitLateRate = 75000;
+      unitCleanRate = 70000;
+      unitDamageRate = 150000;
+    }
+
+    const combinedDesc = `${order.notes || ''} ${order.handoverCondition || ''}`;
+    const penaltyMatch = combinedDesc.match(/\[PENALTY:\s*lateFeePerDay=(\d+),\s*cleaningFee=(\d+),\s*damageFee=(\d+)\]/i);
+    if (penaltyMatch) {
+      unitLateRate = parseInt(penaltyMatch[1], 10) || unitLateRate;
+      unitCleanRate = parseInt(penaltyMatch[2], 10) || unitCleanRate;
+      unitDamageRate = parseInt(penaltyMatch[3], 10) || unitDamageRate;
+    }
+
+    setLateFeePerDay(unitLateRate);
+    setSurchargeList([
+      { id: 'cleaning', label: `Vệ sinh kho (${order.unitType || 'Tiêu chuẩn'})`, price: unitCleanRate },
+      { id: 'scratches', label: 'Trầy xước vách hoặc sàn kho', price: unitDamageRate },
+      { id: 'door_lock', label: 'Hỏng tay nắm / chốt khóa', price: 200000 },
+      { id: 'custom', label: 'Phụ thu phát sinh khác', price: 0 },
+    ]);
 
     AsyncStorage.getItem(`unit_smart_pin_${order.unitCode}`)
       .then((savedPin) => {
@@ -248,7 +300,10 @@ export default function SimpleReturnInspectionModal({
     ? parseInt(customSurchargeAmount.replace(/\D/g, '') || '0', 10)
     : 0;
 
-  const totalSurcharge = checkedBaseAmount + customAmountNum + (order?.overdueFine || 0);
+  // Tính số ngày trễ hẹn (tối đa 30 ngày trước khi thanh lý kho) & tiền phạt trễ hẹn theo đơn giá Manager quy định
+  const effectiveOverdueDays = Math.min(order?.overdueDays || 0, 30);
+  const calculatedOverdueFine = effectiveOverdueDays * lateFeePerDay;
+  const totalSurcharge = checkedBaseAmount + customAmountNum + calculatedOverdueFine;
 
   // Cấu hình tài khoản ngân hàng thụ hưởng VietQR
   const bankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
@@ -525,9 +580,14 @@ export default function SimpleReturnInspectionModal({
         .filter(Boolean)
         .join(', ');
 
+      const overdueDetail = effectiveOverdueDays > 0
+        ? `Trễ ${effectiveOverdueDays} ngày (Đơn giá ${formatVND(lateFeePerDay)}/ngày): ${formatVND(calculatedOverdueFine)}`
+        : '';
+      const combinedSurcharges = [overdueDetail, surchargeDetails].filter(Boolean).join(', ');
+
       const checkoutNote = `Nghiệm thu trả kho hoàn tất. Mã PIN mới: ${newSmartPin}.${
         totalSurcharge > 0
-          ? ` Phụ phí: ${formatVND(totalSurcharge)} [${surchargeDetails}] - HT: ${
+          ? ` Phụ phí: ${formatVND(totalSurcharge)} [${combinedSurcharges}] - HT: ${
               paymentMethod === 'qr' ? 'VietQR' : 'Tiền mặt'
             } (Đã thu).`
           : ' Không phát sinh phụ phí.'
@@ -539,8 +599,8 @@ export default function SimpleReturnInspectionModal({
         condition: conditionText,
         notes: checkoutNote,
         photos: uploadedPhotoUrls,
-        actualOverdueDays: order.overdueDays || 0,
-        actualOverdueFine: order.overdueFine || 0,
+        actualOverdueDays: effectiveOverdueDays,
+        actualOverdueFine: calculatedOverdueFine,
         damageFineAmount: totalSurcharge,
         actualRefundAmount: 0,
         targetUnitStatus: 'AVAILABLE',
@@ -558,6 +618,7 @@ export default function SimpleReturnInspectionModal({
         status: 'TERMINATED',
         returnType: 'completed',
         smartLockPin: cleanPin,
+        overdueFine: calculatedOverdueFine,
         extraChargesTotal: totalSurcharge,
         returnPhotos:
           uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : returnPhotos.map((p) => p.uri),
@@ -802,9 +863,48 @@ export default function SimpleReturnInspectionModal({
               placeholderTextColor="#94A3B8"
             />
 
+            {/* ─── 4.5. PHÍ PHẠT TRỄ HẸN TRẢ KHO (THEO NGÀY DO QUẢN LÝ QUY ĐỊNH) ─── */}
+            <View style={[styles.overdueCard, effectiveOverdueDays > 0 ? styles.overdueCardWarning : styles.overdueCardOnTime]}>
+              <View style={styles.overdueTopRow}>
+                <View style={styles.overdueTitleGroup}>
+                  <MaterialIcons
+                    name={effectiveOverdueDays > 0 ? 'warning-amber' : 'verified'}
+                    size={18}
+                    color={effectiveOverdueDays > 0 ? '#D97706' : '#059669'}
+                  />
+                  <Text style={[styles.overdueMainTitle, effectiveOverdueDays > 0 ? styles.overdueMainTitleWarning : styles.overdueMainTitleOnTime]}>
+                    {effectiveOverdueDays > 0 ? `TRỄ HẸN: ${effectiveOverdueDays} NGÀY` : 'BÀN GIAO ĐÚNG HẠN'}
+                  </Text>
+                </View>
+                <View style={[styles.overdueDaysBadge, effectiveOverdueDays > 0 ? styles.overdueDaysBadgeWarning : styles.overdueDaysBadgeOnTime]}>
+                  <Text style={[styles.overdueDaysBadgeText, effectiveOverdueDays > 0 ? styles.overdueDaysBadgeTextWarning : styles.overdueDaysBadgeTextOnTime]}>
+                    {effectiveOverdueDays > 0 ? 'Quá hạn (Tối đa 30 ngày)' : 'Đúng hạn'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.overdueBodyRow}>
+                <Text style={styles.overdueRateNote}>
+                  Đơn giá loại kho ({order?.unitType || 'Tiêu chuẩn'}): <Text style={{ fontWeight: '700', color: '#1E293B' }}>{formatVND(lateFeePerDay)}/ngày</Text>
+                </Text>
+                {effectiveOverdueDays > 0 ? (
+                  <View style={styles.overdueTotalWrap}>
+                    <Text style={styles.overdueMathLabel}>
+                      ${effectiveOverdueDays} ngày × ${formatVND(lateFeePerDay)} =
+                    </Text>
+                    <Text style={styles.overdueFineTotalText}>
+                      +${formatVND(calculatedOverdueFine)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.overdueZeroText}>+0 đ</Text>
+                )}
+              </View>
+            </View>
+
             {/* ─── 5. PHỤ THU THEO DẠNG TICK (CHECKLIST) ─── */}
             <View style={styles.surchargeSectionHeader}>
-              <Text style={styles.fieldLabel}>PHỤ PHÍ PHÁT SINH (DẠNG TICK)</Text>
+              <Text style={styles.fieldLabel}>PHỤ PHÍ PHÁT SINH TẠI CHỖ (CHECKLIST)</Text>
               {totalSurcharge > 0 && (
                 <Text style={styles.surchargeTotalText}>{formatVND(totalSurcharge)}</Text>
               )}
@@ -1390,6 +1490,97 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     fontSize: 12,
     color: '#0F172A',
+  },
+
+  // Card phí phạt trễ hẹn
+  overdueCard: {
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 12,
+    borderWidth: 1,
+  },
+  overdueCardWarning: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  overdueCardOnTime: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  overdueTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  overdueTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  overdueMainTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  overdueMainTitleWarning: {
+    color: '#B45309',
+  },
+  overdueMainTitleOnTime: {
+    color: '#047857',
+  },
+  overdueDaysBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  overdueDaysBadgeWarning: {
+    backgroundColor: '#FEF3C7',
+  },
+  overdueDaysBadgeOnTime: {
+    backgroundColor: '#DCFCE7',
+  },
+  overdueDaysBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  overdueDaysBadgeTextWarning: {
+    color: '#92400E',
+  },
+  overdueDaysBadgeTextOnTime: {
+    color: '#166534',
+  },
+  overdueBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+  overdueRateNote: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  overdueTotalWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  overdueMathLabel: {
+    fontSize: 11,
+    color: '#78350F',
+    fontWeight: '500',
+  },
+  overdueFineTotalText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  overdueZeroText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
   },
 
   // Phụ thu dạng checklist
