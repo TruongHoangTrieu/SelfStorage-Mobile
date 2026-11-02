@@ -531,7 +531,7 @@ export default function CheckInQueueScreen({
                         : isCheckInAllowed
                           ? 'Nhận kho'
                           : checkInEligibility.isTooLate
-                            ? 'Quá hạn (>3h)'
+                            ? 'Quá hạn'
                             : 'Chưa tới giờ'}
                     </Text>
                   </View>
@@ -624,17 +624,17 @@ export default function CheckInQueueScreen({
             </View>
           </View>
 
-          <View style={styles.monthCenterCol}>
+          <View style={styles.monthRightGroup}>
             <Text style={styles.monthTitle}>
-              Tháng {selectedMonday.getMonth() + 1} {selectedMonday.getFullYear()}
+              Tháng {selectedMonday.getMonth() + 1}
             </Text>
-            <Text style={styles.dateRangeSubtitle}>
-              {formatDayMonth(selectedMonday)} - {formatDayMonth(sunday)}
-            </Text>
+            <View style={styles.weekDaysPill}>
+              <MaterialIcons name="date-range" size={13} color="#1D4ED8" />
+              <Text style={styles.weekDaysPillText}>
+                {formatDayMonth(selectedMonday)} – {formatDayMonth(sunday)}
+              </Text>
+            </View>
           </View>
-
-          {/* Khoảng trống cân đối */}
-          <View style={styles.rightNavPlaceholder} />
         </View>
 
         {/* Hàng giữa: 3 nút lọc nhanh [Tất cả] [Nhận kho] [Trả kho] */}
@@ -912,23 +912,32 @@ const styles = StyleSheet.create({
   arrowBtn: {
     padding: 3,
   },
-  monthCenterCol: {
-    flex: 1,
+  monthRightGroup: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
   monthTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
   },
-  dateRangeSubtitle: {
-    fontSize: 10.5,
-    color: '#64748B',
-    marginTop: 1,
+  weekDaysPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    gap: 4,
   },
-  rightNavPlaceholder: {
-    width: 90,
+  weekDaysPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 0.2,
   },
 
   // Bộ lọc loại đơn [Tất cả] [Nhận kho] [Trả kho]
@@ -988,18 +997,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    height: 34,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 42,
+    minHeight: 42,
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 6,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     color: '#0F172A',
+    paddingVertical: 0,
+    paddingHorizontal: 4,
+    height: '100%',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
 
   // Danh sách lịch theo ngày (Daily timeline)

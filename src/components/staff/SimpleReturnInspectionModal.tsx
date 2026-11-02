@@ -911,9 +911,7 @@ export default function SimpleReturnInspectionModal({
               </View>
 
               <View style={styles.overdueBodyRow}>
-                <Text style={styles.overdueRateNote}>
-                  Đơn giá loại kho ({order?.unitType || 'Tiêu chuẩn'}): <Text style={{ fontWeight: '700', color: '#1E293B' }}>{formatVND(lateFeePerDay)}/ngày</Text>
-                </Text>
+                
                 {effectiveOverdueDays > 0 ? (
                   <View style={styles.overdueTotalWrap}>
                     <Text style={styles.overdueMathLabel}>
@@ -931,7 +929,7 @@ export default function SimpleReturnInspectionModal({
 
             {/* ─── 5. PHỤ THU THEO DẠNG TICK (CHECKLIST) ─── */}
             <View style={styles.surchargeSectionHeader}>
-              <Text style={styles.fieldLabel}>PHỤ PHÍ PHÁT SINH TẠI CHỖ (CHECKLIST)</Text>
+              <Text style={styles.fieldLabel}>PHỤ PHÍ</Text>
               {totalSurcharge > 0 && (
                 <Text style={styles.surchargeTotalText}>{formatVND(totalSurcharge)}</Text>
               )}

@@ -146,3 +146,4 @@ export function checkCheckInEligibility(app?: CheckInAppointment | any): CheckIn
   // 3. Trong khung giờ hợp lệ: Từ trước 1 tiếng đến trễ tối đa 3 tiếng
   return { allowed: true, diffMinutes };
 }
+
