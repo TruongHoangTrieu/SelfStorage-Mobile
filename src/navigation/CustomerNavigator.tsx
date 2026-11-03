@@ -450,8 +450,9 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         ) : (
           /* TAB 5: Quản lý tài khoản & Đổi thông tin */
           <CustomerAccountScreen
-currentUser={currentUser}
+            currentUser={currentUser}
             rentedUnits={rentedUnits}
+            myReservations={myReservations}
             onUpdateUser={(updated) => {
               setCurrentUser(updated);
             }}
@@ -459,8 +460,12 @@ currentUser={currentUser}
               handleLogout();
               setCustomerTab('book');
             }}
-            
             onNavigateBottomTab={handleNavigateBottomTab}
+            onNavigateSubTab={(subTab) => {
+              setCustomerTab('my_units');
+              setCustomerNavTab(subTab);
+            }}
+            onOpenNotifications={() => setShowNotifModal(true)}
           />
         )
       ) : customerTab === 'book' ? (

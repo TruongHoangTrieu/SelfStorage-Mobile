@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,9 +8,16 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  RefreshControl,
+  ActivityIndicator,
+  StatusBar,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit, CustomerUser } from '../../types/customerStorage';
-import { formatVND } from '../../utils/formatters';
+import { formatVND, formatVietnameseDate } from '../../utils/formatters';
+import { apiRequest } from '../../api';
 
 // ==========================================
 // 1. MÀN HÌNH THANH TOÁN & HÓA ĐƠN (LUỒNG 4)
@@ -18,116 +25,221 @@ import { formatVND } from '../../utils/formatters';
 interface CustomerPaymentsScreenProps {
   units: CustomerRentedUnit[];
   onBackToUnits: () => void;
+  onBack?: () => void;
   onOpenSidebar?: () => void;
 }
 
 export function CustomerPaymentsScreen({
   units,
+  onBack,
   onBackToUnits,
   onOpenSidebar,
 }: CustomerPaymentsScreenProps) {
-  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
-  const allPayments = units.flatMap((u) =>
-    (u.payments || []).map((p) => ({ ...p, unitCode: u.unitCode, contractCode: u.contractCode }))
-  );
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'ios' ? 44 : (StatusBar.currentHeight || 20));
 
-  const totalPaid = units.reduce((acc, u) => acc + (u.totalPaid || 0), 0);
-  const totalDeposit = units.reduce((acc, u) => acc + (u.depositAmount || 0), 0);
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [apiPayments, setApiPayments] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Tải trực tiếp danh sách thanh toán từ API Backend
+  const loadPayments = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
+      const res = await apiRequest<any>('/payments');
+      if (res) {
+        const list = Array.isArray(res) ? res : res.data || res.items || [];
+        if (list.length > 0) {
+          setApiPayments(list);
+        }
+      }
+    } catch {
+      // Fallback về payments từ units
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPayments(true);
+  }, []);
+
+  // Tổng hợp toàn bộ danh sách giao dịch từ API hoặc từ units
+  const allPayments = useMemo(() => {
+    if (apiPayments.length > 0) {
+      return apiPayments.map((p, idx) => {
+        const contractCode =
+          p.contract?.contractCode ||
+          p.contractCode ||
+          (p.reservation ? `ĐẶT CHỖ #${p.reservation.reservationCode || p.reservation.id}` : 'CON-2026');
+        const matchedUnit = units.find(
+          (u) =>
+            String(u.contractId) === String(p.contractId || p.contract?.id) ||
+            (p.contract?.contractCode && u.contractCode === p.contract.contractCode) ||
+            (u.unitCode && ((p.notes && p.notes.includes(u.unitCode)) || (p.transactionReference && p.transactionReference.includes(u.unitCode))))
+        );
+
+        const unitCode =
+          matchedUnit?.unitCode ||
+          p.contract?.contractItems?.[0]?.unit?.unitNumber ||
+          p.reservation?.unit?.unitNumber ||
+          p.unitCode ||
+          (units.length > 0 ? units[idx % units.length]?.unitCode : '') ||
+          'Ô kho';
+        const typeLabel =
+          p.paymentType === 'DEPOSIT'
+            ? 'Tiền cọc bảo đảm'
+            : p.paymentType === 'RENTAL'
+            ? 'Tiền thuê kho kỳ đầu'
+            : 'Gia hạn thuê kho';
+        const paidAt = p.paidAt
+          ? formatVietnameseDate(p.paidAt)
+          : p.createdAt
+          ? formatVietnameseDate(p.createdAt)
+          : 'Hôm nay';
+
+        return {
+          id: String(p.id || idx),
+          paymentCode: p.paymentCode || `PAY-${p.id}`,
+          amount: Number(p.amount) || 0,
+          type: p.paymentType || 'RENTAL',
+          typeLabel,
+          status: p.status || 'PAID',
+          paidAt,
+          method: p.paymentMethod || 'SEPAY_QR',
+          periodDescription: p.transactionReference || p.notes || `Thanh toán hợp đồng ${contractCode}`,
+          unitCode,
+          contractCode,
+        };
+      });
+    }
+
+    return units.flatMap((u) =>
+      (u.payments || []).map((p) => ({ ...p, unitCode: u.unitCode, contractCode: u.contractCode }))
+    );
+  }, [apiPayments, units]);
+
+  // Tổng tiền đã thanh toán thành công
+  const totalPaid = useMemo(() => {
+    return allPayments
+      .filter((p) => p.status === 'PAID' || p.status === 'SUCCESS' || !p.status)
+      .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  }, [allPayments]);
+
+  // Tổng tiền cọc đang giữ
+  const totalDeposit = useMemo(() => {
+    return allPayments
+      .filter((p) => p.type === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS' || !p.status))
+      .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  }, [allPayments]);
+
+  // Cước quá hạn / chưa thanh toán
+  const overdueBalance = useMemo(() => {
+    return allPayments
+      .filter((p) => p.status === 'PENDING' || p.status === 'OVERDUE')
+      .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+  }, [allPayments]);
 
   const handleDownloadInvoice = (code: string) => {
     if (Platform.OS === 'web') {
       window.alert(`Đã xuất hóa đơn điện tử VAT cho giao dịch #${code}. File PDF đã được gửi về email.`);
+    } else {
+      Alert.alert('Hóa đơn điện tử VAT', `Đã xuất hóa đơn cho giao dịch #${code}. File PDF đã được gửi về email của bạn.`);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerSubtitle}>TÀI CHÍNH & HÓA ĐƠN</Text>
-          <Text style={styles.headerTitle}>Lịch Sử Thanh Toán</Text>
-        </View>
-        <TouchableOpacity style={styles.backBtn} onPress={onBackToUnits}>
-          <Text style={styles.backBtnText}>Ô kho →</Text>
+    <View style={ps.container}>
+{/* TOP HEADER */}
+      <View style={[ps.header, { paddingTop: topInset + 6 }]}>
+        <TouchableOpacity
+          style={ps.navBackBtn}
+          onPress={() => (onBack ? onBack() : onBackToUnits?.())}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons name="arrow-back-ios" size={16} color="#1e293b" />
         </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={ps.headerSubtitle}>TÀI CHÍNH & HÓA ĐƠN</Text>
+          <Text style={ps.headerTitle}>Lịch Sử Thanh Toán</Text>
+        </View>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        {/* Metric Cards */}
-        <View style={styles.metricGrid}>
-          <View style={[styles.metricCard, { borderColor: '#10B981' }]}>
-            <Text style={styles.metricLabel}>ĐÃ THANH TOÁN</Text>
-            <Text style={[styles.metricValue, { color: '#10B981' }]}>{formatVND(totalPaid)}</Text>
-            <Text style={styles.metricNote}>Gồm tiền thuê & cọc</Text>
-          </View>
-          <View style={[styles.metricCard, { borderColor: '#3B82F6' }]}>
-            <Text style={styles.metricLabel}>TIỀN CỌC ĐANG GIỮ</Text>
-            <Text style={[styles.metricValue, { color: '#38BDF8' }]}>{formatVND(totalDeposit)}</Text>
-            <Text style={styles.metricNote}>Hoàn trả khi trả kho</Text>
-          </View>
-          <View style={[styles.metricCard, { borderColor: '#6366F1' }]}>
-            <Text style={styles.metricLabel}>TRẠNG THÁI CƯỚC</Text>
-            <Text style={[styles.metricValue, { color: '#818CF8' }]}>0 đ</Text>
-            <Text style={styles.metricNote}>Không có nợ quá hạn</Text>
-          </View>
+            <ScrollView
+        style={ps.scroll}
+        contentContainerStyle={ps.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              setIsRefreshing(true);
+              loadPayments(false);
+            }}
+          />
+        }
+      >
+        {/* TRANSACTION HISTORY SECTION */}
+        <View style={ps.sectionTitleRow}>
+          <Text style={ps.sectionTitle}>Các Giao Dịch Gần Đây ({allPayments.length})</Text>
         </View>
 
-        {/* Cổng thanh toán SePay QR info */}
-        <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerIcon}>⚡</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.infoBannerTitle}>Tích hợp Cổng SePay QR Tự Động</Text>
-            <Text style={styles.infoBannerDesc}>
-              Mọi giao dịch thanh toán tiền thuê hoặc gia hạn được gạch nợ tự động trong 3 giây.
-            </Text>
+        {loading && allPayments.length === 0 ? (
+          <View style={ps.loadingBox}>
+            <ActivityIndicator size="small" color="#2563eb" />
+            <Text style={ps.loadingText}>Đang tải dữ liệu thanh toán từ máy chủ...</Text>
           </View>
-        </View>
-
-        {/* Transaction History */}
-        <Text style={styles.sectionTitle}>Các Giao Dịch Gần Đây ({allPayments.length})</Text>
-
-        {allPayments.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>Chưa có giao dịch phát sinh</Text>
+        ) : allPayments.length === 0 ? (
+          <View style={ps.emptyBox}>
+            <MaterialIcons name="receipt-long" size={44} color="#cbd5e1" />
+            <Text style={ps.emptyText}>Chưa có giao dịch phát sinh</Text>
           </View>
         ) : (
           allPayments.map((p) => (
-            <TouchableOpacity key={p.id} style={styles.paymentCard} activeOpacity={0.85} onPress={() => setSelectedReceipt(p)}>
-              <View style={styles.paymentCardHeader}>
-                <View>
-                  <Text style={styles.paymentTypeLabel}>{p.typeLabel}</Text>
-                  <Text style={styles.paymentSubCode}>
-                    HĐ: #{p.contractCode.slice(-6)} • Ô: {p.unitCode} • Mã: {p.paymentCode}
+            <TouchableOpacity
+              key={p.id}
+              style={ps.paymentCard}
+              activeOpacity={0.85}
+              onPress={() => setSelectedReceipt(p)}
+            >
+              <View style={ps.paymentCardHeader}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={ps.paymentTypeLabel}>{p.typeLabel}</Text>
+                  <Text style={ps.paymentSubCode}>
+                    HĐ: #{p.contractCode?.slice(-6) || 'CON'} • Ô: {p.unitCode} • Mã: {p.paymentCode}
                   </Text>
                 </View>
-                <View style={styles.paidBadge}>
-                  <Text style={styles.paidBadgeText}>✓ ĐÃ NỘP</Text>
+                <View style={ps.paidBadge}>
+                  <MaterialIcons name="check-circle" size={12} color="#059669" />
+                  <Text style={ps.paidBadgeText}>ĐÃ NỘP</Text>
                 </View>
               </View>
 
-              <View style={styles.paymentCardBody}>
-                <Text style={styles.paymentAmount}>{formatVND(p.amount)}</Text>
-                <Text style={styles.paymentDate}>📅 {p.paidAt}</Text>
+              <View style={ps.paymentCardBody}>
+                <Text style={ps.paymentAmount}>{formatVND(p.amount)}</Text>
+                <View style={ps.dateRow}>
+                  <MaterialIcons name="calendar-today" size={13} color="#64748b" />
+                  <Text style={ps.paymentDate}>{p.paidAt}</Text>
+                </View>
               </View>
 
-              <Text style={styles.paymentDesc}>{p.periodDescription}</Text>
+              {Boolean(p.periodDescription) && (
+                <View style={ps.descBox}>
+                  <Text style={ps.paymentDesc}>{p.periodDescription}</Text>
+                </View>
+              )}
 
-              <View style={styles.paymentCardFooter}>
-                <Text style={styles.paymentMethodText}>Phương thức: Cổng thanh toán {p.method}</Text>
-                <TouchableOpacity
-                  style={styles.invoiceBtn}
-                  onPress={() => handleDownloadInvoice(p.paymentCode)}
-                >
-                  <Text style={styles.invoiceBtnText}>📄 Tải HĐ VAT</Text>
-                </TouchableOpacity>
-              </View>
+
             </TouchableOpacity>
           ))
         )}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Payment Receipt Modal */}
+      {/* PAYMENT RECEIPT MODAL SÁNG ĐỒNG BỘ */}
       {selectedReceipt && (
         <Modal
           visible={Boolean(selectedReceipt)}
@@ -135,65 +247,66 @@ export function CustomerPaymentsScreen({
           animationType="fade"
           onRequestClose={() => setSelectedReceipt(null)}
         >
-          <View style={{ flex: 1, backgroundColor: "rgba(15, 23, 42, 0.7)", justifyContent: "center", alignItems: "center", padding: 20 }}>
-            <View style={{ width: "100%", maxWidth: 380, backgroundColor: "#1e293b", borderRadius: 24, padding: 22, borderWidth: 1, borderColor: "#334155" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <Text style={{ fontSize: 11, fontWeight: "800", color: "#38bdf8", textTransform: "uppercase", letterSpacing: 0.8 }}>BIÊN NHẬN ĐIỆN TỬ SEPAY</Text>
+          <View style={ps.modalOverlay}>
+            <View style={ps.modalBox}>
+              <View style={ps.modalHeaderRow}>
+                <Text style={ps.modalHeaderTitle}>BIÊN NHẬN ĐIỆN TỬ SEPAY</Text>
                 <TouchableOpacity onPress={() => setSelectedReceipt(null)} style={{ padding: 4 }}>
-                  <Text style={{ color: "#94a3b8", fontSize: 16, fontWeight: "700" }}>✕</Text>
+                  <MaterialIcons name="close" size={20} color="#64748b" />
                 </TouchableOpacity>
               </View>
 
-              <View style={{ alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#334155" }}>
-                <Text style={{ fontSize: 26, fontWeight: "900", color: "#10b981" }}>{formatVND(selectedReceipt.amount)}</Text>
-                <View style={{ marginTop: 6, paddingHorizontal: 10, paddingVertical: 3, backgroundColor: "rgba(16, 185, 129, 0.15)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(16, 185, 129, 0.3)" }}>
-                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#34d399" }}>✓ ĐÃ THANH TOÁN THÀNH CÔNG</Text>
+              <View style={ps.modalAmountBox}>
+                <Text style={ps.modalAmountText}>{formatVND(selectedReceipt.amount)}</Text>
+                <View style={ps.modalSuccessBadge}>
+                  <MaterialIcons name="check-circle" size={13} color="#059669" />
+                  <Text style={ps.modalSuccessBadgeText}>ĐÃ THANH TOÁN THÀNH CÔNG</Text>
                 </View>
               </View>
 
-              <View style={{ paddingVertical: 14, gap: 10 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Loại thanh toán:</Text>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#f8fafc" }}>{selectedReceipt.typeLabel}</Text>
+              <View style={ps.modalDetailsList}>
+                <View style={ps.modalDetailRow}>
+                  <Text style={ps.modalDetailLabel}>Loại thanh toán:</Text>
+                  <Text style={ps.modalDetailVal} numberOfLines={1}>{selectedReceipt.typeLabel}</Text>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Mã giao dịch:</Text>
-                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#38bdf8" }}>{selectedReceipt.paymentCode}</Text>
+                <View style={ps.modalDetailRow}>
+                  <Text style={ps.modalDetailLabel}>Mã giao dịch:</Text>
+                  <Text
+                    style={[ps.modalDetailVal, { color: '#2563eb' }]}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
+                    {selectedReceipt.paymentCode}
+                  </Text>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Hợp đồng & Buồng kho:</Text>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#f8fafc" }}>#{selectedReceipt.contractCode} • {selectedReceipt.unitCode}</Text>
+                <View style={ps.modalDetailRow}>
+                  <Text style={ps.modalDetailLabel}>Hợp đồng & Ô kho:</Text>
+                  <Text style={ps.modalDetailVal} numberOfLines={2}>
+                    {selectedReceipt.contractCode?.startsWith('#') ? selectedReceipt.contractCode : `#${selectedReceipt.contractCode}`} • {selectedReceipt.unitCode}
+                  </Text>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Thời gian:</Text>
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#f8fafc" }}>{selectedReceipt.paidAt}</Text>
+                <View style={ps.modalDetailRow}>
+                  <Text style={ps.modalDetailLabel}>Thời gian:</Text>
+                  <Text style={ps.modalDetailVal}>{selectedReceipt.paidAt}</Text>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Phương thức:</Text>
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#f8fafc" }}>Cổng SePay VietQR (Tự động)</Text>
+                <View style={ps.modalDetailRow}>
+                  <Text style={ps.modalDetailLabel}>Phương thức:</Text>
+                  <Text style={ps.modalDetailVal}>Cổng SePay VietQR (Tự động)</Text>
                 </View>
                 {Boolean(selectedReceipt.periodDescription) && (
-                  <View style={{ marginTop: 4, padding: 8, backgroundColor: "rgba(51, 65, 85, 0.4)", borderRadius: 10 }}>
-                    <Text style={{ fontSize: 11, color: "#cbd5e1" }}>{selectedReceipt.periodDescription}</Text>
+                  <View style={ps.modalDescBox}>
+                    <Text style={ps.modalDescText}>{selectedReceipt.periodDescription}</Text>
                   </View>
                 )}
               </View>
 
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+              <View style={ps.modalActionRow}>
                 <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: "#334155", paddingVertical: 12, borderRadius: 12, alignItems: "center" }}
+                  style={ps.modalCloseBtn}
                   onPress={() => setSelectedReceipt(null)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#cbd5e1" }}>Đóng</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: "#2563eb", paddingVertical: 12, borderRadius: 12, alignItems: "center" }}
-                  onPress={() => {
-                    handleDownloadInvoice(selectedReceipt.paymentCode);
-                    setSelectedReceipt(null);
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }}>Xuất HĐ VAT (PDF)</Text>
+                  <Text style={ps.modalCloseBtnText}>Đóng</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -203,6 +316,384 @@ export function CustomerPaymentsScreen({
     </View>
   );
 }
+
+const ps = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  navBackBtn: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingLeft: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  header: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  headerSubtitle: {
+    color: '#64748b',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  headerTitle: {
+    color: '#111827',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  backBtnText: {
+    color: '#1e293b',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+    gap: 14,
+  },
+  metricGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  metricLabel: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  metricValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginVertical: 4,
+  },
+  metricNote: {
+    color: '#94a3b8',
+    fontSize: 10,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#eff6ff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  infoBannerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#dbeafe',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoBannerTitle: {
+    color: '#1e40af',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  infoBannerDesc: {
+    color: '#2563eb',
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  sectionTitleRow: {
+    marginTop: 4,
+  },
+  sectionTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  loadingBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  emptyBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  emptyText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    marginTop: 8,
+  },
+  paymentCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  paymentCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  paymentTypeLabel: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  paymentSubCode: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  paidBadgeText: {
+    color: '#059669',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  paymentCardBody: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  paymentAmount: {
+    color: '#059669',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  paymentDate: {
+    color: '#64748b',
+    fontSize: 11.5,
+  },
+  descBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 8,
+  },
+  paymentDesc: {
+    color: '#475569',
+    fontSize: 11.5,
+  },
+  paymentCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 10,
+  },
+  paymentMethodText: {
+    color: '#94a3b8',
+    fontSize: 10.5,
+  },
+  invoiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  invoiceBtnText: {
+    color: '#2563eb',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // MODAL STYLES
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#2563eb',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  modalAmountBox: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalAmountText: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#059669',
+  },
+  modalSuccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    backgroundColor: '#ecfdf5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  modalSuccessBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  modalDetailsList: {
+    paddingVertical: 14,
+    gap: 10,
+  },
+  modalDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  modalDetailLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    flexShrink: 0,
+    width: 115,
+  },
+  modalDetailVal: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+    textAlign: 'right',
+  },
+  modalDescBox: {
+    marginTop: 4,
+    padding: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+  },
+  modalDescText: {
+    fontSize: 11,
+    color: '#475569',
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    marginTop: 14,
+  },
+  modalCloseBtn: {
+    flex: 1,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+});
+
 
 // ==========================================
 // 2. MÀN HÌNH TRUY CẬP & BẢO MẬT (SMART PIN)

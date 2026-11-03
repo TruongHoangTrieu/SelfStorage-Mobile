@@ -10,55 +10,47 @@ import {
   Alert,
   Platform,
   Image,
+  Modal,
+  RefreshControl,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { apiRequest, setAuthToken } from '../../api';
+import { apiRequest, fetchMySupportRequestsApi } from '../../api';
 import CustomerBottomNavBar, { CustomerTabType } from '../../components/customer/CustomerBottomNavBar';
-import { CustomerRentedUnit } from '../../types/customerStorage';
+import { CustomerRentedUnit, CustomerTab } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
-import CustomerInvoiceDetailModal, {
-  CustomerInvoiceItem,
-} from '../../components/customer/CustomerInvoiceDetailModal';
-
-const T = {
-  bg: '#f7f9fd',
-  surface: '#ffffff',
-  surfaceSubtle: '#f1f5f9',
-  onSurface: '#131b2e',
-  onSurfaceVariant: '#434655',
-  primary: '#1d4ed8',
-  brand: '#2563eb',
-  brandLight: '#dbeafe',
-  brandDark: '#1e40af',
-  border: '#e2e8f0',
-  outline: '#737686',
-  outlineVariant: '#c3c6d7',
-  success: '#16a34a',
-  successLight: '#dcfce7',
-  error: '#dc2626',
-  errorLight: '#fee2e2',
-};
 
 interface CustomerAccountScreenProps {
   currentUser: any;
   rentedUnits?: CustomerRentedUnit[];
+  myReservations?: any[];
   onUpdateUser?: (updated: any) => void;
   onLogout?: () => void;
   onNavigateBottomTab?: (tab: CustomerTabType) => void;
+  onNavigateSubTab?: (subTab: CustomerTab) => void;
+  onOpenNotifications?: () => void;
   onOpenSidebar?: () => void;
 }
 
 export default function CustomerAccountScreen({
   currentUser,
   rentedUnits = [],
+  myReservations = [],
   onUpdateUser,
   onLogout,
   onNavigateBottomTab,
+  onNavigateSubTab,
+  onOpenNotifications,
   onOpenSidebar,
 }: CustomerAccountScreenProps) {
-  // Navigation tabs: 'profile' (Hồ sơ & Bảo mật) | 'invoices' (Truy cứu hóa đơn VAT)
-  const [activeTab, setActiveTab] = useState<'profile' | 'invoices'>('profile');
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'ios' ? 48 : (StatusBar.currentHeight || 24));
 
+  // Modal states
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'info' | 'password'>('info');
+  
   // Profile edit states
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
@@ -75,13 +67,8 @@ export default function CustomerAccountScreen({
   const [isChangingPass, setIsChangingPass] = useState(false);
   const [passMsg, setPassMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Invoices & Payment Lookup states
-  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
-  const [selectedInvoiceCategory, setSelectedInvoiceCategory] = useState<'all' | 'rent' | 'deposit' | 'renewal'>('all');
-  const [selectedInvoiceForModal, setSelectedInvoiceForModal] = useState<CustomerInvoiceItem | null>(null);
-  const [isInvoiceModalVisible, setIsInvoiceModalVisible] = useState(false);
-  const [apiPayments, setApiPayments] = useState<any[]>([]);
-  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -90,160 +77,29 @@ export default function CustomerAccountScreen({
     }
   }, [currentUser]);
 
-  // Load API Payments nếu có kết nối Backend
-  useEffect(() => {
-    let isMounted = true;
-    async function loadApiPayments() {
-      try {
-        setIsLoadingInvoices(true);
-        const res = await apiRequest<any>('/payments').catch(() => null);
-        if (isMounted && res) {
-          const list = Array.isArray(res) ? res : res.data || res.items || [];
-          setApiPayments(list);
-        }
-      } catch (err) {
-        // Fallback to rentedUnits payments
-      } finally {
-        if (isMounted) setIsLoadingInvoices(false);
+  // Support Tickets
+  const [supportTickets, setSupportTickets] = useState<any[]>([]);
+
+  const loadSupportTickets = async () => {
+    try {
+      const res = await fetchMySupportRequestsApi().catch(() => null);
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        setSupportTickets(res.data);
+      } else {
+        const all = rentedUnits.flatMap((u) => u.supportTickets || []);
+        setSupportTickets(all);
       }
+    } catch {
+      const all = rentedUnits.flatMap((u) => u.supportTickets || []);
+      setSupportTickets(all);
+    } finally {
+      setIsRefreshing(false);
     }
-    loadApiPayments();
-    return () => {
-      isMounted = false;
-    };
+  };
+
+  useEffect(() => {
+    loadSupportTickets();
   }, []);
-
-  // Tổng hợp danh sách hóa đơn từ rentedUnits và Backend API
-  const allInvoices = useMemo<CustomerInvoiceItem[]>(() => {
-    const list: CustomerInvoiceItem[] = [];
-
-    // 1. Trích xuất từ rentedUnits
-    rentedUnits.forEach((u) => {
-      (u.payments || []).forEach((p, idx) => {
-        const cleanCode = p.paymentCode || `PAY-${idx + 1}`;
-        const numPart = cleanCode.replace(/\D/g, '').slice(-6) || `${idx + 1000}`;
-        list.push({
-          id: p.id || `inv-${u.id}-${idx}`,
-          invoiceCode: `HD-${numPart}`,
-          paymentCode: p.paymentCode,
-          contractCode: u.contractCode,
-          unitCode: u.unitCode,
-          unitType: u.unitName || u.size || 'Kho Tiêu chuẩn',
-          facilityName: u.facilityName,
-          amount: p.amount,
-          type: p.type,
-          typeLabel: p.typeLabel || (p.type === 'DEPOSIT' ? 'Tiền cọc giữ chỗ ô kho' : 'Tiền thuê kho định kỳ'),
-          periodDescription: p.periodDescription || `Thanh toán hợp đồng ${u.contractCode}`,
-          status: p.status || 'PAID',
-          paidAt: p.paidAt || '13/10/2026',
-          method: p.method || 'SEPAY_QR',
-          taxRate: 8,
-          customerName: currentUser?.fullName || 'Nguyễn Văn Khách Hàng',
-          customerPhone: currentUser?.phone || '0908 123 456',
-          customerEmail: currentUser?.email || 'customer@selfstorage.vn',
-        });
-      });
-    });
-
-    // 2. Dữ liệu mẫu tiêu chuẩn nếu danh sách chưa có dữ liệu
-    if (list.length === 0) {
-      list.push(
-        {
-          id: 'inv-def-01',
-          invoiceCode: 'HD-20261013-8812',
-          paymentCode: 'PAY-20261013-8812',
-          contractCode: 'CON-20261028-TODAY',
-          unitCode: 'STD_1-02',
-          unitType: 'Kho Gia đình Tiêu chuẩn (9.0m²)',
-          facilityName: 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
-          amount: 890000,
-          type: 'DEPOSIT',
-          typeLabel: 'Tiền cọc giữ chỗ ô kho',
-          periodDescription: 'Cọc bảo đảm 01 tháng (Hoàn cấn trừ vào tiền thuê)',
-          status: 'PAID',
-          paidAt: '13/10/2026 08:45',
-          method: 'SEPAY_QR',
-          taxRate: 8,
-          customerName: currentUser?.fullName || 'Nguyễn Văn Khách Hàng',
-          customerPhone: currentUser?.phone || '0908 123 456',
-          customerEmail: currentUser?.email || 'customer@selfstorage.vn',
-        },
-        {
-          id: 'inv-def-02',
-          invoiceCode: 'HD-20261013-8813',
-          paymentCode: 'PAY-20261013-8813',
-          contractCode: 'CON-20261028-TODAY',
-          unitCode: 'STD_1-02',
-          unitType: 'Kho Gia đình Tiêu chuẩn (9.0m²)',
-          facilityName: 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
-          amount: 890000,
-          type: 'RENTAL',
-          typeLabel: 'Tiền thuê kho tự quản tháng 10/2026',
-          periodDescription: 'Cước thuê kho định kỳ tháng 10/2026 (Đã kích hoạt Smart PIN)',
-          status: 'PAID',
-          paidAt: '13/10/2026 08:46',
-          method: 'SEPAY_QR',
-          taxRate: 8,
-          customerName: currentUser?.fullName || 'Nguyễn Văn Khách Hàng',
-          customerPhone: currentUser?.phone || '0908 123 456',
-          customerEmail: currentUser?.email || 'customer@selfstorage.vn',
-        },
-        {
-          id: 'inv-def-03',
-          invoiceCode: 'HD-20260920-7715',
-          paymentCode: 'PAY-20260920-7715',
-          contractCode: 'CON-20260920-MINI',
-          unitCode: 'VNG-MINI-01',
-          unitType: 'Kho Mini Tiện Ích (4.9m²)',
-          facilityName: 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
-          amount: 490000,
-          type: 'RENTAL',
-          typeLabel: 'Tiền thuê kho tự quản tháng 09/2026',
-          periodDescription: 'Cước thuê kho lưu trữ hồ sơ tài liệu',
-          status: 'PAID',
-          paidAt: '20/09/2026 14:15',
-          method: 'BANK_TRANSFER',
-          taxRate: 8,
-          customerName: currentUser?.fullName || 'Nguyễn Văn Khách Hàng',
-          customerPhone: currentUser?.phone || '0908 123 456',
-          customerEmail: currentUser?.email || 'customer@selfstorage.vn',
-        }
-      );
-    }
-
-    return list;
-  }, [rentedUnits, currentUser]);
-
-  // Bộ lọc tìm kiếm hóa đơn
-  const filteredInvoices = useMemo(() => {
-    return allInvoices.filter((inv) => {
-      const q = invoiceSearchQuery.trim().toLowerCase();
-      const matchSearch =
-        q === '' ||
-        inv.invoiceCode.toLowerCase().includes(q) ||
-        inv.paymentCode.toLowerCase().includes(q) ||
-        inv.contractCode.toLowerCase().includes(q) ||
-        inv.unitCode.toLowerCase().includes(q) ||
-        (inv.facilityName && inv.facilityName.toLowerCase().includes(q)) ||
-        inv.typeLabel.toLowerCase().includes(q);
-
-      const matchCategory =
-        selectedInvoiceCategory === 'all'
-          ? true
-          : selectedInvoiceCategory === 'rent'
-          ? inv.type === 'RENTAL'
-          : selectedInvoiceCategory === 'deposit'
-          ? inv.type === 'DEPOSIT'
-          : inv.type === 'RENEWAL';
-
-      return matchSearch && matchCategory;
-    });
-  }, [allInvoices, invoiceSearchQuery, selectedInvoiceCategory]);
-
-  // Thống kê tổng tiền đã thanh toán
-  const totalPaidSum = useMemo(() => {
-    return allInvoices.reduce((sum, item) => sum + item.amount, 0);
-  }, [allInvoices]);
 
   // Update profile
   const handleUpdateProfile = async () => {
@@ -319,11 +175,11 @@ export default function CustomerAccountScreen({
         }),
       });
 
+      setPassMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPassMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
-      Alert.alert('Thành công', 'Mật khẩu đăng nhập của bạn đã được thay đổi.');
+      Alert.alert('Thành công', 'Mật khẩu của bạn đã được cập nhật thành công.');
     } catch (err: any) {
       setPassMsg({
         type: 'error',
@@ -334,530 +190,432 @@ export default function CustomerAccountScreen({
     }
   };
 
-  // Confirm logout
-  const handleLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản?', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Đăng xuất',
-        style: 'destructive',
-        onPress: () => {
-          setAuthToken(null);
-          if (Platform.OS === 'web') {
-            try {
-              localStorage.removeItem('token');
-              localStorage.removeItem('user');
-            } catch {
-              // ignore
-            }
-          }
-          onLogout?.();
-        },
-      },
-    ]);
-  };
-
-  // Tải nhanh hóa đơn PDF
-  const handleQuickDownload = (inv: CustomerInvoiceItem) => {
-    const msg = `Hóa đơn điện tử #${inv.invoiceCode} cho ô kho ${inv.unitCode} đã được xuất thành công.`;
+  const handleConfirmLogout = () => {
     if (Platform.OS === 'web') {
-      window.alert(`Tải Hóa Đơn PDF Thành Công\n\n${msg}\nKiểm tra thư mục tải về của bạn.`);
+      if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
+        onLogout?.();
+      }
     } else {
-      Alert.alert('Tải Hóa Đơn Thành Công', `${msg}\nĐã lưu vào bộ nhớ máy.`, [{ text: 'Đóng' }]);
+      Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?', [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Đăng xuất', style: 'destructive', onPress: () => onLogout?.() },
+      ]);
     }
   };
 
+  // Lấy 2 chữ cái đầu làm Avatar viết tắt
+  const userInitials = useMemo(() => {
+    const name = (currentUser?.fullName || 'Khách').trim();
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  }, [currentUser]);
+
   return (
     <View style={s.container}>
-      {/* Top Header Bar */}
-      <View style={s.topBar}>
-        <View style={s.topBarLeft}>
-          
-          <Image
-            source={require('../../../assets/logo.png')}
-            style={s.topLogoImg}
-            resizeMode="contain"
-          />
-        </View>
-
-        
-      </View>
-
-      <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* User Profile Overview Card */}
-        <View style={s.userCard}>
-          <View style={s.avatarWrap}>
-            <MaterialIcons name="person" size={32} color={T.primary} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={s.roleBadge}>
-              <Text style={s.roleBadgeText}>Khách hàng thuê kho</Text>
-            </View>
-            <Text style={s.userName} numberOfLines={1} ellipsizeMode="tail">
-              {currentUser?.fullName || 'Khách hàng'}
-            </Text>
-            <Text style={s.userEmail} numberOfLines={1} ellipsizeMode="tail">
-              {currentUser?.email || 'Chưa cập nhật email'}
+      <ScrollView
+        style={s.scrollView}
+        contentContainerStyle={[s.scrollContent, { paddingTop: topInset + 8 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={async () => { setIsRefreshing(true); await loadSupportTickets(); }} />}
+      >
+        {/* TOP HEADER */}
+        <View style={s.headerRow}>
+          <View style={s.headerLeft}>
+            <Text style={s.roleLabel}>CỘNG TÁC VIÊN / KHÁCH THUÊ</Text>
+            <Text style={s.userName} numberOfLines={1}>
+              {currentUser?.fullName || 'Nguyễn Hoàng Long'}
             </Text>
           </View>
-        </View>
-
-        {/* ─── THANH CHUYỂN TAB CHỨC NĂNG (SEGMENTED TABS) ─── */}
-        <View style={s.tabSegmentContainer}>
           <TouchableOpacity
-            style={[s.tabSegmentBtn, activeTab === 'profile' && s.tabSegmentBtnActive]}
-            onPress={() => setActiveTab('profile')}
+            style={s.avatarWrapper}
+            onPress={() => setShowProfileModal(true)}
             activeOpacity={0.8}
           >
-            <MaterialIcons
-              name="manage-accounts"
-              size={18}
-              color={activeTab === 'profile' ? '#FFFFFF' : '#64748B'}
-            />
-            <Text style={[s.tabSegmentText, activeTab === 'profile' && s.tabSegmentTextActive]}>
-              Hồ sơ & Bảo mật
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[s.tabSegmentBtn, activeTab === 'invoices' && s.tabSegmentBtnActive]}
-            onPress={() => setActiveTab('invoices')}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons
-              name="receipt-long"
-              size={18}
-              color={activeTab === 'invoices' ? '#FFFFFF' : '#64748B'}
-            />
-            <Text style={[s.tabSegmentText, activeTab === 'invoices' && s.tabSegmentTextActive]}>
-              Truy cứu hóa đơn VAT
-            </Text>
-            <View
-              style={[
-                s.tabCountBadge,
-                activeTab === 'invoices' ? { backgroundColor: '#FFFFFF' } : { backgroundColor: '#EFF6FF' },
-              ]}
-            >
-              <Text
-                style={[
-                  s.tabCountBadgeText,
-                  activeTab === 'invoices' ? { color: '#1D4ED8' } : { color: '#2563EB' },
-                ]}
-              >
-                {allInvoices.length}
-              </Text>
-            </View>
+            {currentUser?.avatarUrl ? (
+              <Image source={{ uri: currentUser.avatarUrl }} style={s.avatarImg} />
+            ) : (
+              <View style={s.avatarFallback}>
+                <Text style={s.avatarFallbackText}>{userInitials}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* ================================================================ */}
-        {/* TAB 1: THÔNG TIN HỒ SƠ & BẢO MẬT MẬT KHẨU                        */}
-        {/* ================================================================ */}
-        {activeTab === 'profile' ? (
-          <>
-            {/* Banner gợi ý truy cứu hóa đơn nhanh */}
+        {/* SECTION 1: LỊCH HẸN NHẬN KHO SẮP TỚI */}
+        <View style={s.sectionHeader}>
+          <Text style={s.sectionTitle}>Lịch hẹn nhận kho sắp tới</Text>
+          {myReservations && myReservations.length > 0 && (
             <TouchableOpacity
-              style={s.invoicePromoBanner}
-              onPress={() => setActiveTab('invoices')}
-              activeOpacity={0.88}
+              onPress={() => onNavigateBottomTab ? onNavigateBottomTab('book-new') : onNavigateSubTab?.('my_units')}
+              activeOpacity={0.7}
             >
-              <View style={s.promoIconBox}>
-                <MaterialIcons name="request-quote" size={26} color="#1D4ED8" />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={s.promoHeaderRow}>
-                  <Text style={s.promoTitle}>Truy Cứu Hóa Đơn Điện Tử VAT</Text>
-                  <View style={s.promoLiveBadge}>
-                    <Text style={s.promoLiveBadgeText}>Mới</Text>
+              <Text style={s.viewAllLink}>Xem tất cả &gt;</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={s.appointmentList}>
+          {myReservations && myReservations.length > 0 ? (
+            myReservations.slice(0, 2).map((res: any, index: number) => {
+              const rawDate = res.appointmentDate || res.checkInDate || '';
+              const dateParts = rawDate.includes('T') ? rawDate.split('T')[0].split('-') : rawDate.split('-');
+              const timeStr = rawDate.includes('T') ? rawDate.split('T')[1]?.slice(0, 5) : '09:00';
+              const dayMonthStr = dateParts.length >= 3 ? `${dateParts[2]}/${dateParts[1]}` : 'Sắp tới';
+
+              return (
+                <TouchableOpacity
+                  key={res.id || index}
+                  style={s.appointmentCard}
+                  activeOpacity={0.8}
+                  onPress={() => onNavigateBottomTab ? onNavigateBottomTab('my-storage') : onNavigateSubTab?.('my_units')}
+                >
+                  <View style={s.timeBadge}>
+                    <Text style={s.timeBadgeTime}>{timeStr}</Text>
+                    <Text style={s.timeBadgeDate}>{dayMonthStr}</Text>
                   </View>
-                </View>
-                <Text style={s.promoSub}>
-                  Tra cứu biên lai thanh toán, tải hóa đơn VAT có mã cơ quan thuế cho tất cả ô kho.
-                </Text>
+                  <View style={s.appointmentInfo}>
+                    <Text style={s.appointmentName} numberOfLines={1}>
+                      {res.unitType?.name || 'Kho Mini Tự Quản'}
+                    </Text>
+                    <Text style={s.appointmentSub} numberOfLines={1}>
+                      {res.facility?.name || 'SelfStorage'} · {res.rentalPeriod || 1} tháng
+                    </Text>
+                  </View>
+                  <View style={s.resStatusBadge}>
+                    <Text style={s.resStatusText}>
+                      {res.status === 'CONFIRMED' ? 'Đã duyệt' : (res.status === 'COMPLETED' ? 'Đã nhận' : 'Chờ nhận')}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={s.emptySectionCard}>
+              <View style={s.emptySectionIconWrap}>
+                <MaterialIcons name="event-available" size={20} color="#2563eb" />
               </View>
-              <MaterialIcons name="chevron-right" size={22} color="#1D4ED8" />
-            </TouchableOpacity>
-
-            {/* Form 1: Cập Nhật Thông Tin Cá Nhân */}
-            <View style={s.card}>
-              <View style={s.cardHeader}>
-                <View style={s.cardIconBox}>
-                  <MaterialIcons name="edit" size={20} color={T.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.cardTitle}>Thông Tin Khách Hàng</Text>
-                  <Text style={s.cardSub}>Chỉnh sửa họ tên và số điện thoại liên lạc</Text>
-                </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.emptySectionTitle}>Chưa có lịch hẹn nhận kho mới</Text>
+                <Text style={s.emptySectionSub}>Bạn có thể đặt giữ chỗ kho trực tuyến bất kỳ lúc nào</Text>
               </View>
-
-              {profileMsg && (
-                <View style={[s.msgBox, profileMsg.type === 'error' ? s.msgBoxError : s.msgBoxSuccess]}>
-                  <MaterialIcons
-                    name={profileMsg.type === 'error' ? 'error-outline' : 'check-circle-outline'}
-                    size={18}
-                    color={profileMsg.type === 'error' ? T.error : T.success}
-                  />
-                  <Text style={[s.msgText, { color: profileMsg.type === 'error' ? T.error : T.success }]}>
-                    {profileMsg.text}
-                  </Text>
-                </View>
-              )}
-
-              <Text style={s.inputLabel}>Họ và tên *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="badge" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Nhập họ và tên..."
-                  placeholderTextColor={T.outline}
-                  value={fullName}
-                  onChangeText={setFullName}
-                />
-              </View>
-
-              <Text style={s.inputLabel}>Số điện thoại *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="phone" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Nhập số điện thoại..."
-                  placeholderTextColor={T.outline}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                />
-              </View>
-
-              <Text style={s.inputLabel}>Địa chỉ Email</Text>
-              <View style={[s.inputWrap, s.inputWrapDisabled]}>
-                <MaterialIcons name="email" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={[s.input, { color: T.outline }]}
-                  value={email}
-                  editable={false}
-                />
-              </View>
-
               <TouchableOpacity
-                style={[s.submitBtn, isUpdatingProfile && s.btnDisabled]}
-                onPress={handleUpdateProfile}
-                disabled={isUpdatingProfile}
-                activeOpacity={0.85}
+                style={s.emptySectionBtn}
+                activeOpacity={0.8}
+                onPress={() => onNavigateBottomTab ? onNavigateBottomTab('book-new') : onNavigateSubTab?.('my_units')}
               >
-                {isUpdatingProfile ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <>
-                    <MaterialIcons name="save" size={18} color="#ffffff" />
-                    <Text style={s.submitBtnText}>Lưu Thay Đổi Thông Tin</Text>
-                  </>
-                )}
+                <Text style={s.emptySectionBtnText}>Thuê kho</Text>
               </TouchableOpacity>
             </View>
+          )}
+        </View>
 
-            {/* Form 2: Đổi Mật Khẩu */}
-            <View style={s.card}>
-              <View style={s.cardHeader}>
-                <View style={[s.cardIconBox, { backgroundColor: '#fef3c7' }]}>
-                  <MaterialIcons name="lock" size={20} color="#d97706" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.cardTitle}>Đổi Mật Khẩu Đăng Nhập</Text>
-                  <Text style={s.cardSub}>Cập nhật mật khẩu để bảo vệ an toàn tài khoản</Text>
-                </View>
-              </View>
+        {/* SECTION 2: YÊU CẦU HỖ TRỢ SỰ CỐ GẦN ĐÂY */}
+        <View style={[s.sectionHeader, { marginTop: 24 }]}>
+          <Text style={s.sectionTitle}>Yêu cầu hỗ trợ sự cố gần đây</Text>
+          <TouchableOpacity
+            onPress={() => onNavigateBottomTab ? onNavigateBottomTab('support') : onNavigateSubTab?.('support')}
+            activeOpacity={0.7}
+          >
+            <Text style={s.viewAllLink}>Xem tất cả &gt;</Text>
+          </TouchableOpacity>
+        </View>
 
-              {passMsg && (
-                <View style={[s.msgBox, passMsg.type === 'error' ? s.msgBoxError : s.msgBoxSuccess]}>
+        {supportTickets && supportTickets.length > 0 ? (
+          supportTickets.slice(0, 2).map((ticket: any, index: number) => {
+            const isResolved = ticket.status === 'RESOLVED' || ticket.status === 'CLOSED';
+            const isProcessing = ticket.status === 'PROCESSING' || ticket.status === 'IN_PROGRESS';
+            const statusLabel = isResolved ? 'Đã xử lý' : (isProcessing ? 'Đang xử lý' : 'Chờ tiếp nhận');
+            const statusColor = isResolved ? '#16a34a' : (isProcessing ? '#2563eb' : '#d97706');
+            const statusBg = isResolved ? '#dcfce7' : (isProcessing ? '#eff6ff' : '#fef3c7');
+
+            return (
+              <TouchableOpacity
+                key={ticket.id || index}
+                style={[s.dealCard, { marginBottom: 10 }]}
+                activeOpacity={0.8}
+                onPress={() => onNavigateBottomTab ? onNavigateBottomTab('support') : onNavigateSubTab?.('support')}
+              >
+                <View style={[s.dealInitialsCircle, { backgroundColor: '#eff6ff' }]}>
                   <MaterialIcons
-                    name={passMsg.type === 'error' ? 'error-outline' : 'check-circle-outline'}
+                    name={ticket.category === 'LOCK' ? 'vpn-key' : 'build'}
                     size={18}
-                    color={passMsg.type === 'error' ? T.error : T.success}
+                    color="#2563eb"
                   />
-                  <Text style={[s.msgText, { color: passMsg.type === 'error' ? T.error : T.success }]}>
-                    {passMsg.text}
+                </View>
+                <View style={s.dealInfo}>
+                  <Text style={s.dealName} numberOfLines={1}>
+                    {ticket.subject || ticket.categoryLabel || 'Hỗ trợ kỹ thuật'}
+                  </Text>
+                  <Text style={s.dealSub} numberOfLines={1}>
+                    {ticket.requestCode ? `#${ticket.requestCode} · ` : ''}{ticket.createdAt || 'Gần đây'}
                   </Text>
                 </View>
-              )}
-
-              <Text style={s.inputLabel}>Mật khẩu hiện tại *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="lock-outline" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Nhập mật khẩu hiện tại..."
-                  placeholderTextColor={T.outline}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  secureTextEntry={!showCurrentPass}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity onPress={() => setShowCurrentPass(!showCurrentPass)} style={s.eyeBtn}>
-                  <MaterialIcons name={showCurrentPass ? 'visibility' : 'visibility-off'} size={20} color={T.outline} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={s.inputLabel}>Mật khẩu mới (ít nhất 6 ký tự) *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="vpn-key" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Nhập mật khẩu mới..."
-                  placeholderTextColor={T.outline}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  secureTextEntry={!showNewPass}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity onPress={() => setShowNewPass(!showNewPass)} style={s.eyeBtn}>
-                  <MaterialIcons name={showNewPass ? 'visibility' : 'visibility-off'} size={20} color={T.outline} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={s.inputLabel}>Xác nhận mật khẩu mới *</Text>
-              <View style={s.inputWrap}>
-                <MaterialIcons name="check" size={20} color={T.outline} style={s.inputIcon} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Nhập lại mật khẩu mới..."
-                  placeholderTextColor={T.outline}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showNewPass}
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[s.submitBtn, { backgroundColor: '#1d4ed8' }, isChangingPass && s.btnDisabled]}
-                onPress={handleChangePassword}
-                disabled={isChangingPass}
-                activeOpacity={0.85}
-              >
-                {isChangingPass ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <>
-                    <MaterialIcons name="security" size={18} color="#ffffff" />
-                    <Text style={s.submitBtnText}>Cập Nhật Mật Khẩu</Text>
-                  </>
-                )}
+                <View style={[s.ticketStatusBadge, { backgroundColor: statusBg }]}>
+                  <Text style={[s.ticketStatusText, { color: statusColor }]}>{statusLabel}</Text>
+                </View>
               </TouchableOpacity>
-            </View>
-
-            {/* Nút Đăng Xuất To Rõ Ràng */}
-            <TouchableOpacity style={s.fullLogoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-              <MaterialIcons name="logout" size={20} color={T.error} />
-              <Text style={s.fullLogoutBtnText}>Đăng Xuất Khỏi Thiết Bị</Text>
-            </TouchableOpacity>
-          </>
+            );
+          })
         ) : (
-          /* ================================================================ */
-          /* TAB 2: TRUY CỨU HÓA ĐƠN & BIÊN LAI THANH TOÁN (VAT)              */
-          /* ================================================================ */
-          <View style={s.invoicesTabContainer}>
-            {/* Khung Tóm Tắt Tài Chính & Hóa Đơn */}
-            <View style={s.financialHeroCard}>
-              <View style={s.financialHeroRow}>
-                <View style={s.financialHeroCol}>
-                  <Text style={s.financialHeroLabel}>TỔNG TIỀN ĐÃ XUẤT HÓA ĐƠN</Text>
-                  <Text style={s.financialHeroAmount}>{formatVND(totalPaidSum)}</Text>
-                </View>
-                <View style={s.vatGuaranteedBadge}>
-                  <MaterialIcons name="verified" size={13} color="#047857" />
-                  <Text style={s.vatGuaranteedText}>Hóa đơn VAT 8%</Text>
-                </View>
-              </View>
-
-              <View style={s.financialDivider} />
-
-              <View style={s.financialFooterRow}>
-                <Text style={s.financialFooterText}>
-                  Số lượng: <Text style={{ fontWeight: '800', color: '#1E293B' }}>{allInvoices.length} hóa đơn</Text>
-                </Text>
-                <Text style={s.financialFooterText}>
-                  CQT: <Text style={{ fontWeight: '800', color: '#15803D' }}>Đã cấp mã tra cứu</Text>
-                </Text>
-              </View>
+          <View style={s.emptySectionCard}>
+            <View style={[s.emptySectionIconWrap, { backgroundColor: '#f0fdf4' }]}>
+              <MaterialIcons name="verified" size={20} color="#16a34a" />
             </View>
-
-            {/* Thanh Tìm Kiếm Hóa Đơn Thông Minh */}
-            <View style={s.searchInvoiceCard}>
-              <View style={s.searchInvoiceBar}>
-                <MaterialIcons name="search" size={22} color="#64748B" style={{ marginRight: 8 }} />
-                <TextInput
-                  style={s.searchInvoiceInput}
-                  placeholder="Tra cứu theo mã HĐ, mã hóa đơn, ô kho..."
-                  placeholderTextColor="#94A3B8"
-                  value={invoiceSearchQuery}
-                  onChangeText={setInvoiceSearchQuery}
-                />
-                {invoiceSearchQuery ? (
-                  <TouchableOpacity onPress={() => setInvoiceSearchQuery('')} style={{ padding: 4 }}>
-                    <MaterialIcons name="close" size={18} color="#64748B" />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              {/* Bộ lọc loại hóa đơn */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.filterPillScroll}
-              >
-                <TouchableOpacity
-                  style={[s.filterPill, selectedInvoiceCategory === 'all' && s.filterPillActive]}
-                  onPress={() => setSelectedInvoiceCategory('all')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.filterPillText, selectedInvoiceCategory === 'all' && s.filterPillTextActive]}>
-                    Tất cả ({allInvoices.length})
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[s.filterPill, selectedInvoiceCategory === 'rent' && s.filterPillActive]}
-                  onPress={() => setSelectedInvoiceCategory('rent')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.filterPillText, selectedInvoiceCategory === 'rent' && s.filterPillTextActive]}>
-                    Tiền thuê kho
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[s.filterPill, selectedInvoiceCategory === 'deposit' && s.filterPillActive]}
-                  onPress={() => setSelectedInvoiceCategory('deposit')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.filterPillText, selectedInvoiceCategory === 'deposit' && s.filterPillTextActive]}>
-                    Tiền cọc giữ chỗ
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[s.filterPill, selectedInvoiceCategory === 'renewal' && s.filterPillActive]}
-                  onPress={() => setSelectedInvoiceCategory('renewal')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.filterPillText, selectedInvoiceCategory === 'renewal' && s.filterPillTextActive]}>
-                    Gia hạn hợp đồng
-                  </Text>
-                </TouchableOpacity>
-              </ScrollView>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={s.emptySectionTitle}>Hệ thống buồng kho hoạt động tốt</Text>
+              <Text style={s.emptySectionSub}>Không có sự cố hoặc yêu cầu kỹ thuật nào đang chờ xử lý</Text>
             </View>
+            <TouchableOpacity
+              style={[s.emptySectionBtn, { backgroundColor: '#eff6ff' }]}
+              activeOpacity={0.8}
+              onPress={() => onNavigateBottomTab ? onNavigateBottomTab('support') : onNavigateSubTab?.('support')}
+            >
+              <Text style={[s.emptySectionBtnText, { color: '#2563eb' }]}>Báo sự cố</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            {/* Danh Sách Hóa Đơn */}
-            <View style={s.invoicesListHeaderRow}>
-              <Text style={s.invoicesListTitle}>
-                Danh Sách Hóa Đơn Điện Tử ({filteredInvoices.length})
+        {/* SECTION 3: CÀI ĐẶT & QUẢN TRỊ TÀI KHOẢN */}
+        <View style={[s.sectionHeader, { marginTop: 24 }]}>
+          <Text style={s.sectionTitle}>Cài đặt & Tài khoản</Text>
+        </View>
+
+        <View style={s.settingsGroup}>
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={() => {
+              setProfileModalTab('info');
+              setShowProfileModal(true);
+            }}
+          >
+            <View style={s.settingsIconWrap}>
+              <MaterialIcons name="person-outline" size={20} color="#334155" />
+            </View>
+            <Text style={s.settingsLabel}>Hồ sơ cá nhân & Đổi mật khẩu</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={s.settingsDivider} />
+
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={() => onNavigateSubTab?.('payments')}
+          >
+            <View style={s.settingsIconWrap}>
+              <MaterialIcons name="receipt-long" size={20} color="#334155" />
+            </View>
+            <Text style={s.settingsLabel}>Hóa đơn</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={s.settingsDivider} />
+
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={onOpenNotifications}
+          >
+            <View style={s.settingsIconWrap}>
+              <MaterialIcons name="notifications-none" size={20} color="#334155" />
+            </View>
+            <Text style={s.settingsLabel}>Trung tâm thông báo & Cảnh báo</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={s.settingsDivider} />
+
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={handleConfirmLogout}
+          >
+            <View style={[s.settingsIconWrap, { backgroundColor: '#fef2f2' }]}>
+              <MaterialIcons name="logout" size={20} color="#dc2626" />
+            </View>
+            <Text style={[s.settingsLabel, { color: '#dc2626' }]}>Đăng xuất tài khoản</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#f87171" />
+          </TouchableOpacity>
+        </View>
+
+        {/* BOTTOM SPACING FOR NAV BAR */}
+        <View style={{ height: 100 }} />
+      </ScrollView>
+
+      {/* MODAL 1: HỒ SƠ CÁ NHÂN & ĐỔI MẬT KHẨU */}
+      <Modal
+        visible={showProfileModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowProfileModal(false)}
+      >
+        <View style={[s.modalSafeArea, { paddingTop: topInset }]}>
+          <View style={s.modalHeader}>
+            <TouchableOpacity onPress={() => setShowProfileModal(false)} style={s.modalBackBtn}>
+              <MaterialIcons name="arrow-back-ios" size={18} color="#1e293b" />
+            </TouchableOpacity>
+            <Text style={s.modalTitle}>Hồ Sơ & Bảo Mật</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          {/* Sub tabs */}
+          <View style={s.modalTabsRow}>
+            <TouchableOpacity
+              style={[s.modalTabBtn, profileModalTab === 'info' && s.modalTabBtnActive]}
+              onPress={() => setProfileModalTab('info')}
+            >
+              <Text style={[s.modalTabText, profileModalTab === 'info' && s.modalTabTextActive]}>
+                Thông tin cá nhân
               </Text>
-              <Text style={s.invoicesListSub}>Chạm để xem chi tiết hóa đơn</Text>
-            </View>
+            </TouchableOpacity>
 
-            {filteredInvoices.length === 0 ? (
-              <View style={s.emptyInvoiceBox}>
-                <MaterialIcons name="receipt-long" size={48} color="#CBD5E1" />
-                <Text style={s.emptyInvoiceTitle}>Không tìm thấy hóa đơn phù hợp</Text>
-                <Text style={s.emptyInvoiceSub}>
-                  Vui lòng thử từ khóa tìm kiếm khác hoặc kiểm tra lại mã hóa đơn của bạn.
-                </Text>
+            <TouchableOpacity
+              style={[s.modalTabBtn, profileModalTab === 'password' && s.modalTabBtnActive]}
+              onPress={() => setProfileModalTab('password')}
+            >
+              <Text style={[s.modalTabText, profileModalTab === 'password' && s.modalTabTextActive]}>
+                Đổi mật khẩu
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
+            {profileModalTab === 'info' ? (
+              <View style={s.formCard}>
+                {profileMsg && (
+                  <View style={[s.msgBanner, profileMsg.type === 'success' ? s.msgSuccess : s.msgError]}>
+                    <Text style={profileMsg.type === 'success' ? s.msgSuccessText : s.msgErrorText}>
+                      {profileMsg.text}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Họ và tên</Text>
+                  <TextInput
+                    style={s.input}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    placeholder="Nhập họ và tên"
+                    placeholderTextColor="#94a3b8"
+                  />
+                </View>
+
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Số điện thoại</Text>
+                  <TextInput
+                    style={s.input}
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="Nhập số điện thoại"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Địa chỉ Email</Text>
+                  <TextInput
+                    style={[s.input, s.inputDisabled]}
+                    value={email}
+                    editable={false}
+                  />
+                  <Text style={s.hintText}>Email đăng ký không thể thay đổi</Text>
+                </View>
+
                 <TouchableOpacity
-                  style={s.resetFilterBtn}
-                  onPress={() => {
-                    setInvoiceSearchQuery('');
-                    setSelectedInvoiceCategory('all');
-                  }}
+                  style={s.submitBtn}
+                  onPress={handleUpdateProfile}
+                  disabled={isUpdatingProfile}
                   activeOpacity={0.8}
                 >
-                  <Text style={s.resetFilterBtnText}>Xem tất cả hóa đơn</Text>
+                  {isUpdatingProfile ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={s.submitBtnText}>Lưu Thay Đổi</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             ) : (
-              filteredInvoices.map((inv) => (
-                <View key={inv.id} style={s.invoiceCard}>
-                  {/* Card Header: Mã HĐ & Badge */}
-                  <View style={s.invoiceCardHeader}>
-                    <View style={s.invoiceCodeWrap}>
-                      <MaterialIcons name="receipt" size={16} color="#1D4ED8" />
-                      <Text style={s.invoiceCodeText}>{inv.invoiceCode}</Text>
-                    </View>
-                    <View style={s.invoicePaidBadge}>
-                      <MaterialIcons name="check-circle" size={12} color="#15803D" />
-                      <Text style={s.invoicePaidBadgeText}>ĐÃ THANH TOÁN</Text>
-                    </View>
-                  </View>
-
-                  {/* Khoản tiền & Dịch vụ */}
-                  <View style={s.invoiceCardBody}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.invoiceServiceTitle}>{inv.typeLabel}</Text>
-                      <Text style={s.invoiceSubDetail}>
-                        Ô kho: <Text style={s.boldSubText}>#{inv.unitCode}</Text> • HĐ: #{inv.contractCode.slice(-6).toUpperCase()}
-                      </Text>
-                      {inv.facilityName && (
-                        <Text style={s.invoiceFacilityText} numberOfLines={1}>
-                          {inv.facilityName}
-                        </Text>
-                      )}
-                    </View>
-
-                    <View style={s.invoiceAmountWrap}>
-                      <Text style={s.invoiceAmountText}>{formatVND(inv.amount)}</Text>
-                      <Text style={s.invoiceVatTag}>Đã gồm VAT 8%</Text>
-                    </View>
-                  </View>
-
-                  {/* Ngày & Phương thức */}
-                  <View style={s.invoiceCardFooter}>
-                    <View style={s.invoiceDateRow}>
-                      <MaterialIcons name="event" size={13} color="#64748B" />
-                      <Text style={s.invoiceDateText}>{inv.paidAt}</Text>
-                    </View>
-
-                    <Text style={s.invoiceMethodText}>
-                      Phương thức: {inv.method === 'SEPAY_QR' ? 'SePay VietQR' : 'Chuyển khoản'}
+              <View style={s.formCard}>
+                {passMsg && (
+                  <View style={[s.msgBanner, passMsg.type === 'success' ? s.msgSuccess : s.msgError]}>
+                    <Text style={passMsg.type === 'success' ? s.msgSuccessText : s.msgErrorText}>
+                      {passMsg.text}
                     </Text>
                   </View>
+                )}
 
-                  {/* Nút Xem Hóa Đơn VAT & Tải PDF */}
-                  <View style={s.invoiceActionRow}>
-                    <TouchableOpacity
-                      style={s.viewVatInvoiceBtn}
-                      onPress={() => {
-                        setSelectedInvoiceForModal(inv);
-                        setIsInvoiceModalVisible(true);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <MaterialIcons name="visibility" size={15} color="#1D4ED8" />
-                      <Text style={s.viewVatInvoiceBtnText}>Xem Hóa Đơn Điện Tử VAT</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={s.quickDownloadBtn}
-                      onPress={() => handleQuickDownload(inv)}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons name="file-download" size={16} color="#475569" />
-                      <Text style={s.quickDownloadBtnText}>Tải PDF</Text>
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Mật khẩu hiện tại</Text>
+                  <View style={s.inputRow}>
+                    <TextInput
+                      style={s.inputRowText}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      placeholder="Nhập mật khẩu hiện tại"
+                      placeholderTextColor="#94a3b8"
+                      secureTextEntry={!showCurrentPass}
+                    />
+                    <TouchableOpacity onPress={() => setShowCurrentPass(!showCurrentPass)}>
+                      <MaterialIcons name={showCurrentPass ? 'visibility-off' : 'visibility'} size={20} color="#94a3b8" />
                     </TouchableOpacity>
                   </View>
                 </View>
-              ))
+
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Mật khẩu mới</Text>
+                  <View style={s.inputRow}>
+                    <TextInput
+                      style={s.inputRowText}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholder="Tối thiểu 6 ký tự"
+                      placeholderTextColor="#94a3b8"
+                      secureTextEntry={!showNewPass}
+                    />
+                    <TouchableOpacity onPress={() => setShowNewPass(!showNewPass)}>
+                      <MaterialIcons name={showNewPass ? 'visibility-off' : 'visibility'} size={20} color="#94a3b8" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={s.fieldGroup}>
+                  <Text style={s.fieldLabel}>Xác nhận mật khẩu mới</Text>
+                  <TextInput
+                    style={s.input}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Nhập lại mật khẩu mới"
+                    placeholderTextColor="#94a3b8"
+                    secureTextEntry
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={s.submitBtn}
+                  onPress={handleChangePassword}
+                  disabled={isChangingPass}
+                  activeOpacity={0.8}
+                >
+                  {isChangingPass ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={s.submitBtnText}>Đổi Mật Khẩu</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             )}
-          </View>
-        )}
-      </ScrollView>
+            <View style={{ height: 60 }} />
+          </ScrollView>
+        </View>
+      </Modal>
 
-      {/* ─── MODAL HÓA ĐƠN ĐIỆN TỬ VAT CHI TIẾT ─── */}
-      <CustomerInvoiceDetailModal
-        visible={isInvoiceModalVisible}
-        onClose={() => setIsInvoiceModalVisible(false)}
-        invoice={selectedInvoiceForModal}
-      />
-
-      {/* Bottom Nav Bar */}
+      {/* BOTTOM NAV BAR */}
       <CustomerBottomNavBar
         activeTab="account"
         onSelectTab={(tab) => onNavigateBottomTab?.(tab)}
@@ -869,639 +627,618 @@ export default function CustomerAccountScreen({
 const s = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: T.bg,
+    backgroundColor: '#f8f9fa',
   },
-  topBar: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 14,
-    paddingBottom: 12,
-    backgroundColor: '#ffffff',
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e7ff',
+    marginBottom: 20,
   },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  headerLeft: {
     flex: 1,
+    marginRight: 12,
   },
-  menuBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topLogoImg: {
-    height: 26,
-    width: 88,
-  },
-  logoutHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: T.errorLight,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#fca5a5',
-    flexShrink: 0,
-  },
-  logoutHeaderText: {
+  roleLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: T.error,
+    color: '#8e8e93',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+  userName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
   },
-  userCard: {
+  avatarWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: '#eff6ff',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+  },
+  avatarFallbackText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  // HERO CARD
+  heroCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: 22,
+  },
+  heroContentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+  },
+  heroIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  heroTextCol: {
+    flex: 1,
+  },
+  heroLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  heroAmount: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  heroSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+  },
+
+  // 4 QUICK ACTIONS
+  quickActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 4,
+  },
+  actionItem: {
+    alignItems: 'center',
+    width: 68,
+  },
+  actionCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e2e7ff',
-    marginBottom: 14,
+    borderColor: '#f1f5f9',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 1,
+    marginBottom: 8,
   },
-  avatarWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#eff6ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#dbeafe',
-  },
-  roleBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginBottom: 4,
-  },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: T.primary,
-    letterSpacing: 0.3,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: T.onSurface,
-  },
-  userEmail: {
+  actionLabel: {
     fontSize: 12,
-    color: T.outline,
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#1e293b',
   },
 
-  // ─── SEGMENTED TABS ───
-  tabSegmentContainer: {
+  // 3 MINI KPI STAT BOXES
+  kpiRow: {
     flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-    gap: 6,
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 24,
   },
-  tabSegmentBtn: {
+  kpiCard: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    gap: 6,
-  },
-  tabSegmentBtnActive: {
-    backgroundColor: '#1D4ED8',
-    shadowColor: '#1D4ED8',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  tabSegmentText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  tabSegmentTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  tabCountBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 10,
-  },
-  tabCountBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  // ─── BANNER PROMO HÓA ĐƠN ───
-  invoicePromoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
-  },
-  promoIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#DBEAFE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  promoHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  promoTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1E40AF',
-  },
-  promoLiveBadge: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  promoLiveBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  promoSub: {
-    fontSize: 11,
-    color: '#3B82F6',
-    marginTop: 2,
-    lineHeight: 15,
-  },
-
-  // ─── CARD CHUNG ───
-  card: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e2e7ff',
-    marginBottom: 14,
+    borderColor: '#f1f5f9',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 5,
+    shadowRadius: 4,
     elevation: 1,
   },
-  cardHeader: {
+  kpiNumber: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  kpiLabel: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#64748b',
+    textAlign: 'center',
+  },
+
+  // SECTION HEADER
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  cardIconBox: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  viewAllLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+
+  // APPOINTMENT CARDS
+  resStatusBadge: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  resStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  ticketStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  ticketStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  emptySectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 12,
+  },
+  emptySectionIconWrap: {
     width: 38,
     height: 38,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: T.onSurface,
+  emptySectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: 2,
   },
-  cardSub: {
+  emptySectionSub: {
     fontSize: 11,
-    color: T.outline,
-    marginTop: 2,
+    color: '#64748b',
   },
-  msgBox: {
+  emptySectionBtn: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  emptySectionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  appointmentList: {
+    gap: 10,
+  },
+  appointmentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  msgBoxSuccess: {
-    backgroundColor: T.successLight,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#86efac',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  msgBoxError: {
-    backgroundColor: T.errorLight,
-    borderWidth: 1,
-    borderColor: '#fca5a5',
+  timeBadge: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  msgText: {
+  timeBadgeTime: {
     fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
+    fontWeight: '800',
+    color: '#1d4ed8',
   },
-  inputLabel: {
+  timeBadgeDate: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  appointmentInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  appointmentName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  appointmentSub: {
+    fontSize: 11.5,
+    color: '#64748b',
+  },
+
+  // DEAL CARD
+  dealCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  dealInitialsCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  dealInitialsText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1d4ed8',
+  },
+  dealInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  dealName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  dealSub: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+
+  // SETTINGS GROUP
+  settingsGroup: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  settingsItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  settingsIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  settingsLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    marginLeft: 64,
+  },
+
+  // MODALS
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalBackBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  modalTabsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    gap: 8,
+  },
+  modalTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  modalTabBtnActive: {
+    backgroundColor: '#eff6ff',
+  },
+  modalTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  modalTabTextActive: {
+    color: '#1d4ed8',
+    fontWeight: '800',
+  },
+  modalBody: {
+    flex: 1,
+    padding: 16,
+  },
+  formCard: {
+    backgroundColor: '#ffffff',
+  },
+  fieldGroup: {
+    marginBottom: 16,
+  },
+  fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
+    color: '#475569',
     marginBottom: 6,
-    marginTop: 4,
   },
-  inputWrap: {
+  input: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: '#1e293b',
+  },
+  inputDisabled: {
+    backgroundColor: '#f1f5f9',
+    color: '#64748b',
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  inputWrapDisabled: {
-    backgroundColor: '#f1f5f9',
     borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
   },
-  inputIcon: {
-    marginRight: 8,
-  },
-  input: {
+  inputRowText: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 13,
-    color: '#0f172a',
+    color: '#1e293b',
   },
-  eyeBtn: {
-    padding: 6,
+  hintText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 4,
   },
   submitBtn: {
-    flexDirection: 'row',
+    backgroundColor: '#2563eb',
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: T.brand,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 6,
+    marginTop: 12,
   },
   submitBtnText: {
     color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  btnDisabled: {
-    opacity: 0.6,
-  },
-  fullLogoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#fee2e2',
-    borderWidth: 1,
-    borderColor: '#fca5a5',
-    paddingVertical: 13,
-    borderRadius: 14,
-    marginTop: 6,
-  },
-  fullLogoutBtnText: {
-    color: T.error,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
+  },
+  msgBanner: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  msgSuccess: {
+    backgroundColor: '#dcfce7',
+  },
+  msgSuccessText: {
+    color: '#15803d',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  msgError: {
+    backgroundColor: '#fee2e2',
+  },
+  msgErrorText: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
-  // ─── TAB INVOICES STYLES ───
-  invoicesTabContainer: {
-    gap: 12,
-  },
-  financialHeroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  financialHeroRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  financialHeroCol: {
-    flex: 1,
-  },
-  financialHeroLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#2563EB',
-    letterSpacing: 0.5,
-  },
-  financialHeroAmount: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginTop: 4,
-  },
-  vatGuaranteedBadge: {
+  // INVOICE LOOKUP MODAL
+  invoiceSearchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  vatGuaranteedText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#047857',
-  },
-  financialDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 10,
-  },
-  financialFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  financialFooterText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  searchInvoiceCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f8fafc',
+    margin: 16,
+    marginBottom: 8,
     borderRadius: 14,
-    padding: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#e2e8f0',
   },
-  searchInvoiceBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  searchInvoiceInput: {
+  invoiceSearchInput: {
     flex: 1,
-    paddingVertical: 8,
-    fontSize: 12.5,
-    color: '#0F172A',
-  },
-  filterPillScroll: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-    paddingVertical: 2,
-  },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  filterPillActive: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#1D4ED8',
-  },
-  filterPillText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  filterPillTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  invoicesListHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  invoicesListTitle: {
+    paddingVertical: 10,
     fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
+    color: '#1e293b',
   },
-  invoicesListSub: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  emptyInvoiceBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 30,
+  emptyInvoicesBox: {
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    paddingVertical: 48,
   },
-  emptyInvoiceTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-    marginTop: 10,
+  emptyInvoicesText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    marginTop: 8,
   },
-  emptyInvoiceSub: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  resetFilterBtn: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 12,
-  },
-  resetFilterBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  invoiceCard: {
-    backgroundColor: '#FFFFFF',
+  invoiceItemCard: {
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#f1f5f9',
+    marginBottom: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  invoiceCardHeader: {
+  invoiceItemTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    marginBottom: 4,
   },
-  invoiceCodeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  invoiceCodeText: {
+  invoiceItemCode: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#1E40AF',
+    color: '#1e293b',
   },
-  invoicePaidBadge: {
+  invoiceItemAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1d4ed8',
+  },
+  invoiceItemDesc: {
+    fontSize: 11.5,
+    color: '#64748b',
+    marginBottom: 8,
+  },
+  invoiceItemBottom: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    gap: 4,
   },
-  invoicePaidBadgeText: {
+  invoiceItemDate: {
+    fontSize: 11,
+    color: '#94a3b8',
+  },
+  invoiceItemStatus: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#15803D',
-  },
-  invoiceCardBody: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: 10,
-    gap: 10,
-  },
-  invoiceServiceTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  invoiceSubDetail: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 3,
-  },
-  boldSubText: {
-    color: '#1D4ED8',
-    fontWeight: '700',
-  },
-  invoiceFacilityText: {
-    fontSize: 11,
-    color: '#475569',
-    marginTop: 2,
-  },
-  invoiceAmountWrap: {
-    alignItems: 'flex-end',
-  },
-  invoiceAmountText: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#1D4ED8',
-  },
-  invoiceVatTag: {
-    fontSize: 9.5,
-    color: '#059669',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  invoiceCardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F8FAFC',
-  },
-  invoiceDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  invoiceDateText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  invoiceMethodText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  invoiceActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  viewVatInvoiceBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 6,
-  },
-  viewVatInvoiceBtnText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  quickDownloadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 4,
-  },
-  quickDownloadBtnText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#334155',
+    color: '#16a34a',
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
 });

@@ -88,6 +88,7 @@ export default function MyUnitsDashboardScreen({
 }: MyUnitsDashboardScreenProps) {
   // Selected active unit
   const [selectedUnitIndex, setSelectedUnitIndex] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<'grid' | 'detail'>('grid');
   const activeUnit: CustomerRentedUnit | undefined = units[selectedUnitIndex] || units[0];
 
   // PIN visibility toggle
@@ -139,6 +140,13 @@ export default function MyUnitsDashboardScreen({
     if (!zone) return '';
     const trimmed = zone.trim();
     return trimmed.toLowerCase().startsWith('khu') ? trimmed : `Khu ${trimmed}`;
+  };
+
+  // Format floor to prevent duplicate "Tầng Tầng 1"
+  const formatFloorLabel = (floor?: string | number) => {
+    if (!floor) return 'Tầng 1';
+    const trimmed = String(floor).trim();
+    return trimmed.toLowerCase().startsWith('tầng') ? trimmed : `Tầng ${trimmed}`;
   };
 
   // Copied PIN feedback state
@@ -207,11 +215,22 @@ export default function MyUnitsDashboardScreen({
         {/* TOP APP BAR (ĐỒNG BỘ 100% VỚI LOGO WEB VÀ STITCH UI) */}
         <View style={s.topAppBar}>
           <View style={s.brandRow}>
-            <Image
-              source={require('../../../assets/logo.png')}
-              style={s.topLogoImg}
-              resizeMode="contain"
-            />
+            {viewMode === 'detail' ? (
+              <TouchableOpacity
+                style={s.headerBackBtn}
+                onPress={() => setViewMode('grid')}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="arrow-back-ios" size={16} color="#0f172a" />
+                <Text style={s.headerBackBtnText}>Quay lại danh sách kho</Text>
+              </TouchableOpacity>
+            ) : (
+              <Image
+                source={require('../../../assets/logo.png')}
+                style={s.topLogoImg}
+                resizeMode="contain"
+              />
+            )}
           </View>
 
           <View style={s.topActionsRow}>
@@ -266,93 +285,119 @@ export default function MyUnitsDashboardScreen({
             />
           }
         >
-          {/* 1. UNIT SELECTOR */}
-          <View style={s.sectionWrap}>
-            <View style={s.unitCarouselHeader}>
-              <View style={s.carouselTitleWrap}>
-                <Text style={s.unitCarouselTitle}>KHO ĐANG KÍCH HOẠT</Text>
-                <View style={s.unitCountBadge}>
-                  <Text style={s.unitCountBadgeText}>{units.length} buồng</Text>
+          {viewMode === 'grid' ? (
+            /* VIEW 1: LƯỚI TẤT CẢ CÁC KHO (2 KHO MỖI HÀNG) */
+            <View style={s.sectionWrap}>
+              <View style={s.unitCarouselHeader}>
+                <View style={s.carouselTitleWrap}>
+                  <Text style={s.unitCarouselTitle}>KHO ĐANG KÍCH HOẠT</Text>
+                  <View style={s.unitCountBadge}>
+                    <Text style={s.unitCountBadgeText}>{units.length} buồng</Text>
+                  </View>
                 </View>
-              </View>
-              <TouchableOpacity
-                style={s.rentMoreBtn}
-                activeOpacity={0.7}
-                onPress={() =>
-                  onRentMoreUnits ? onRentMoreUnits() : onNavigateBottomTab?.('search')
-                }
-              >
-                <MaterialIcons name="add-circle-outline" size={16} color={T.primary} />
-                <Text style={s.rentMoreBtnText}>Thuê thêm</Text>
-              </TouchableOpacity>
-            </View>
-
-            {units.length === 0 ? (
-              <View style={s.emptyUnitsBox}>
-                <MaterialIcons name="inventory-2" size={36} color={T.outline} />
-                <Text style={s.emptyUnitsText}>Bạn chưa thuê kho nào</Text>
                 <TouchableOpacity
-                  style={s.emptyUnitsBtn}
+                  style={s.rentMoreBtn}
+                  activeOpacity={0.7}
                   onPress={() =>
                     onRentMoreUnits ? onRentMoreUnits() : onNavigateBottomTab?.('search')
                   }
                 >
-                  <Text style={s.emptyUnitsBtnText}>+ Thuê kho ngay</Text>
+                  <MaterialIcons name="add-circle-outline" size={16} color={T.primary} />
+                  <Text style={s.rentMoreBtnText}>Thuê thêm</Text>
                 </TouchableOpacity>
               </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.unitTabsScroll}
-              >
-                {units.map((unit, index) => {
-                  const isActive = index === selectedUnitIndex;
-                  return (
-                    <TouchableOpacity
-                      key={unit.id || index}
-                      style={[
-                        s.unitTabItem,
-                        isActive ? s.unitTabItemActive : s.unitTabItemInactive,
-                      ]}
-                      onPress={() => setSelectedUnitIndex(index)}
-                      activeOpacity={0.85}
-                    >
-                      {isActive && <View style={s.activePingDot} />}
-                      <View
-                        style={[
-                          s.unitTabIconWrap,
-                          isActive ? s.unitTabIconWrapActive : s.unitTabIconWrapInactive,
-                        ]}
+
+              {units.length === 0 ? (
+                <View style={s.emptyUnitsBox}>
+                  <MaterialIcons name="inventory-2" size={36} color={T.outline} />
+                  <Text style={s.emptyUnitsText}>Bạn chưa thuê kho nào</Text>
+                  <TouchableOpacity
+                    style={s.emptyUnitsBtn}
+                    onPress={() =>
+                      onRentMoreUnits ? onRentMoreUnits() : onNavigateBottomTab?.('search')
+                    }
+                  >
+                    <Text style={s.emptyUnitsBtnText}>+ Thuê kho ngay</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={s.twoColGrid}>
+                  {units.map((unit, index) => {
+                    return (
+                      <TouchableOpacity
+                        key={unit.id || index}
+                        style={s.gridCard}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          setSelectedUnitIndex(index);
+                          setViewMode('detail');
+                        }}
                       >
-                        <MaterialIcons
-                          name={isActive ? 'inventory-2' : 'meeting-room'}
-                          size={18}
-                          color={isActive ? T.primary : T.outline}
-                        />
-                      </View>
-                      <View style={{ flex: 1, minWidth: 125 }}>
-                        <Text
-                          style={[
-                            s.unitTabCode,
-                            isActive ? s.unitTabCodeActive : s.unitTabCodeInactive,
-                          ]}
-                          numberOfLines={1}
-                        >
+                        {/* Card Header: Icon & Status */}
+                        <View style={s.gridCardTop}>
+                          <View style={s.gridCardIconWrap}>
+                            <MaterialIcons name="meeting-room" size={20} color={T.primary} />
+                          </View>
+                          <View style={[
+                            s.gridStatusBadge,
+                            unit.status === 'overdue' && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+                            unit.status === 'expiring_soon' && { backgroundColor: '#fef3c7', borderColor: '#fde68a' },
+                          ]}>
+                            <Text style={[
+                              s.gridStatusText,
+                              unit.status === 'overdue' && { color: '#dc2626' },
+                              unit.status === 'expiring_soon' && { color: '#d97706' },
+                            ]}>
+                              {unit.statusLabel || (unit.status === 'expiring_soon' ? 'Sắp hết hạn' : 'Đang hoạt động')}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Title & Info */}
+                        <Text style={s.gridUnitTitle} numberOfLines={1}>
                           Buồng #{unit.unitCode}
                         </Text>
-                        <Text style={s.unitTabSub} numberOfLines={1}>
-                          {unit.facilityName.split(' ')[0]} • {unit.size}
+                        <Text style={s.gridUnitSize} numberOfLines={1}>
+                          {unit.size} · {unit.unitName || 'Kho tự quản'}
                         </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-          </View>
 
-          {/* 2. THẺ KHÓA THÔNG MINH (SMART PASS HERO CARD - LIGHT THEME) */}
+                        <View style={s.gridMetaRow}>
+                          <MaterialIcons name="location-on" size={12} color="#64748b" />
+                          <Text style={s.gridMetaText} numberOfLines={1}>
+                            {unit.facilityName.split(' ')[0]} • {formatFloorLabel(unit.floor)}
+                          </Text>
+                        </View>
+
+                        <View style={s.gridMetaRow}>
+                          <MaterialIcons name="access-time" size={12} color="#64748b" />
+                          <Text style={s.gridMetaText}>
+                            Còn lại: {unit.daysRemaining ?? 30} ngày
+                          </Text>
+                        </View>
+
+                        {/* Chi tiết Button */}
+                        <TouchableOpacity
+                          style={s.gridDetailBtn}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            setSelectedUnitIndex(index);
+                            setViewMode('detail');
+                          }}
+                        >
+                          <MaterialIcons name="visibility" size={14} color={T.primary} style={{ marginRight: 4 }} />
+                          <Text style={s.gridDetailBtnText}>Chi tiết</Text>
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          ) : (
+            /* VIEW 2: CHI TIẾT BUỒNG KHO (GIỐNG HỆT ẢNH 2) */
+            <View style={{ flex: 1 }}>
+
+              {/* 2. THẺ KHÓA THÔNG MINH (SMART PASS HERO CARD - LIGHT THEME) */}
           <View style={s.smartPassHeroCard}>
             {/* Địa chỉ cơ sở - Full width không bị chèn ép */}
             <View style={s.passHeaderRow}>
@@ -366,19 +411,14 @@ export default function MyUnitsDashboardScreen({
 
             {/* Thông tin Buồng kho - Bố cục dọc thông thoáng, chuẩn tỉ lệ */}
             <View style={s.passMainSection}>
-              <View style={s.passBadgeRow}>
-                <Text style={s.passUnitPrefix}>THẺ KHÓA ĐIỆN TỬ</Text>
-                <View style={s.passSizePill}>
-                  <Text style={s.passSizePillText}>{activeUnit?.size || 'Tiêu chuẩn'}</Text>
-                </View>
-              </View>
+              
               <Text style={s.passUnitTitle} numberOfLines={1}>
                 Buồng #{activeUnit?.unitCode || '—'}
               </Text>
               <View style={s.passLocationMetaRow}>
                 <MaterialIcons name="layers" size={14} color="#64748b" />
                 <Text style={s.passLocationMetaText}>
-                  {activeUnit?.floor ? `Tầng ${activeUnit.floor}` : 'Tầng 1'} • {formatZoneLabel(activeUnit?.zone) || 'Khu Tiêu Chuẩn'}
+                  {formatFloorLabel(activeUnit?.floor)} • {formatZoneLabel(activeUnit?.zone) || 'Khu Tiêu Chuẩn'}
                 </Text>
                 <Text style={s.passLocationMetaDot}>•</Text>
                 <Text style={s.passLocationMetaSub}>{activeUnit?.unitName || 'Kho tự quản'}</Text>
@@ -575,7 +615,8 @@ export default function MyUnitsDashboardScreen({
               <MaterialIcons name="chevron-right" size={22} color={T.outline} />
             </TouchableOpacity>
           </View>
-        
+            </View>
+          )}
         </ScrollView>
 
         {/* BOTTOM NAVIGATION BAR */}
@@ -595,6 +636,126 @@ export default function MyUnitsDashboardScreen({
 
 // ─── STYLESHEET ────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  headerBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  headerBackBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  twoColGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+  },
+  gridCard: {
+    width: '48%',
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    justifyContent: 'space-between',
+  },
+  gridCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  gridCardIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridStatusBadge: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gridStatusText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  gridUnitTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  gridUnitSize: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 6,
+  },
+  gridMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  gridMetaText: {
+    fontSize: 10.5,
+    color: '#64748b',
+  },
+  gridDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 10,
+    paddingVertical: 7,
+    marginTop: 8,
+  },
+  gridDetailBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#2563eb',
+  },
+  backToGridBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignSelf: 'flex-start',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  backToGridBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
   outerWrapper: { flex: 1, backgroundColor: '#f8fafc', width: '100%', alignItems: 'center' },
   mobileContainer: {
     flex: 1,
