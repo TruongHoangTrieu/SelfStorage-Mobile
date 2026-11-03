@@ -744,6 +744,10 @@ export async function markAllNotificationsReadApi(): Promise<{ count: number }> 
 /**
  * Đánh dấu 1 thông báo cụ thể là đã đọc
  */
+export async function getNotificationDetailApi(id: string): Promise<AppNotification & { relatedEntity?: any }> {
+  return apiRequest<AppNotification & { relatedEntity?: any }>(`/notifications/${id}`);
+}
+
 export async function markNotificationReadApi(id: string): Promise<AppNotification> {
   return apiRequest<AppNotification>(`/notifications/${id}/read`, {
     method: 'PATCH',

@@ -25,6 +25,7 @@ import ChangePinModal from '../components/customer/ChangePinModal';
 import AiAssistantModal from '../components/customer/AiAssistantModal';
 import DraggableAiFab from '../components/customer/DraggableAiFab';
 import NotificationsModal from '../components/common/NotificationsModal';
+import NotificationDetailScreen from '../screens/common/NotificationDetailScreen';
 import { useNotifications } from '../hooks/useNotifications';
 import { AiSuggestedUnit } from '../api';
 import {
@@ -99,6 +100,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
 
   // Trung tâm thông báo & Toast lý do đăng nhập
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false);
+  const [selectedNotificationId, setSelectedNotificationId] = useState<string | null>(null);
+  const [selectedCustomerNotification, setSelectedCustomerNotification] = useState<any | null>(null);
   const [authModalToast, setAuthModalToast] = useState<string | null>(null);
   const customerNotifState = useNotifications('customer');
 
@@ -194,12 +197,47 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     }
   };
 
+  const handleSelectCustomerNotification = (notif: any) => {
+    setShowNotifModal(false);
+    setSelectedCustomerNotification(notif);
+    setSelectedNotificationId(notif.id);
+  };
   return (
     <View style={{ flex: 1 }}>
       
 
       {/* Nội dung theo Tab chính: Kiểm tra nếu chưa đăng nhập thì buộc đăng nhập */}
-      {customerTab === 'my_units' && (!isLoggedIn || !currentUser) ? (
+      {selectedNotificationId ? (
+        <NotificationDetailScreen
+          notificationId={selectedNotificationId}
+          initialData={selectedCustomerNotification}
+          onBack={() => {
+            setSelectedNotificationId(null);
+            setSelectedCustomerNotification(null);
+            setSelectedCustomerNotification(null);
+          }}
+          onNavigateRelated={(target) => {
+            setSelectedNotificationId(null);
+            if (target.subTab === 'payments') {
+              setCustomerTab('my_units');
+              setCustomerNavTab('payments');
+            } else if (target.subTab === 'support') {
+              setCustomerTab('my_units');
+              setCustomerNavTab('support');
+            } else if (target.subTab === 'documents') {
+              setCustomerTab('my_units');
+              setCustomerNavTab('documents');
+            } else if (target.subTab === 'access') {
+              setCustomerTab('my_units');
+              setCustomerNavTab('access');
+            } else {
+              setCustomerTab('my_units');
+              setCustomerNavTab('my_units');
+            }
+          }}
+          role="customer"
+        />
+      ) : customerTab === 'my_units' && (!isLoggedIn || !currentUser) ? (
         <View style={{ flex: 1, backgroundColor: '#f7f9fd' }}>
           {/* Top Logo Bar */}
           <View
@@ -718,6 +756,7 @@ currentUser={currentUser}
         onMarkAllAsRead={customerNotifState.markAllAsRead}
         onDeleteNotification={customerNotifState.deleteNotification}
         role="customer"
+        onSelectNotification={handleSelectCustomerNotification}
       />
 
       {/* ─── TOAST THÔNG BÁO THAO TÁC THÀNH CÔNG (IN-APP ACTION TOAST 3S) ─── */}

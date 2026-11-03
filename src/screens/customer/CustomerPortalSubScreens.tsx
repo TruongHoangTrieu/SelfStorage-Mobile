@@ -3,6 +3,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Modal,
   ScrollView,
   TouchableOpacity,
   Image,
@@ -25,6 +26,7 @@ export function CustomerPaymentsScreen({
   onBackToUnits,
   onOpenSidebar,
 }: CustomerPaymentsScreenProps) {
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const allPayments = units.flatMap((u) =>
     (u.payments || []).map((p) => ({ ...p, unitCode: u.unitCode, contractCode: u.contractCode }))
   );
@@ -91,7 +93,7 @@ export function CustomerPaymentsScreen({
           </View>
         ) : (
           allPayments.map((p) => (
-            <View key={p.id} style={styles.paymentCard}>
+            <TouchableOpacity key={p.id} style={styles.paymentCard} activeOpacity={0.85} onPress={() => setSelectedReceipt(p)}>
               <View style={styles.paymentCardHeader}>
                 <View>
                   <Text style={styles.paymentTypeLabel}>{p.typeLabel}</Text>
@@ -120,10 +122,84 @@ export function CustomerPaymentsScreen({
                   <Text style={styles.invoiceBtnText}>📄 Tải HĐ VAT</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
+
+      {/* Payment Receipt Modal */}
+      {selectedReceipt && (
+        <Modal
+          visible={Boolean(selectedReceipt)}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setSelectedReceipt(null)}
+        >
+          <View style={{ flex: 1, backgroundColor: "rgba(15, 23, 42, 0.7)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+            <View style={{ width: "100%", maxWidth: 380, backgroundColor: "#1e293b", borderRadius: 24, padding: 22, borderWidth: 1, borderColor: "#334155" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: "#38bdf8", textTransform: "uppercase", letterSpacing: 0.8 }}>BIÊN NHẬN ĐIỆN TỬ SEPAY</Text>
+                <TouchableOpacity onPress={() => setSelectedReceipt(null)} style={{ padding: 4 }}>
+                  <Text style={{ color: "#94a3b8", fontSize: 16, fontWeight: "700" }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#334155" }}>
+                <Text style={{ fontSize: 26, fontWeight: "900", color: "#10b981" }}>{formatVND(selectedReceipt.amount)}</Text>
+                <View style={{ marginTop: 6, paddingHorizontal: 10, paddingVertical: 3, backgroundColor: "rgba(16, 185, 129, 0.15)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(16, 185, 129, 0.3)" }}>
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#34d399" }}>✓ ĐÃ THANH TOÁN THÀNH CÔNG</Text>
+                </View>
+              </View>
+
+              <View style={{ paddingVertical: 14, gap: 10 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Loại thanh toán:</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#f8fafc" }}>{selectedReceipt.typeLabel}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Mã giao dịch:</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#38bdf8" }}>{selectedReceipt.paymentCode}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Hợp đồng & Buồng kho:</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#f8fafc" }}>#{selectedReceipt.contractCode} • {selectedReceipt.unitCode}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Thời gian:</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#f8fafc" }}>{selectedReceipt.paidAt}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, color: "#94a3b8" }}>Phương thức:</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#f8fafc" }}>Cổng SePay VietQR (Tự động)</Text>
+                </View>
+                {Boolean(selectedReceipt.periodDescription) && (
+                  <View style={{ marginTop: 4, padding: 8, backgroundColor: "rgba(51, 65, 85, 0.4)", borderRadius: 10 }}>
+                    <Text style={{ fontSize: 11, color: "#cbd5e1" }}>{selectedReceipt.periodDescription}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#334155", paddingVertical: 12, borderRadius: 12, alignItems: "center" }}
+                  onPress={() => setSelectedReceipt(null)}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#cbd5e1" }}>Đóng</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#2563eb", paddingVertical: 12, borderRadius: 12, alignItems: "center" }}
+                  onPress={() => {
+                    handleDownloadInvoice(selectedReceipt.paymentCode);
+                    setSelectedReceipt(null);
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }}>Xuất HĐ VAT (PDF)</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

@@ -25,6 +25,7 @@ interface NotificationsModalProps {
   onMarkAllAsRead: () => void;
   onDeleteNotification: (id: string) => void;
   role?: 'customer' | 'staff';
+  onSelectNotification?: (item: AppNotification) => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -121,8 +122,10 @@ export default function NotificationsModal({
   onMarkAllAsRead,
   onDeleteNotification,
   role = 'customer',
+  onSelectNotification,
 }: NotificationsModalProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
+  const [viewingNotif, setViewingNotif] = useState<AppNotification | null>(null);
 
   const filteredNotifs = useMemo(() => {
     return notifications.filter((n) => {
@@ -135,6 +138,12 @@ export default function NotificationsModal({
   const handleCardPress = (item: AppNotification) => {
     if (!item.isRead) {
       onMarkAsRead(item.id);
+    }
+    if (onSelectNotification) {
+      onClose();
+      onSelectNotification(item);
+    } else {
+      setViewingNotif(item);
     }
   };
 
@@ -270,13 +279,24 @@ export default function NotificationsModal({
                         </View>
                       )}
 
-                      <TouchableOpacity
-                        style={s.deleteBtn}
-                        onPress={() => onDeleteNotification(item.id)}
-                        activeOpacity={0.7}
-                      >
-                        <MaterialIcons name="delete-outline" size={16} color="#94a3b8" />
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <TouchableOpacity
+                          style={s.viewDetailMiniBtn}
+                          onPress={() => handleCardPress(item)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={s.viewDetailMiniText}>Chi tiết</Text>
+                          <MaterialIcons name="arrow-forward" size={12} color="#2563eb" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={s.deleteBtn}
+                          onPress={() => onDeleteNotification(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <MaterialIcons name="delete-outline" size={16} color="#94a3b8" />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -284,6 +304,78 @@ export default function NotificationsModal({
             })
           )}
         </ScrollView>
+
+        {/* Detail Modal for Full Notification Reading */}
+        {viewingNotif && (
+          <Modal
+            visible={Boolean(viewingNotif)}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setViewingNotif(null)}
+          >
+            <View style={s.detailOverlay}>
+              <View style={s.detailCard}>
+                <View style={s.detailHeader}>
+                  <View style={[s.tagBadge, { backgroundColor: getNotificationVisuals(viewingNotif.type).bg }]}>
+                    <Text style={[s.tagBadgeText, { color: getNotificationVisuals(viewingNotif.type).color }]}>
+                      {getNotificationVisuals(viewingNotif.type).tag}
+                    </Text>
+                  </View>
+                  <Text style={s.timeText}>{formatRelativeTime(viewingNotif.createdAt)}</Text>
+                </View>
+
+                <Text style={s.detailTitle}>{viewingNotif.title}</Text>
+
+                {Boolean(viewingNotif.entityId) && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#f8fafc", borderRadius: 8, alignSelf: "flex-start" }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748b" }}>Mã tham chiếu:</Text>
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: "#2563eb" }}>{viewingNotif.entityId}</Text>
+                  </View>
+                )}
+
+                <ScrollView style={s.detailBodyScroll} contentContainerStyle={{ paddingVertical: 8 }}>
+                  <Text style={s.detailBodyText}>{viewingNotif.body}</Text>
+                </ScrollView>
+
+                <View style={s.detailActionRow}>
+                  <TouchableOpacity
+                    style={s.detailCloseBtn}
+                    onPress={() => setViewingNotif(null)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.detailCloseBtnText}>Đóng</Text>
+                  </TouchableOpacity>
+
+                  {onSelectNotification && (
+                    <TouchableOpacity
+                      style={s.detailActionBtn}
+                      onPress={() => {
+                        const notif = viewingNotif;
+                        setViewingNotif(null);
+                        onClose();
+                        onSelectNotification(notif);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={s.detailActionBtnText}>
+                        {viewingNotif.type === "PAYMENT"
+                          ? "Đến Lịch Sử Giao Dịch"
+                          : viewingNotif.type === "SUPPORT"
+                          ? "Đến Phiếu Hỗ Trợ"
+                          : viewingNotif.type === "CONTRACT"
+                          ? "Đến Hồ Sơ Hợp Đồng"
+                          : viewingNotif.type === "ACCESS"
+                          ? "Đến Mã PIN Khóa"
+                          : "Đến mục liên quan"}
+                      </Text>
+                      <MaterialIcons name="arrow-forward" size={14} color="#ffffff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </View>
     </Modal>
   );
@@ -564,5 +656,95 @@ const s = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#2563eb',
+  },
+  viewDetailMiniBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "#eff6ff",
+  },
+  viewDetailMiniText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2563eb",
+  },
+  detailOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  detailCard: {
+    width: "100%",
+    maxHeight: "80%",
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  detailTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  detailBodyScroll: {
+    maxHeight: 240,
+    marginVertical: 4,
+  },
+  detailBodyText: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 20,
+  },
+  detailActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  detailActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+  },
+  detailActionBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  detailCloseBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: "#f1f5f9",
+  },
+  detailCloseBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748b",
   },
 });

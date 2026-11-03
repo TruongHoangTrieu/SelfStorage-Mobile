@@ -10,6 +10,7 @@ import StaffReturnQueueScreen from '../screens/staff/StaffReturnQueueScreen';
 import StaffSupportScreen from '../screens/staff/StaffSupportScreen';
 import PrintReceiptModal from '../components/staff/PrintReceiptModal';
 import NotificationsModal from '../components/common/NotificationsModal';
+import NotificationDetailScreen from '../screens/common/NotificationDetailScreen';
 import { useNotifications } from '../hooks/useNotifications';
 import { CURRENT_STAFF_USER } from '../data/mockStaffData';
 import { useStaffAppointments } from '../hooks/useStaffAppointments';
@@ -84,6 +85,8 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
 
   // Trung tâm thông báo Nhân viên
   const [showStaffNotifModal, setShowStaffNotifModal] = React.useState<boolean>(false);
+  const [selectedStaffNotificationId, setSelectedStaffNotificationId] = React.useState<string | null>(null);
+  const [selectedStaffNotification, setSelectedStaffNotification] = React.useState<any | null>(null);
   const staffNotifState = useNotifications('staff');
 
   // Mở Trang Home Nhân Viên khi đăng nhập, nhưng nếu đang nghiệm thu trả kho (chuyển qua app ngân hàng quay lại) thì giữ nguyên màn hình Lịch
@@ -105,10 +108,31 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
     loadStaffData();
   }, [loadStaffData]);
 
+  const handleSelectStaffNotification = (notif: any) => {
+    setShowStaffNotifModal(false);
+    setSelectedStaffNotification(notif);
+    setSelectedStaffNotificationId(notif.id);
+  };
   return (
     <View style={{ flex: 1 }}>
       {/* ─── Render Nội Dung Staff Theo Tab & FlowStep (Không dùng tab menu / sidebar) ─── */}
-      {staffTab === 'dashboard' ? (
+      {selectedStaffNotificationId ? (
+        <NotificationDetailScreen
+          notificationId={selectedStaffNotificationId}
+          initialData={selectedStaffNotification}
+          onBack={() => {
+            setSelectedStaffNotificationId(null);
+            setSelectedStaffNotification(null);
+            setSelectedStaffNotification(null);
+          }}
+          onNavigateRelated={(target) => {
+            setSelectedStaffNotificationId(null);
+            setStaffTab(target.tab as any);
+            if (target.tab === 'queue') setFlowStep('queue');
+          }}
+          role="staff"
+        />
+      ) : staffTab === 'dashboard' ? (
         /* TRANG CHÍNH: Home Nhân Viên (Dashboard có đầy đủ các nút chức năng) */
         <StaffDashboardScreen
           appointments={appointments}
@@ -245,6 +269,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
         onMarkAllAsRead={staffNotifState.markAllAsRead}
         onDeleteNotification={staffNotifState.deleteNotification}
         role="staff"
+        onSelectNotification={handleSelectStaffNotification}
       />
     </View>
   );
