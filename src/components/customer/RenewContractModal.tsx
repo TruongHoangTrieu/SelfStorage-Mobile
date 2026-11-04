@@ -56,14 +56,20 @@ export default function RenewContractModal({
 
   const newEndDate = calculateNewEndDate(selectedMonths);
 
+  // Mã phiên ngẫu nhiên độc nhất cho mỗi lần mở QR (tránh trùng lặp với giao dịch cũ trong quá khứ)
+  const [sessionNonce, setSessionNonce] = useState<string>(() =>
+    Math.random().toString(36).substring(2, 6).toUpperCase()
+  );
+  const sessionStartTimeRef = useRef<number>(Date.now());
+
   // Thông tin thanh toán SePay VietQR
   const bankName = 'MBBank';
   const accountNumber = '0838500046';
   const accountName = 'TRUONG DINH LONG';
 
-  // Mã nội dung chuyển khoản gia hạn
+  // Mã nội dung chuyển khoản gia hạn kèm nonce phiên
   const cleanUnitCode = (unit.unitCode || 'UNIT').replace(/[^A-Za-z0-9]/g, '');
-  const transferContent = `SSREN${cleanUnitCode}${selectedMonths}T`;
+  const transferContent = `SSREN${cleanUnitCode}${selectedMonths}T${sessionNonce}`;
 
   // URL VietQR tạo mã QR chuẩn
   const qrCodeUrl = `https://img.vietqr.io/image/MB-0838500046-compact2.png?amount=${netRent}&addInfo=${encodeURIComponent(
@@ -80,14 +86,23 @@ export default function RenewContractModal({
         if (isCheckingRef.current) return;
         isCheckingRef.current = true;
         try {
-          const res = await checkPaymentCodeStatusApi(transferContent, netRent);
+          const res = await checkPaymentCodeStatusApi(
+            transferContent,
+            netRent,
+            sessionStartTimeRef.current
+          );
           if (res && res.isPaid) {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             setPaymentSuccess(true);
 
             // Đảm bảo contract được cập nhật trên backend
             if (unit.contractId) {
-              await renewContractApi(unit.contractId, selectedMonths, paymentMethod).catch(() => null);
+              await renewContractApi(
+                unit.contractId,
+                selectedMonths,
+                paymentMethod,
+                transferContent
+              ).catch(() => null);
             }
 
             if (Platform.OS === 'web') {
@@ -105,9 +120,7 @@ export default function RenewContractModal({
         }
       };
 
-      // Kiểm tra ngay 1 lần
-      checkPayment();
-      // Polling mỗi 2.5s
+      // Đợi 2.5s sau khi mở QR mới bắt đầu polling để khách kịp quét mã
       pollTimerRef.current = setInterval(checkPayment, 2500);
     } else {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -115,7 +128,7 @@ export default function RenewContractModal({
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [visible, step, paymentSuccess, transferContent, netRent, selectedMonths, newEndDate, unit.contractId]);
+  }, [visible, step, paymentSuccess, transferContent, netRent, selectedMonths, newEndDate, unit.contractId, paymentMethod]);
 
   // Sao chép clipboard
   const handleCopy = (text: string, label: string) => {
@@ -140,22 +153,44 @@ export default function RenewContractModal({
     onClose();
   };
 
-  // Chuyển sang bước quét QR
+  // Chuyển sang bước quét QR (sinh nonce mới và ghi nhận thời gian bắt đầu phiên)
   const handleProceedToPayment = () => {
+    const newNonce = Math.random().toString(36).substring(2, 6).toUpperCase();
+    setSessionNonce(newNonce);
+    sessionStartTimeRef.current = Date.now();
     setStep('payment');
     setPaymentSuccess(false);
   };
 
-  // Xác nhận gia hạn thành công
+  // Xác nhận gia hạn thành công khi người dùng bấm nút thủ công
   const executeSuccessfulRenewal = async () => {
     setIsSubmitting(true);
     try {
-      // 1. Kiểm tra trạng thái SePay ngay
-      const checkRes = await checkPaymentCodeStatusApi(transferContent, netRent).catch(() => null);
+      // 1. Kiểm tra trạng thái SePay cho phiên chuyển khoản hiện tại
+      const checkRes = await checkPaymentCodeStatusApi(
+        transferContent,
+        netRent,
+        sessionStartTimeRef.current
+      ).catch(() => null);
+
+      if (!checkRes || !checkRes.isPaid) {
+        const notFoundMsg = `Hệ thống chưa ghi nhận tiền chuyển cho nội dung: ${transferContent}.\n\nNếu bạn vừa quét mã, vui lòng đợi 5-15 giây để ngân hàng xử lý hoặc kiểm tra lại nội dung chuyển khoản.`;
+        if (Platform.OS === 'web') {
+          window.alert(notFoundMsg);
+        } else {
+          Alert.alert('Chờ xác nhận', notFoundMsg);
+        }
+        return;
+      }
 
       // 2. Cập nhật gia hạn hợp đồng trên hệ thống backend
       if (unit.contractId) {
-        await renewContractApi(unit.contractId, selectedMonths, paymentMethod).catch((err) => {
+        await renewContractApi(
+          unit.contractId,
+          selectedMonths,
+          paymentMethod,
+          transferContent
+        ).catch((err) => {
           console.warn('Backend renewContractApi notice:', err.message);
         });
       }

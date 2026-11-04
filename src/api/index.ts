@@ -546,13 +546,14 @@ export async function createGuestCodeApi(
  * Gia hạn hợp đồng thuê kho (POST /contracts/:id/renew)
  */
 export async function renewContractApi(
-  contractId: number,
+  contractId: number | string,
   extendedMonths: number,
   paymentMethod = 'SEPAY_QR',
+  paymentCode?: string,
 ) {
   return apiRequest<any>(`/contracts/${contractId}/renew`, {
     method: 'POST',
-    body: JSON.stringify({ extendedMonths, paymentMethod }),
+    body: JSON.stringify({ extendedMonths, paymentMethod, paymentCode }),
   });
 }
 
@@ -954,6 +955,19 @@ export async function checkPaymentCodeStatusApi(
   try {
     const directRes = await apiRequest<any>(`/payments/code/${encodeURIComponent(cleanCode)}/status`);
     if (directRes && (directRes.isPaid || directRes.status === 'PAID')) {
+      if (sinceTimestamp && directRes.paidAt) {
+        const paidTime = new Date(directRes.paidAt).getTime();
+        // Cho phép dung sai 5 giây độ lệch đồng hồ máy chủ
+        if (paidTime < sinceTimestamp - 5000) {
+          // Giao dịch thanh toán cũ từ phiên trước, không tính vào phiên này
+          return {
+            paymentCode: cleanCode,
+            status: 'PENDING',
+            isPaid: false,
+            amount: expectedAmount || 0,
+          };
+        }
+      }
       return {
         paymentCode: directRes.paymentCode || cleanCode,
         status: 'PAID',
@@ -974,6 +988,14 @@ export async function checkPaymentCodeStatusApi(
       String(p?.paymentCode || '').trim().toUpperCase() === cleanCode &&
       String(p?.status || '').toUpperCase() === 'PAID'
   );
+
+  // Nếu có sinceTimestamp, loại trừ các giao dịch cũ đã thanh toán trước khi mở phiên QR
+  if (matched && sinceTimestamp) {
+    const paidTime = new Date(matched.paidAt || matched.updatedAt || matched.createdAt || 0).getTime();
+    if (paidTime < sinceTimestamp - 5000) {
+      matched = null;
+    }
+  }
 
   // 2. Fallback: Nếu ngân hàng/khách vừa chuyển khoản thành công trong phiên hiện tại với số tiền khớp
   if (!matched && sinceTimestamp) {
