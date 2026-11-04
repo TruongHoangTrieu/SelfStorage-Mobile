@@ -78,10 +78,7 @@ export default function Step3VietQRPayment({
             </Text>
           </View>
         </View>
-        <View style={s.qrPendingBadge}>
-          <Text style={s.qrPendingText}>Chờ thanh toán</Text>
-        </View>
-      </View>
+       </View>
 
       <ScrollView
         style={s.scrollView}
@@ -112,9 +109,7 @@ export default function Step3VietQRPayment({
           <Text style={s.qrCardTitle}>
             Quét mã VietQR bằng App Ngân Hàng
           </Text>
-          <Text style={s.qrCardSub}>
-            Hệ thống SePay tự động xác nhận sau 10 - 30 giây
-          </Text>
+          
 
           <View style={s.qrImageFrame}>
             {qrData?.qrCodeUrl ? (
@@ -314,7 +309,7 @@ export default function Step3VietQRPayment({
                 color={T.onPrimary}
               />
               <Text style={s.signContractBtnText}>
-                Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái
+                Tôi Đã Chuyển Khoản
               </Text>
             </>
           )}
@@ -334,17 +329,7 @@ export default function Step3VietQRPayment({
             )}
           </TouchableOpacity>
         )}
-
-        <Text
-          style={{
-            textAlign: "center",
-            fontSize: 11,
-            color: T.outline,
-            marginTop: onCancelReservation ? 0 : 4,
-          }}
-        >
-          Hệ thống tự động polling kiểm tra biên nhận SePay mỗi 3 giây
-        </Text>
+        
       </View>
     </View>
   );
@@ -489,20 +474,26 @@ const s = StyleSheet.create({
   },
   bankRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
+    gap: 12,
   },
   bankRowLabel: {
     fontSize: 12,
     color: T.onSurfaceVariant,
+    flexShrink: 0,
+    maxWidth: "40%",
   },
   bankRowVal: {
     fontSize: 13,
     fontWeight: "600",
     color: T.onSurface,
+    flex: 1,
+    textAlign: "right",
+    flexWrap: "wrap",
   },
   copyMiniBtn: {
     flexDirection: "row",

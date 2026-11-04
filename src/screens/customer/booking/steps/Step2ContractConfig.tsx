@@ -953,15 +953,21 @@ const s = StyleSheet.create({
   costLine: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
+    gap: 12,
   },
   costLineLabel: {
     fontSize: 12,
     color: T.onSurfaceVariant,
+    flexShrink: 0,
+    maxWidth: "50%",
   },
   costLineValue: {
     fontSize: 12,
     color: T.onSurface,
+    flex: 1,
+    textAlign: "right",
+    flexWrap: "wrap",
   },
   dateRangeBox: {
     backgroundColor: "#eff6ff",

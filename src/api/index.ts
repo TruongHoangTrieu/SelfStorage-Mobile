@@ -949,6 +949,23 @@ export async function checkPaymentCodeStatusApi(
   sinceTimestamp?: number
 ) {
   const cleanCode = paymentCode.trim().toUpperCase();
+
+  // 1. Kiểm tra trực tiếp qua API trạng thái công khai của backend
+  try {
+    const directRes = await apiRequest<any>(`/payments/code/${encodeURIComponent(cleanCode)}/status`);
+    if (directRes && (directRes.isPaid || directRes.status === 'PAID')) {
+      return {
+        paymentCode: directRes.paymentCode || cleanCode,
+        status: 'PAID',
+        isPaid: true,
+        amount: Number(directRes.amount || expectedAmount || 0),
+        paidAt: directRes.paidAt || new Date().toISOString(),
+      };
+    }
+  } catch {
+    // Tiếp tục kiểm tra danh sách hệ thống nếu direct check gặp lỗi
+  }
+
   const recentPayments = await fetchRecentSystemPaymentsApi(30);
 
   // 1. Khớp chính xác theo mã paymentCode đã tạo trên QR

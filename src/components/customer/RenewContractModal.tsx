@@ -14,7 +14,7 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
-import { renewContractApi, apiRequest } from '../../api';
+import { renewContractApi, apiRequest, checkPaymentCodeStatusApi } from '../../api';
 
 interface RenewContractModalProps {
   visible: boolean;
@@ -29,16 +29,15 @@ export default function RenewContractModal({
   unit,
   onRenewSuccess,
 }: RenewContractModalProps) {
-  // ─── STATE BƯỚC THỰC HIỆN: 'select' (chọn gói) | 'payment' (quét QR) ───
+  // State: 'select' (chọn kỳ hạn) | 'payment' (quét VietQR)
   const [step, setStep] = useState<'select' | 'payment'>('select');
   const [selectedMonths, setSelectedMonths] = useState<number>(3);
   const [paymentMethod, setPaymentMethod] = useState<'sepay_qr' | 'bank_transfer'>('sepay_qr');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [autoDetecting, setAutoDetecting] = useState<boolean>(true);
   const [paymentSuccess, setPaymentSuccess] = useState<boolean>(false);
 
-  // Tính tiền thuê: Không áp dụng chiết khấu (Backend tính đúng đơn giá * số tháng)
+  // Tính tiền thuê
   const netRent = unit.monthlyRent * selectedMonths;
 
   // Tính ngày kết thúc mới
@@ -57,8 +56,8 @@ export default function RenewContractModal({
 
   const newEndDate = calculateNewEndDate(selectedMonths);
 
-  // Thông tin thanh toán SePay VietQR chuẩn
-  const bankName = 'MBBank (Quân Đội)';
+  // Thông tin thanh toán SePay VietQR
+  const bankName = 'MBBank';
   const accountNumber = '0838500046';
   const accountName = 'TRUONG DINH LONG';
 
@@ -71,23 +70,52 @@ export default function RenewContractModal({
     transferContent
   )}&accountName=${encodeURIComponent(accountName)}`;
 
-  // ─── TỰ ĐỘNG LẮNG NGHE GIAO DỊCH SEPAY KHI Ở BƯỚC QUÉT QR ───
+  // Tự động lắng nghe định kỳ khi ở bước quét QR
   const pollTimerRef = useRef<any>(null);
+  const isCheckingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (visible && step === 'payment' && !paymentSuccess) {
-      setAutoDetecting(true);
-      // Tự động kiểm tra định kỳ mỗi 3 giây
-      pollTimerRef.current = setInterval(async () => {
-        // Có thể mở rộng kiểm tra API giao dịch nếu SePay webhook đã ghi nhận
-      }, 3000);
+      const checkPayment = async () => {
+        if (isCheckingRef.current) return;
+        isCheckingRef.current = true;
+        try {
+          const res = await checkPaymentCodeStatusApi(transferContent, netRent);
+          if (res && res.isPaid) {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setPaymentSuccess(true);
+
+            // Đảm bảo contract được cập nhật trên backend
+            if (unit.contractId) {
+              await renewContractApi(unit.contractId, selectedMonths, paymentMethod).catch(() => null);
+            }
+
+            if (Platform.OS === 'web') {
+              window.alert('Thanh toán gia hạn thành công!');
+            } else {
+              Alert.alert('Thành công', 'Thanh toán gia hạn thành công!');
+            }
+            onRenewSuccess(selectedMonths, newEndDate);
+            handleSafeClose();
+          }
+        } catch {
+          // Lỗi mạng trong quá trình polling, không ngắt luồng
+        } finally {
+          isCheckingRef.current = false;
+        }
+      };
+
+      // Kiểm tra ngay 1 lần
+      checkPayment();
+      // Polling mỗi 2.5s
+      pollTimerRef.current = setInterval(checkPayment, 2500);
     } else {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     }
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [visible, step, paymentSuccess]);
+  }, [visible, step, paymentSuccess, transferContent, netRent, selectedMonths, newEndDate, unit.contractId]);
 
   // Sao chép clipboard
   const handleCopy = (text: string, label: string) => {
@@ -103,7 +131,7 @@ export default function RenewContractModal({
     }
   };
 
-  // Đóng modal và reset trạng thái (Không cộng thêm ngày khi chưa thanh toán)
+  // Đóng modal và reset trạng thái
   const handleSafeClose = () => {
     setStep('select');
     setIsSubmitting(false);
@@ -112,54 +140,40 @@ export default function RenewContractModal({
     onClose();
   };
 
-  // Chuyển sang bước quét QR thanh toán
+  // Chuyển sang bước quét QR
   const handleProceedToPayment = () => {
     setStep('payment');
     setPaymentSuccess(false);
   };
 
-  // Xử lý khi thanh toán thành công (kể cả quét QR thật hay bấm nhận diện tự động)
+  // Xác nhận gia hạn thành công
   const executeSuccessfulRenewal = async () => {
     setIsSubmitting(true);
-    setPaymentSuccess(true);
     try {
-      // 1. Thử gửi tín hiệu webhook SePay về Backend để đồng bộ hệ thống
-      try {
-        const webhookPayload = {
-          id: Math.floor(Math.random() * 1000000),
-          gateway: 'MBBank',
-          transactionDate: new Date().toISOString().slice(0, 19).replace('T', ' '),
-          accountNumber,
-          code: transferContent,
-          content: `${transferContent} GIA HAN KHO`,
-          transferType: 'in',
-          transferAmount: netRent,
-        };
-        await apiRequest<any>('/payments/sepay/webhook', {
-          method: 'POST',
-          body: JSON.stringify(webhookPayload),
-        }).catch(() => null);
-      } catch {
-        // Bỏ qua lỗi mạng
-      }
+      // 1. Kiểm tra trạng thái SePay ngay
+      const checkRes = await checkPaymentCodeStatusApi(transferContent, netRent).catch(() => null);
 
-      // 2. Gọi API gia hạn hợp đồng
+      // 2. Cập nhật gia hạn hợp đồng trên hệ thống backend
       if (unit.contractId) {
         await renewContractApi(unit.contractId, selectedMonths, paymentMethod).catch((err) => {
           console.warn('Backend renewContractApi notice:', err.message);
         });
       }
 
-      // 3. Cập nhật ngày kết thúc mới cho hợp đồng
+      setPaymentSuccess(true);
+      if (Platform.OS === 'web') {
+        window.alert('Gia hạn hợp đồng thành công!');
+      } else {
+        Alert.alert('Thành công', 'Gia hạn hợp đồng thành công!');
+      }
       onRenewSuccess(selectedMonths, newEndDate);
-
       handleSafeClose();
     } catch (err: any) {
       const errMsg = err?.message || 'Không thể gia hạn. Vui lòng thử lại';
       if (Platform.OS === 'web') {
         window.alert(`Lỗi: ${errMsg}`);
       } else {
-        Alert.alert('Lỗi gia hạn', errMsg);
+        Alert.alert('Lỗi', errMsg);
       }
     } finally {
       setIsSubmitting(false);
@@ -177,14 +191,14 @@ export default function RenewContractModal({
             </View>
             <View style={{ flex: 1, paddingRight: 8 }}>
               <Text style={styles.title}>
-                {step === 'select' ? 'GIA HẠN THUÊ Ô KHO' : 'QUÉT MÃ VIETQR GIA HẠN'}
+                {step === 'select' ? 'Gia Hạn Hợp Đồng' : 'Thanh Toán Gia Hạn'}
               </Text>
               <Text style={styles.subtitle} numberOfLines={1}>
                 Ô kho {unit.unitCode} • {unit.unitName}
               </Text>
             </View>
             <TouchableOpacity onPress={handleSafeClose} style={styles.closeBtn} activeOpacity={0.7}>
-              <Text style={styles.closeBtnText}>✕</Text>
+              <MaterialIcons name="close" size={18} color="#64748B" />
             </TouchableOpacity>
           </View>
 
@@ -194,7 +208,7 @@ export default function RenewContractModal({
               <Text style={styles.stepDotTextActive}>1</Text>
             </View>
             <Text style={[styles.stepLabel, step === 'select' && styles.stepLabelActive]}>
-              Chọn thời gian
+              Thời gian
             </Text>
             <View style={[styles.stepLine, step === 'payment' && styles.stepLineActive]} />
             <View style={[styles.stepDot, step === 'payment' ? styles.stepDotActive : styles.stepDotInactive]}>
@@ -203,28 +217,28 @@ export default function RenewContractModal({
               </Text>
             </View>
             <Text style={[styles.stepLabel, step === 'payment' && styles.stepLabelActive]}>
-              Quét QR tự động
+              Thanh toán VietQR
             </Text>
           </View>
 
           {/* ════════════ BƯỚC 1: CHỌN GÓI GIA HẠN ════════════ */}
           {step === 'select' ? (
-            <ScrollView style={styles.contentScroll} contentContainerStyle={{ gap: 14 }}>
+            <ScrollView style={styles.contentScroll} contentContainerStyle={{ gap: 12 }}>
               {/* Box Tóm Tắt Hiện Tại */}
               <View style={styles.currentSummaryCard}>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Hạn hợp đồng hiện tại:</Text>
+                  <Text style={styles.summaryLabel}>Hạn hiện tại:</Text>
                   <Text style={styles.summaryVal}>{unit.endDate}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Đơn giá thuê:</Text>
+                  <Text style={styles.summaryLabel}>Đơn giá:</Text>
                   <Text style={styles.summaryVal}>{formatVND(unit.monthlyRent)}/tháng</Text>
                 </View>
               </View>
 
-              {/* Chọn Số Tháng Gia Hạn (Không có chiết khấu/bớt tiền) */}
+              {/* Chọn Số Tháng Gia Hạn */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>Chọn số tháng gia hạn thêm:</Text>
+                <Text style={styles.fieldLabel}>Thời gian gia hạn:</Text>
                 <View style={styles.monthsGrid}>
                   {[1, 3, 6, 12].map((m) => {
                     const isSelected = selectedMonths === m;
@@ -251,26 +265,27 @@ export default function RenewContractModal({
               {/* Bảng Chi Tiết Giá Thuê */}
               <View style={styles.costBreakdownCard}>
                 <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Đơn giá thuê hàng tháng:</Text>
+                  <Text style={styles.costLabel}>Giá thuê:</Text>
                   <Text style={styles.costVal}>{formatVND(unit.monthlyRent)}/tháng</Text>
                 </View>
 
                 <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Thời gian thuê thêm:</Text>
+                  <Text style={styles.costLabel}>Thời gian gia hạn:</Text>
                   <Text style={[styles.costVal, { fontWeight: '700' }]}>{selectedMonths} Tháng</Text>
                 </View>
 
                 <View style={styles.divider} />
 
                 <View style={styles.costRowTotal}>
-                  <Text style={styles.costTotalLabel}>TỔNG TIỀN THANH TOÁN:</Text>
+                  <Text style={styles.costTotalLabel}>Tổng thanh toán:</Text>
                   <Text style={styles.costTotalVal}>{formatVND(netRent)}</Text>
                 </View>
 
                 <View style={styles.newDateBanner}>
+                  <MaterialIcons name="event" size={15} color="#1E40AF" />
                   <Text style={styles.newDateText}>
-                    📅 Hạn hợp đồng mới sau khi thanh toán:{' '}
-                    <Text style={{ fontWeight: '900', color: '#1E40AF' }}>{newEndDate}</Text>
+                    Hạn hợp đồng mới:{' '}
+                    <Text style={{ fontWeight: '800', color: '#1E40AF' }}>{newEndDate}</Text>
                   </Text>
                 </View>
               </View>
@@ -283,12 +298,16 @@ export default function RenewContractModal({
                   onPress={() => setPaymentMethod('sepay_qr')}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.payIcon}>⚡</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.payTitle}>Quét mã VietQR Tự Động (SePay)</Text>
-                    <Text style={styles.paySubtitle}>Gia hạn kích hoạt tức thì ngay sau khi chuyển khoản</Text>
+                  <View style={styles.payIconBox}>
+                    <MaterialIcons name="qr-code-scanner" size={20} color="#2563EB" />
                   </View>
-                  {paymentMethod === 'sepay_qr' && <Text style={styles.checkIcon}>✓</Text>}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.payTitle}>Chuyển khoản VietQR</Text>
+                    <Text style={styles.paySubtitle}>Tự động kích hoạt ngay sau khi thanh toán</Text>
+                  </View>
+                  {paymentMethod === 'sepay_qr' && (
+                    <MaterialIcons name="check" size={18} color="#2563EB" />
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -296,25 +315,29 @@ export default function RenewContractModal({
                   onPress={() => setPaymentMethod('bank_transfer')}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.payIcon}>🏦</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.payTitle}>Chuyển khoản thủ công / Tiền mặt</Text>
-                    <Text style={styles.paySubtitle}>Thanh toán tại quầy lễ tân chi nhánh</Text>
+                  <View style={styles.payIconBox}>
+                    <MaterialIcons name="storefront" size={20} color="#64748B" />
                   </View>
-                  {paymentMethod === 'bank_transfer' && <Text style={styles.checkIcon}>✓</Text>}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.payTitle}>Thanh toán tại quầy</Text>
+                    <Text style={styles.paySubtitle}>Tiền mặt hoặc quẹt thẻ tại cơ sở</Text>
+                  </View>
+                  {paymentMethod === 'bank_transfer' && (
+                    <MaterialIcons name="check" size={18} color="#2563EB" />
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>
           ) : (
-            /* ════════════ BƯỚC 2: HIỂN THỊ MÃ VIETQR THANH TOÁN & AUTO-DETECT ════════════ */
-            <ScrollView style={styles.contentScroll} contentContainerStyle={{ gap: 14 }}>
-              {/* Auto Detecting Banner */}
+            /* ════════════ BƯỚC 2: HIỂN THỊ MÃ VIETQR THANH TOÁN ════════════ */
+            <ScrollView style={styles.contentScroll} contentContainerStyle={{ gap: 12 }}>
+              {/* Waiting Banner */}
               <View style={styles.listeningBanner}>
                 <ActivityIndicator size="small" color="#2563EB" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.listeningTitle}>Hệ thống đang tự động lắng nghe giao dịch...</Text>
+                  <Text style={styles.listeningTitle}>Chờ nhận chuyển khoản</Text>
                   <Text style={styles.listeningSub}>
-                    Sau khi bạn chuyển khoản qua app ngân hàng, hệ thống sẽ tự động nhận diện và cộng ngày ngay lập tức.
+                    Hệ thống tự động cập nhật hợp đồng sau khi nhận thanh toán.
                   </Text>
                 </View>
               </View>
@@ -328,9 +351,9 @@ export default function RenewContractModal({
                     resizeMode="contain"
                   />
                 </View>
-                <Text style={styles.qrTipText}>Quét bằng ứng dụng Mobile Banking của mọi ngân hàng</Text>
+                <Text style={styles.qrTipText}>Quét mã bằng ứng dụng ngân hàng</Text>
                 <View style={styles.amountBadge}>
-                  <Text style={styles.amountBadgeLabel}>Số tiền cần thanh toán:</Text>
+                  <Text style={styles.amountBadgeLabel}>Số tiền:</Text>
                   <Text style={styles.amountBadgeVal}>{formatVND(netRent)}</Text>
                 </View>
               </View>
@@ -339,7 +362,7 @@ export default function RenewContractModal({
               <View style={styles.bankDetailCard}>
                 {/* 1. Ngân hàng */}
                 <View style={styles.bankDetailRow}>
-                  <Text style={styles.bankFieldLabel}>Ngân hàng thụ hưởng:</Text>
+                  <Text style={styles.bankFieldLabel}>Ngân hàng:</Text>
                   <Text style={styles.bankFieldValBold}>{bankName}</Text>
                 </View>
 
@@ -391,10 +414,10 @@ export default function RenewContractModal({
                   </TouchableOpacity>
                 </View>
 
-                {/* 4. Nội dung chuyển khoản (bắt buộc) */}
+                {/* 4. Nội dung chuyển khoản */}
                 <View style={styles.transferContentRow}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <Text style={styles.transferContentTitle}>Nội dung chuyển khoản (bắt buộc):</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.transferContentTitle}>Nội dung chuyển khoản:</Text>
                     <TouchableOpacity
                       style={[styles.copyBtnSmall, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}
                       onPress={() => handleCopy(transferContent, 'CONTENT')}
@@ -413,9 +436,12 @@ export default function RenewContractModal({
                   <View style={styles.transferContentBox}>
                     <Text style={styles.transferContentCode}>{transferContent}</Text>
                   </View>
-                  <Text style={styles.transferContentWarn}>
-                    ⚠️ Lưu ý: Giữ nguyên nội dung chuyển khoản để SePay tự động kích hoạt.
-                  </Text>
+                  <View style={styles.transferNoteRow}>
+                    <MaterialIcons name="info-outline" size={13} color="#BE123C" />
+                    <Text style={styles.transferContentWarn}>
+                      Lưu ý: Giữ đúng nội dung chuyển khoản để hệ thống xác nhận tự động.
+                    </Text>
+                  </View>
                 </View>
               </View>
             </ScrollView>
@@ -424,15 +450,15 @@ export default function RenewContractModal({
           {/* Footer Buttons */}
           <View style={styles.footer}>
             {step === 'select' ? (
-              <>
+              <View style={styles.footerRow}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={handleSafeClose} disabled={isSubmitting}>
-                  <Text style={styles.cancelBtnText}>Hủy bỏ</Text>
+                  <Text style={styles.cancelBtnText}>Đóng</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.confirmBtn} onPress={handleProceedToPayment} disabled={isSubmitting}>
-                  <Text style={styles.confirmBtnText}>Tiếp tục thanh toán →</Text>
+                  <Text style={styles.confirmBtnText}>Tiếp tục</Text>
                 </TouchableOpacity>
-              </>
+              </View>
             ) : (
               <View style={{ width: '100%', gap: 8 }}>
                 <TouchableOpacity
@@ -444,9 +470,9 @@ export default function RenewContractModal({
                   {isSubmitting ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FFFFFF" />
-                      <Text style={styles.confirmBtnText}>Tôi đã chuyển khoản xong (Tự động kích hoạt)</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />
+                      <Text style={styles.confirmBtnText}>Xác nhận đã chuyển khoản</Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -457,7 +483,7 @@ export default function RenewContractModal({
                   disabled={isSubmitting}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.backBtnText}>← Chọn lại thời gian gia hạn</Text>
+                  <Text style={styles.backBtnText}>Quay lại</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -478,30 +504,30 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 20,
     width: '100%',
     maxWidth: 440,
-    maxHeight: '92%',
-    padding: 18,
+    maxHeight: '90%',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 12,
-    display: 'flex',
-    flexDirection: 'column',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    paddingBottom: 12,
   },
   iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -510,9 +536,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: -0.2,
   },
   subtitle: {
     fontSize: 11,
@@ -520,17 +545,12 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeBtnText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: 'bold',
   },
 
   // Stepper
@@ -539,18 +559,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingVertical: 8,
     backgroundColor: '#F8FAFC',
-    borderRadius: 10,
+    borderRadius: 8,
     marginVertical: 10,
     paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   stepDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -562,12 +582,12 @@ const styles = StyleSheet.create({
   },
   stepDotTextActive: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
   stepDotTextInactive: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   stepLabel: {
@@ -577,11 +597,11 @@ const styles = StyleSheet.create({
   },
   stepLabelActive: {
     color: '#1E40AF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   stepLine: {
-    width: 20,
-    height: 2,
+    width: 18,
+    height: 1.5,
     backgroundColor: '#E2E8F0',
   },
   stepLineActive: {
@@ -590,13 +610,13 @@ const styles = StyleSheet.create({
 
   contentScroll: {
     flexGrow: 1,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
 
   currentSummaryCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 6,
@@ -604,24 +624,29 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   summaryLabel: {
     fontSize: 12,
     color: '#64748B',
+    flexShrink: 0,
   },
   summaryVal: {
     fontSize: 12,
     fontWeight: '700',
     color: '#0F172A',
+    flex: 1,
+    textAlign: 'right',
+    flexWrap: 'wrap',
   },
 
   fieldGroup: {
-    gap: 8,
+    gap: 6,
   },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0F172A',
   },
   monthsGrid: {
@@ -633,61 +658,67 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
   monthCardActive: {
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
   monthCardTitle: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#334155',
   },
   monthCardTitleActive: {
     color: '#1D4ED8',
+    fontWeight: '800',
   },
   monthPriceText: {
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#64748B',
   },
   monthPriceTextActive: {
     color: '#2563EB',
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   costBreakdownCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 8,
+    gap: 7,
   },
   costRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   costLabel: {
     fontSize: 12,
     color: '#64748B',
+    flexShrink: 0,
   },
   costVal: {
     fontSize: 12,
     fontWeight: '600',
     color: '#0F172A',
+    flex: 1,
+    textAlign: 'right',
+    flexWrap: 'wrap',
   },
   divider: {
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginVertical: 2,
+    marginVertical: 1,
   },
   costRowTotal: {
     flexDirection: 'row',
@@ -701,30 +732,34 @@ const styles = StyleSheet.create({
   },
   costTotalVal: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#2563EB',
   },
   newDateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#EFF6FF',
-    padding: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
-    marginTop: 4,
+    marginTop: 2,
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
   newDateText: {
     fontSize: 11,
     color: '#1E3A8A',
-    textAlign: 'center',
+    flex: 1,
   },
 
   payMethodOption: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 12,
+    padding: 10,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
   },
@@ -732,8 +767,13 @@ const styles = StyleSheet.create({
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
-  payIcon: {
-    fontSize: 20,
+  payIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   payTitle: {
     fontSize: 12,
@@ -743,12 +783,7 @@ const styles = StyleSheet.create({
   paySubtitle: {
     fontSize: 10,
     color: '#64748B',
-    marginTop: 2,
-  },
-  checkIcon: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#2563EB',
+    marginTop: 1,
   },
 
   // QR Payment Box styles
@@ -758,7 +793,7 @@ const styles = StyleSheet.create({
     gap: 10,
     backgroundColor: '#EFF6FF',
     padding: 10,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
@@ -770,27 +805,27 @@ const styles = StyleSheet.create({
   listeningSub: {
     fontSize: 10,
     color: '#3B82F6',
-    marginTop: 2,
+    marginTop: 1,
     lineHeight: 14,
   },
   qrBoxCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
-    gap: 8,
+    gap: 6,
   },
   qrImgWrapper: {
-    width: 190,
-    height: 190,
+    width: 180,
+    height: 180,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',
@@ -811,9 +846,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#ECFDF5',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
@@ -823,28 +858,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   amountBadgeVal: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '800',
     color: '#047857',
   },
 
   bankDetailCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 8,
+    gap: 6,
   },
   bankDetailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 9,
-    borderRadius: 10,
+    padding: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    gap: 8,
   },
   bankFieldLabel: {
     fontSize: 10,
@@ -852,18 +888,18 @@ const styles = StyleSheet.create({
   },
   bankFieldValBold: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0F172A',
     marginTop: 1,
   },
   copyBtnSmall: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: '#EFF6FF',
     paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
@@ -879,93 +915,92 @@ const styles = StyleSheet.create({
 
   transferContentRow: {
     backgroundColor: '#FFF1F2',
-    padding: 10,
-    borderRadius: 10,
+    padding: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#FECDD3',
   },
   transferContentTitle: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#9F1239',
   },
   transferContentBox: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#FDA4AF',
     alignItems: 'center',
+    marginVertical: 4,
   },
   transferContentCode: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '800',
     color: '#BE123C',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
+  },
+  transferNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   transferContentWarn: {
     fontSize: 9,
     color: '#9F1239',
-    marginTop: 4,
-    textAlign: 'center',
+    flex: 1,
   },
 
   // Footer
   footer: {
-    flexDirection: 'row',
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
+  footerRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   cancelBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
   cancelBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
-  backBtn: {
-    width: '100%',
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-  },
   confirmBtn: {
     flex: 2,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  paidBtn: {
-    width: '100%',
-    backgroundColor: '#059669',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   confirmBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#FFFFFF',
+  },
+  paidBtn: {
+    backgroundColor: '#16A34A',
+    width: '100%',
+  },
+  backBtn: {
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
   },
 });

@@ -220,19 +220,30 @@ const s = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingVertical: 3,
   },
   summaryLabel: {
     fontSize: 12,
     color: T.onSurfaceVariant,
+    flexShrink: 0,
+    maxWidth: "42%",
   },
   summaryVal: {
     fontSize: 12,
     color: T.onSurface,
+    flex: 1,
+    textAlign: "right",
+    flexWrap: "wrap",
   },
   summaryValBold: {
     fontSize: 12,
     fontWeight: "700",
     color: T.onSurface,
+    flex: 1,
+    textAlign: "right",
+    flexWrap: "wrap",
   },
   instructionCard: {
     flexDirection: "row",

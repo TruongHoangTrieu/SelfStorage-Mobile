@@ -528,22 +528,32 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 3,
   },
   infoLabel: {
     fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
+    flexShrink: 0,
+    maxWidth: '42%',
   },
   infoVal: {
     fontSize: 12,
     color: '#1E293B',
     fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+    flexWrap: 'wrap',
   },
   infoValBold: {
     fontSize: 12,
     color: '#0F172A',
     fontWeight: '800',
+    flex: 1,
+    textAlign: 'right',
+    flexWrap: 'wrap',
   },
   progressHeaderRow: {
     flexDirection: 'row',

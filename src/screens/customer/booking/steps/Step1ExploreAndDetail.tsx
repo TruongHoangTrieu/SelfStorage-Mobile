@@ -181,17 +181,7 @@ export default function Step1ExploreAndDetail({
                   {/* USER GREETING & HEADER */}
                   <View style={s.greetingHeader}>
                     <View style={s.greetingLeft}>
-                      <TouchableOpacity
-                        style={[s.avatarWrap, !currentUser && s.avatarWrapUnauth]}
-                        activeOpacity={0.8}
-                        onPress={() => onOpenLogin?.()}
-                      >
-                        <MaterialIcons
-                          name={currentUser ? "person" : "person-outline"}
-                          size={24}
-                          color={currentUser ? T.primary : "#475569"}
-                        />
-                      </TouchableOpacity>
+                      
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
                           <MaterialIcons name="location-on" size={13} color={T.primary} />
