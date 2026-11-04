@@ -20,6 +20,7 @@ import { apiRequest, fetchMySupportRequestsApi } from '../../api';
 import CustomerBottomNavBar, { CustomerTabType } from '../../components/customer/CustomerBottomNavBar';
 import { CustomerRentedUnit, CustomerTab } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
 
 interface CustomerAccountScreenProps {
   currentUser: any;
@@ -31,6 +32,8 @@ interface CustomerAccountScreenProps {
   onNavigateSubTab?: (subTab: CustomerTab) => void;
   onOpenNotifications?: () => void;
   onOpenSidebar?: () => void;
+  onViewAllReservations?: () => void;
+  onRefreshReservations?: () => Promise<void>;
 }
 
 export default function CustomerAccountScreen({
@@ -43,12 +46,16 @@ export default function CustomerAccountScreen({
   onNavigateSubTab,
   onOpenNotifications,
   onOpenSidebar,
+  onViewAllReservations,
+  onRefreshReservations,
 }: CustomerAccountScreenProps) {
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, Platform.OS === 'ios' ? 48 : (StatusBar.currentHeight || 24));
 
   // Modal states
+  const { handleLogout: authLogout } = useAuth();
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'info' | 'password'>('info');
   
   // Profile edit states
@@ -69,6 +76,18 @@ export default function CustomerAccountScreen({
 
   
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Lọc các đơn đặt giữ chỗ đang chờ nhận kho (Active) đồng bộ với Web
+  const activeReservations = useMemo(() => {
+    return (myReservations || []).filter(
+      (r: any) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED' && r.status !== 'EXPIRED'
+    );
+  }, [myReservations]);
+
+  // Lịch hẹn nhận kho sắp tới
+  const upcomingReservations = useMemo(() => {
+    return activeReservations.slice(0, 3);
+  }, [activeReservations]);
 
   useEffect(() => {
     if (currentUser) {
@@ -190,7 +209,24 @@ export default function CustomerAccountScreen({
     }
   };
 
+  const handlePerformLogout = async () => {
+    setShowLogoutModal(false);
+    try {
+      if (onLogout) {
+        await onLogout();
+      } else {
+        await authLogout();
+      }
+    } catch (e) {
+      console.warn('Lỗi khi đăng xuất:', e);
+    }
+  };
+
   const handleConfirmLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const _unusedOldLogout = () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
         onLogout?.();
@@ -219,12 +255,23 @@ export default function CustomerAccountScreen({
         style={s.scrollView}
         contentContainerStyle={[s.scrollContent, { paddingTop: topInset + 8 }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={async () => { setIsRefreshing(true); await loadSupportTickets(); }} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={async () => {
+              setIsRefreshing(true);
+              await Promise.all([
+                loadSupportTickets(),
+                onRefreshReservations ? onRefreshReservations() : Promise.resolve(),
+              ]);
+              setIsRefreshing(false);
+            }}
+          />
+        }
       >
         {/* TOP HEADER */}
         <View style={s.headerRow}>
           <View style={s.headerLeft}>
-            <Text style={s.roleLabel}>CỘNG TÁC VIÊN / KHÁCH THUÊ</Text>
             <Text style={s.userName} numberOfLines={1}>
               {currentUser?.fullName || 'Nguyễn Hoàng Long'}
             </Text>
@@ -249,7 +296,7 @@ export default function CustomerAccountScreen({
           <Text style={s.sectionTitle}>Lịch hẹn nhận kho sắp tới</Text>
           {myReservations && myReservations.length > 0 && (
             <TouchableOpacity
-              onPress={() => onNavigateBottomTab ? onNavigateBottomTab('book-new') : onNavigateSubTab?.('my_units')}
+              onPress={() => onViewAllReservations ? onViewAllReservations() : (onNavigateBottomTab ? onNavigateBottomTab('book-new') : null)}
               activeOpacity={0.7}
             >
               <Text style={s.viewAllLink}>Xem tất cả &gt;</Text>
@@ -258,8 +305,8 @@ export default function CustomerAccountScreen({
         </View>
 
         <View style={s.appointmentList}>
-          {myReservations && myReservations.length > 0 ? (
-            myReservations.slice(0, 2).map((res: any, index: number) => {
+          {upcomingReservations.length > 0 ? (
+            upcomingReservations.map((res: any, index: number) => {
               const rawDate = res.appointmentDate || res.checkInDate || '';
               const dateParts = rawDate.includes('T') ? rawDate.split('T')[0].split('-') : rawDate.split('-');
               const timeStr = rawDate.includes('T') ? rawDate.split('T')[1]?.slice(0, 5) : '09:00';
@@ -270,7 +317,7 @@ export default function CustomerAccountScreen({
                   key={res.id || index}
                   style={s.appointmentCard}
                   activeOpacity={0.8}
-                  onPress={() => onNavigateBottomTab ? onNavigateBottomTab('my-storage') : onNavigateSubTab?.('my_units')}
+                  onPress={() => onViewAllReservations ? onViewAllReservations() : (onNavigateBottomTab ? onNavigateBottomTab('my-storage') : null)}
                 >
                   <View style={s.timeBadge}>
                     <Text style={s.timeBadgeTime}>{timeStr}</Text>
@@ -278,7 +325,7 @@ export default function CustomerAccountScreen({
                   </View>
                   <View style={s.appointmentInfo}>
                     <Text style={s.appointmentName} numberOfLines={1}>
-                      {res.unitType?.name || 'Kho Mini Tự Quản'}
+                      {(res.items?.[0]?.unitType?.name || res.unitType?.name || 'Kho Tự Quản') + (res.items?.[0]?.unit?.unitNumber ? ' · Ô ' + res.items[0].unit.unitNumber : '')}
                     </Text>
                     <Text style={s.appointmentSub} numberOfLines={1}>
                       {res.facility?.name || 'SelfStorage'} · {res.rentalPeriod || 1} tháng
@@ -304,7 +351,7 @@ export default function CustomerAccountScreen({
               <TouchableOpacity
                 style={s.emptySectionBtn}
                 activeOpacity={0.8}
-                onPress={() => onNavigateBottomTab ? onNavigateBottomTab('book-new') : onNavigateSubTab?.('my_units')}
+                onPress={() => onViewAllReservations ? onViewAllReservations() : (onNavigateBottomTab ? onNavigateBottomTab('book-new') : null)}
               >
                 <Text style={s.emptySectionBtnText}>Thuê kho</Text>
               </TouchableOpacity>
@@ -396,6 +443,35 @@ export default function CustomerAccountScreen({
               <MaterialIcons name="person-outline" size={20} color="#334155" />
             </View>
             <Text style={s.settingsLabel}>Hồ sơ cá nhân & Đổi mật khẩu</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={s.settingsDivider} />
+
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={onViewAllReservations}
+          >
+            <View style={s.settingsIconWrap}>
+              <MaterialIcons name="bookmark-border" size={20} color="#334155" />
+            </View>
+            <Text style={s.settingsLabel}>Đơn đặt giữ chỗ của tôi</Text>
+            {activeReservations && activeReservations.length > 0 && (
+              <View
+                style={{
+                  backgroundColor: '#eff6ff',
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 10,
+                  marginRight: 6,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563eb' }}>
+                  {activeReservations.length} đơn
+                </Text>
+              </View>
+            )}
             <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
           </TouchableOpacity>
 
@@ -612,6 +688,42 @@ export default function CustomerAccountScreen({
             )}
             <View style={{ height: 60 }} />
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* MODAL XÁC NHẬN ĐĂNG XUẤT */}
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <View style={s.confirmOverlay}>
+          <View style={s.confirmCard}>
+            <View style={s.confirmIconWrap}>
+              <MaterialIcons name="logout" size={30} color="#dc2626" />
+            </View>
+            <Text style={s.confirmTitle}>Đăng xuất tài khoản</Text>
+            <Text style={s.confirmDesc}>
+              Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?
+            </Text>
+            <View style={s.confirmActionRow}>
+              <TouchableOpacity
+                style={s.confirmCancelBtn}
+                activeOpacity={0.8}
+                onPress={() => setShowLogoutModal(false)}
+              >
+                <Text style={s.confirmCancelText}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.confirmSubmitBtn}
+                activeOpacity={0.8}
+                onPress={handlePerformLogout}
+              >
+                <Text style={s.confirmSubmitText}>Đăng xuất</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -1231,6 +1343,82 @@ const s = StyleSheet.create({
   invoiceItemDate: {
     fontSize: 11,
     color: '#94a3b8',
+  },
+  // CONFIRM LOGOUT MODAL
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  confirmIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  confirmDesc: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  confirmActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  confirmSubmitBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmSubmitText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   invoiceItemStatus: {
     fontSize: 10,

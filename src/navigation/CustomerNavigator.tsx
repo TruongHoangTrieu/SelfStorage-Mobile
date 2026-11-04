@@ -12,8 +12,11 @@ import {
   Alert,
   Animated,
   StatusBar,
+  TextInput,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatVND } from '../utils/formatters';
 import CustomerSidebar from '../components/customer/CustomerSidebar';
 import MyUnitsDashboardScreen from '../screens/customer/MyUnitsDashboardScreen';
 import UnitDetailManageScreen from '../screens/customer/UnitDetailManageScreen';
@@ -50,6 +53,7 @@ interface CustomerNavigatorProps {
 }
 
 export default function CustomerNavigator({ onRefreshStaffData }: CustomerNavigatorProps) {
+  const insets = useSafeAreaInsets();
   const { setAppMode } = useAppMode();
   const {
     isLoggedIn,
@@ -154,9 +158,70 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     loadMyReservations,
   } = reservationsState;
 
+  // Bo loc danh muc & tim kiem don dat giu cho (Dong bo 100% voi Web)
+  const [reservationFilter, setReservationFilter] = useState<'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'ALL'>('ACTIVE');
+  const [reservationSearchQuery, setReservationSearchQuery] = useState('');
+
+  const filterCounts = React.useMemo(() => {
+    const counts = {
+      ACTIVE: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      ALL: myReservations?.length || 0,
+    };
+    (myReservations || []).forEach((r: any) => {
+      if (r.status === 'COMPLETED') {
+        counts.COMPLETED++;
+      } else if (r.status === 'CANCELLED' || r.status === 'EXPIRED') {
+        counts.CANCELLED++;
+      } else {
+        counts.ACTIVE++;
+      }
+    });
+    return counts;
+  }, [myReservations]);
+
+  const filteredReservations = React.useMemo(() => {
+    if (!myReservations) return [];
+    let list = myReservations;
+
+    if (reservationFilter === 'ACTIVE') {
+      list = list.filter((r: any) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED' && r.status !== 'EXPIRED');
+    } else if (reservationFilter === 'COMPLETED') {
+      list = list.filter((r: any) => r.status === 'COMPLETED');
+    } else if (reservationFilter === 'CANCELLED') {
+      list = list.filter((r: any) => r.status === 'CANCELLED' || r.status === 'EXPIRED');
+    }
+
+    const query = reservationSearchQuery.trim().toLowerCase();
+    if (query) {
+      list = list.filter((r: any) => {
+        const code = (r.reservationCode || String(r.id)).toLowerCase();
+        const facilityName = (r.facility?.name || '').toLowerCase();
+        const facilityAddress = (r.facility?.address || '').toLowerCase();
+        const item = r.items?.[0];
+        const unitName = (item?.unitType?.name || '').toLowerCase();
+        const unitNumber = (item?.unit?.unitNumber || '').toLowerCase();
+        const status = (r.status || '').toLowerCase();
+
+        return (
+          code.includes(query) ||
+          facilityName.includes(query) ||
+          facilityAddress.includes(query) ||
+          unitName.includes(query) ||
+          unitNumber.includes(query) ||
+          status.includes(query)
+        );
+      });
+    }
+
+    return list;
+  }, [myReservations, reservationFilter, reservationSearchQuery]);
+
   useEffect(() => {
     loadCustomerData();
     loadCustomerContracts();
+    loadMyReservations();
     customerNotifState.loadNotifications();
   }, [loadCustomerData, loadCustomerContracts, currentUser]);
 
@@ -456,9 +521,12 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             onUpdateUser={(updated) => {
               setCurrentUser(updated);
             }}
-            onLogout={() => {
-              handleLogout();
+            onLogout={async () => {
+              await handleLogout();
               setCustomerTab('book');
+              setCustomerNavTab('my_units');
+              setCustomerFlowStep('dashboard');
+              showActionToast('Đã đăng xuất tài khoản thành công', 'info');
             }}
             onNavigateBottomTab={handleNavigateBottomTab}
             onNavigateSubTab={(subTab) => {
@@ -466,6 +534,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               setCustomerNavTab(subTab);
             }}
             onOpenNotifications={() => setShowNotifModal(true)}
+            onViewAllReservations={() => setCustomerTab('my_reservations')}
+            onRefreshReservations={loadMyReservations}
           />
         )
       ) : customerTab === 'book' ? (
@@ -486,6 +556,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             setCustomerNavTab('my_units');
             setCustomerFlowStep('dashboard');
             loadCustomerContracts();
+    loadMyReservations();
           }}
           onOpenLogin={handleOpenAuthModal}
           onLogout={handleLogout}
@@ -519,129 +590,348 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
         </View>
       ) : (
         /* MY RESERVATIONS */
-        <View style={{ flex: 1, backgroundColor: '#FAF8FF' }}>
-          {/* Top Header */}
+        <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+          {/* Top Header with Safe Area Insets */}
           <View
             style={{
-              height: 56,
+              paddingTop: insets.top > 0 ? insets.top + 6 : 14,
+              paddingBottom: 12,
+              paddingHorizontal: 16,
               backgroundColor: '#ffffff',
+              borderBottomWidth: 1,
+              borderBottomColor: '#e2e8f0',
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              paddingHorizontal: 16,
-              borderBottomWidth: 1,
-              borderBottomColor: '#e2e7ff',
             }}
           >
             <TouchableOpacity
-              onPress={() => setCustomerTab('my_units')}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              onPress={() => {
+                setCustomerTab('my_units');
+                setCustomerNavTab('profile');
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+              activeOpacity={0.7}
             >
-              <Text style={{ fontSize: 18, color: '#2563EB' }}>←</Text>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#131b2e' }}>
-                Đơn Đặt Kho
-              </Text>
-            </TouchableOpacity>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <TouchableOpacity
-                onPress={() => {
-                  if (currentUser) {
-                    if (Platform.OS === 'web') {
-                      if (window.confirm('Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?')) {
-                        handleLogout();
-                      }
-                    } else {
-                      Alert.alert(
-                        'Đăng xuất',
-                        `Bạn có chắc chắn muốn đăng xuất khỏi tài khoản ${currentUser.fullName || currentUser.email || ''}?`,
-                        [
-                          { text: 'Hủy', style: 'cancel' },
-                          { text: 'Đăng xuất', style: 'destructive', onPress: handleLogout },
-                        ]
-                      );
-                    }
-                  } else {
-                    setShowAuthModal(true);
-                  }
-                }}
+              <View
                 style={{
-                  flexDirection: 'row',
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: '#f1f5f9',
                   alignItems: 'center',
-                  gap: 4,
-                  backgroundColor: currentUser ? '#fef2f2' : '#ffffff',
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: currentUser ? '#fecaca' : '#c6c6cd',
-                  maxWidth: 130,
-                  flexShrink: 0,
+                  justifyContent: 'center',
                 }}
               >
-                <MaterialIcons
-                  name={currentUser ? 'logout' : 'login'}
-                  size={14}
-                  color={currentUser ? '#dc2626' : '#131b2e'}
-                />
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: '700',
-                    color: currentUser ? '#dc2626' : '#131b2e',
-                  }}
-                  numberOfLines={1}
-                >
-                  {currentUser ? 'Đăng xuất' : 'Đăng nhập'}
+                <MaterialIcons name="arrow-back" size={20} color="#0f172a" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: '#0f172a' }}>
+                  Đơn Đặt Kho Của Bạn
                 </Text>
-              </TouchableOpacity>
+                <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>
+                  {filterCounts.ACTIVE} đơn chờ nhận kho · {myReservations.length} đơn tổng cộng
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Bar */}
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              backgroundColor: '#ffffff',
+              borderBottomWidth: 1,
+              borderBottomColor: '#f1f5f9',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#f8fafc',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                paddingHorizontal: 12,
+                height: 40,
+              }}
+            >
+              <MaterialIcons name="search" size={20} color="#64748b" style={{ marginRight: 8 }} />
+              <TextInput
+                value={reservationSearchQuery}
+                onChangeText={setReservationSearchQuery}
+                placeholder="Tìm mã đơn, ô kho, cơ sở..."
+                placeholderTextColor="#94a3b8"
+                style={{
+                  flex: 1,
+                  fontSize: 13,
+                  color: '#0f172a',
+                  paddingVertical: 0,
+                }}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+              {reservationSearchQuery.trim().length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setReservationSearchQuery('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialIcons name="cancel" size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
+          {/* Filter Chips Horizontal Bar */}
+          <View style={{ backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}
+            >
+              {[
+                { key: 'ACTIVE', label: 'Chờ nhận kho', count: filterCounts.ACTIVE },
+                { key: 'COMPLETED', label: 'Đã nhận kho', count: filterCounts.COMPLETED },
+                { key: 'CANCELLED', label: 'Đã hủy / Quá hạn', count: filterCounts.CANCELLED },
+                { key: 'ALL', label: 'Tất cả', count: filterCounts.ALL },
+              ].map((tab) => {
+                const isActive = reservationFilter === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => setReservationFilter(tab.key as any)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 20,
+                      backgroundColor: isActive ? '#2563eb' : '#f1f5f9',
+                      borderWidth: 1,
+                      borderColor: isActive ? '#2563eb' : '#e2e8f0',
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: isActive ? '800' : '600',
+                        color: isActive ? '#ffffff' : '#475569',
+                      }}
+                    >
+                      {tab.label}
+                    </Text>
+                    <View
+                      style={{
+                        paddingHorizontal: 6,
+                        paddingVertical: 1,
+                        borderRadius: 10,
+                        backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : '#e2e8f0',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: '800',
+                          color: isActive ? '#ffffff' : '#64748b',
+                        }}
+                      >
+                        {tab.count}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
           <ScrollView
             style={styles.contentScroll}
-            contentContainerStyle={styles.scrollPadding}
+            contentContainerStyle={[styles.scrollPadding, { paddingBottom: 120 }]}
             refreshControl={
               <RefreshControl refreshing={loadingReservations} onRefresh={loadMyReservations} />
             }
           >
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Lịch Sử Đặt Kho Của Bạn</Text>
-              <Text style={styles.sectionSubtitle}>
-                Quản lý các phòng kho đã giữ chỗ và trạng thái bàn giao.
-              </Text>
-
-              {myReservations.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyIcon}>📦</Text>
-                  <Text style={styles.emptyHeadline}>Bạn chưa có đơn đặt kho nào</Text>
-                  <TouchableOpacity style={styles.nextBtn} onPress={() => setCustomerTab('book')}>
-                    <Text style={styles.nextBtnText}>+ Đặt Ngăn Kho Mới</Text>
-                  </TouchableOpacity>
+              {filteredReservations.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: 20,
+                    padding: 32,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: '#e2e8f0',
+                    marginTop: 12,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: '#f1f5f9',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <MaterialIcons name="inventory-2" size={32} color="#94a3b8" />
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#1e293b', marginBottom: 4 }}>
+                    {reservationSearchQuery.trim() ? 'Không tìm thấy kết quả' : 'Không có đơn đặt kho nào'}
+                  </Text>
+                  <Text style={{ fontSize: 12.5, color: '#64748b', textAlign: 'center', marginBottom: 16 }}>
+                    {reservationSearchQuery.trim()
+                      ? `Không có đơn nào khớp với từ khóa "${reservationSearchQuery.trim()}".`
+                      : reservationFilter === 'ALL'
+                      ? 'Bạn chưa có đơn đặt giữ chỗ kho nào trong hệ thống.'
+                      : 'Không tìm thấy đơn nào trong danh mục đã chọn.'}
+                  </Text>
+                  {reservationSearchQuery.trim() ? (
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#f1f5f9',
+                        paddingHorizontal: 16,
+                        paddingVertical: 9,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: '#cbd5e1',
+                      }}
+                      onPress={() => setReservationSearchQuery('')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: '#334155', fontSize: 13, fontWeight: '700' }}>
+                        Xóa từ khóa tìm kiếm
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#2563eb',
+                        paddingHorizontal: 20,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                      }}
+                      onPress={() => setCustomerTab('book')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '700' }}>
+                        + Đặt Ngăn Kho Mới
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
-                myReservations.map((r) => (
-                  <View key={r.id} style={styles.historyCard}>
-                    <View style={styles.historyTopRow}>
-                      <Text style={styles.historyCode}>
-                        Đơn #{String(r.id).slice(-6).toUpperCase()}
-                      </Text>
-                      <View style={styles.historyBadge}>
-                        <Text style={styles.historyBadgeText}>{r.status}</Text>
+                filteredReservations.map((r: any) => {
+                  let statusLabel = 'Chờ nhận kho';
+                  let statusColor = '#d97706';
+                  let statusBg = '#fef3c7';
+
+                  if (r.status === 'CONFIRMED') {
+                    statusLabel = 'Đã duyệt';
+                    statusColor = '#16a34a';
+                    statusBg = '#dcfce7';
+                  } else if (r.status === 'COMPLETED') {
+                    statusLabel = 'Đã nhận kho';
+                    statusColor = '#2563eb';
+                    statusBg = '#eff6ff';
+                  } else if (r.status === 'CANCELLED') {
+                    statusLabel = 'Đã hủy';
+                    statusColor = '#dc2626';
+                    statusBg = '#fee2e2';
+                  } else if (r.status === 'EXPIRED') {
+                    statusLabel = 'Quá hạn';
+                    statusColor = '#64748b';
+                    statusBg = '#f1f5f9';
+                  }
+
+                  const item = r.items?.[0];
+                  const unitName = item?.unitType?.name || 'Kho Tự Quản Mini';
+                  const unitNumber = item?.unit?.unitNumber ? ' · Ô ' + item.unit.unitNumber : '';
+                  const depositAmount = item?.depositAmount !== undefined ? item.depositAmount : item?.unitType?.depositAmount;
+
+                  return (
+                    <View
+                      key={r.id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: 16,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor: '#e2e8f0',
+                        marginBottom: 10,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.03,
+                        shadowRadius: 3,
+                        elevation: 1,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+                            Đơn #{r.reservationCode || String(r.id).slice(-8).toUpperCase()}
+                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#2563eb', marginTop: 2 }}>
+                            {unitName}{unitNumber}
+                          </Text>
+                        </View>
+                        <View
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 6,
+                            backgroundColor: statusBg,
+                          }}
+                        >
+                          <Text style={{ fontSize: 10.5, fontWeight: '800', color: statusColor }}>
+                            {statusLabel}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {r.facility?.name && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                          <MaterialIcons name="storefront" size={14} color="#64748b" />
+                          <Text style={{ fontSize: 12, color: '#475569', flex: 1 }} numberOfLines={1}>
+                            {r.facility.name}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                        <MaterialIcons name="event" size={14} color="#64748b" />
+                        <Text style={{ fontSize: 12, color: '#475569' }}>
+                          Ngày hẹn nhận: {new Date(r.appointmentDate || r.createdAt).toLocaleDateString('vi-VN')}
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <MaterialIcons name="schedule" size={14} color="#64748b" />
+                          <Text style={{ fontSize: 12, color: '#475569' }}>
+                            Thời hạn thuê: {r.rentalPeriod || 1} tháng
+                          </Text>
+                        </View>
+                        {depositAmount !== undefined && Number(depositAmount) > 0 && (
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#16a34a' }}>
+                            Cọc: {formatVND(Number(depositAmount))}
+                          </Text>
+                        )}
                       </View>
                     </View>
-                    <Text style={styles.historyDetail}>
-                      📅 Ngày hẹn: {new Date(r.appointmentDate).toLocaleDateString('vi-VN')}
-                    </Text>
-                    <Text style={styles.historyDetail}>⏱️ Thời hạn thuê: {r.rentalPeriod} tháng</Text>
-                  </View>
-                ))
+                  );
+                })
               )}
             </View>
           </ScrollView>
 
           <CustomerBottomNavBar
-            activeTab="my-storage"
+            activeTab="account"
             onSelectTab={handleNavigateBottomTab}
           />
         </View>

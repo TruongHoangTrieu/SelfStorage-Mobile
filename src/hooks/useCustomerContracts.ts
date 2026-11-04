@@ -4,6 +4,7 @@ import {
   loginCustomerApi,
   fetchMyContractsApi,
   fetchMySupportRequestsApi,
+  getAuthToken,
 } from '../api';
 import {
   CustomerTab,
@@ -34,7 +35,13 @@ export function useCustomerContracts() {
   const loadCustomerContracts = useCallback(async () => {
     try {
       setIsCustomerLoading(true);
-      await loginCustomerApi('customer@selfstorage.vn', '123456').catch(() => null);
+      const token = getAuthToken();
+      if (!token) {
+        setRentedUnits([]);
+        setSelectedRentedUnit(null);
+        setIsCustomerLoading(false);
+        return;
+      }
       const [contracts, supportRes] = await Promise.all([
         fetchMyContractsApi().catch(() => null),
         fetchMySupportRequestsApi().catch(() => null),

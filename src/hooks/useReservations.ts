@@ -73,10 +73,12 @@ export function useReservations(onReservationChanged?: () => void) {
     }
   }, []);
 
-  const loadMyReservations = useCallback(async () => {
+  const loadMyReservations = useCallback(async (targetCustomerId?: string | number) => {
     try {
       setLoadingReservations(true);
-      const data = await apiRequest<Reservation[]>('/reservations/my');
+      const customerFilter = targetCustomerId ? `&customerId=${targetCustomerId}` : '';
+      const res = await apiRequest<any>(`/reservations?limit=50${customerFilter}`);
+      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       setMyReservations(Array.isArray(data) ? data : []);
     } catch {
       // ignore
