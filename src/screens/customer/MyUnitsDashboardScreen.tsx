@@ -19,6 +19,7 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
 import { apiRequest } from '../../api';
 import CustomerBottomNavBar, { CustomerTabType } from '../../components/customer/CustomerBottomNavBar';
+import ContractPreviewModal from '../../components/staff/ContractPreviewModal';
 
 // ─── Design Tokens (Đồng bộ Stitch Design System) ─────────────────────────
 const T = {
@@ -93,6 +94,32 @@ export default function MyUnitsDashboardScreen({
 
   // PIN visibility toggle
   const [isPinVisible, setIsPinVisible] = useState<boolean>(false);
+  const [showContractModal, setShowContractModal] = useState<boolean>(false);
+
+  // Chuyển đổi dữ liệu hợp đồng sang cấu trúc của ContractPreviewModal có sẵn
+  const contractAppointmentData = React.useMemo(() => {
+    if (!activeUnit) return null;
+    return {
+      id: String(activeUnit.contractId || activeUnit.id),
+      contractCode: activeUnit.contractCode,
+      assignedUnit: activeUnit.unitCode,
+      facilityName: activeUnit.facilityName,
+      facilityAddress: activeUnit.facilityAddress,
+      customerName: customerName || currentUser?.fullName || 'Nguyễn Văn Khách Hàng',
+      phone: currentUser?.phone || '0901 234 567',
+      email: currentUser?.email || 'customer@selfstorage.vn',
+      identityNumber: currentUser?.idCard || currentUser?.identityNumber || 'Đã xác thực điện tử',
+      preferredFloor: activeUnit.floor || 'Tầng 1',
+      unitType: activeUnit.unitName,
+      unitSize: activeUnit.size,
+      purpose: 'Lưu trữ đồ đạc cá nhân & tài sản tự quản',
+      durationMonths: activeUnit.totalDays ? Math.max(1, Math.round(activeUnit.totalDays / 30)) : 1,
+      startDate: activeUnit.startDate,
+      monthlyRent: activeUnit.monthlyRentFormatted,
+      depositAmount: activeUnit.depositFormatted,
+      signature: [],
+    } as any;
+  }, [activeUnit, customerName, currentUser]);
 
   // ─── FETCH SMART-LOCK (PIN) TỪ API ──────────────────────────────────
   const [smartLockData, setSmartLockData] = useState<any>(null);
@@ -546,19 +573,37 @@ export default function MyUnitsDashboardScreen({
                   Mã HĐ: {activeUnit?.contractCode || '—'}
                 </Text>
               </View>
-              <View style={[
-                s.contractActiveBadge,
-                activeUnit?.status === 'overdue' && { backgroundColor: '#FEE2E2', borderColor: '#FECACA' },
-                activeUnit?.status === 'expiring_soon' && { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' },
-              ]}>
-                <Text style={[
-                  s.contractActiveBadgeText,
-                  activeUnit?.status === 'overdue' && { color: '#DC2626' },
-                  activeUnit?.status === 'expiring_soon' && { color: '#D97706' },
-                ]} numberOfLines={1}>
-                  {activeUnit?.statusLabel || (activeUnit?.status === 'expiring_soon' ? 'Sắp hết hạn' : 'Đang hoạt động')}
+              <TouchableOpacity
+                onPress={() => setShowContractModal(true)}
+                activeOpacity={0.7}
+                style={[
+                  s.contractActiveBadge,
+                  {
+                    backgroundColor: '#eff6ff',
+                    borderColor: '#bfdbfe',
+                    borderWidth: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 14,
+                  },
+                ]}
+              >
+                <MaterialIcons name="description" size={13} color="#2563eb" />
+                <Text
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: '800',
+                    color: '#2563eb',
+                  }}
+                  numberOfLines={1}
+                >
+                  Xem hợp đồng
                 </Text>
-              </View>
+                <MaterialIcons name="chevron-right" size={14} color="#2563eb" />
+              </TouchableOpacity>
             </View>
 
             <View style={s.contractStatsGrid}>
@@ -628,6 +673,14 @@ export default function MyUnitsDashboardScreen({
             }
           }}
         />
+
+      {/* Modal Xem Hợp Đồng Điện Tử */}
+      <ContractPreviewModal
+        visible={showContractModal}
+        onClose={() => setShowContractModal(false)}
+        appointment={contractAppointmentData}
+        assignedUnitCode={activeUnit?.unitCode}
+      />
 
       </View>
     </View>

@@ -6,6 +6,7 @@ import {
   Modal,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
@@ -43,6 +44,7 @@ export default function ContractPreviewModal({
   const [customerSignature, setCustomerSignature] = useState<string[]>(initialSignature || appointment.signature || []);
   const [showSignPad, setShowSignPad] = useState<boolean>(false);
   const [signedTime, setSignedTime] = useState<string>('');
+  const [isAgreed, setIsAgreed] = useState<boolean>(false);
 
   useEffect(() => {
     const sig = initialSignature || appointment.signature;
@@ -50,6 +52,17 @@ export default function ContractPreviewModal({
       setCustomerSignature(sig);
     }
   }, [initialSignature, appointment.signature]);
+
+  const handleOpenSignPad = () => {
+    if (!isAgreed) {
+      Alert.alert(
+        'Yêu cầu xác nhận điều khoản',
+        'Vui lòng tích chọn vào ô xác nhận đồng ý với tất cả điều khoản hợp đồng trước khi tiến hành ký tên.'
+      );
+      return;
+    }
+    setShowSignPad(true);
+  };
 
   const handleSaveSignature = (paths: string[]) => {
     setCustomerSignature(paths);
@@ -225,7 +238,7 @@ export default function ContractPreviewModal({
 
                 {/* ĐIỀU 2 */}
                 <View style={styles.articleBlock}>
-                  <Text style={styles.articleTitle}>Điều 2. THỜI HẠN CỦA HỢP ĐỒNG VÀ GIA HẠN</Text>
+                  <Text style={styles.articleTitle}>Điều 2. THỜI HẠN THUÊ VÀ CHÍNH SÁCH TRẢ KHO SỚM</Text>
                   <Text style={styles.paragraph}>
                     <Text style={styles.clauseNum}>2.1. </Text>
                     Thời hạn thuê kho là <Text style={styles.boldText}>{appointment.durationMonths || 1} tháng</Text>, bắt đầu tính từ ngày <Text style={styles.boldText}>{appointment.startDate || 'Hôm nay'}</Text> đến hết ngày kết thúc hợp đồng theo biên lai thanh toán.
@@ -235,12 +248,12 @@ export default function ContractPreviewModal({
                     Khi hết hạn hợp đồng, tùy theo nhu cầu thực tế hai Bên có thể thỏa thuận ký gia hạn hợp đồng hoặc gia hạn tự động thông qua Cổng quản lý khách hàng (Customer Portal).
                   </Text>
                   <Text style={styles.paragraph}>
-                    <Text style={styles.clauseNum}>2.3. </Text>
-                    Trường hợp một trong hai bên có nhu cầu chấm dứt hợp đồng trước thời hạn thì phải thông báo bằng văn bản hoặc thông báo trên ứng dụng cho bên kia biết trước ít nhất <Text style={styles.boldText}>30 ngày</Text>.
+                    <Text style={styles.clauseNum}>2.3. Quyền trả kho trước hạn: </Text>
+                    Bên B có quyền làm thủ tục chấm dứt hợp đồng và hoàn trả ngăn kho trước ngày kết thúc thời hạn thuê khi không còn nhu cầu sử dụng.
                   </Text>
                   <Text style={styles.paragraph}>
-                    <Text style={styles.clauseNum}>2.4. </Text>
-                    Trong trường hợp hợp đồng kết thúc, Bên A có trách nhiệm hoàn lại tiền đặt cọc cho Bên B sau khi đã khấu trừ các khoản phí hợp lệ; Bên B có trách nhiệm dọn sạch tài sản và bàn giao ngăn kho nguyên trạng.
+                    <Text style={styles.clauseNum}>2.4. Chính sách không hoàn tiền: </Text>
+                    Do toàn bộ tiền đặt cọc ban đầu đã được khấu trừ trọn gói vào tiền thuê theo Điều 3, Bên A <Text style={styles.boldText}>không hoàn lại bất kỳ khoản tiền nào</Text> (bao gồm tiền thuê của các ngày/tháng còn lại chưa sử dụng). Bên B có trách nhiệm dọn sạch tài sản, rác thải và bàn giao nguyên trạng thiết bị; trường hợp có hư hại tài sản hoặc phát sinh phí vệ sinh đặc biệt, Bên B có nghĩa vụ thanh toán chi phí bồi thường cho Bên A tại thời điểm bàn giao.
                   </Text>
                 </View>
 
@@ -252,8 +265,8 @@ export default function ContractPreviewModal({
                     <Text style={[styles.boldText, { color: '#1D4ED8' }]}>{appointment.monthlyRent}</Text> (Đã bao gồm thuế GTGT 10%, phí an ninh giám sát 24/7 và phí quản lý bảo trì cơ sở).
                   </Text>
                   <Text style={styles.paragraph}>
-                    <Text style={styles.clauseNum}>3.2. Tiền đặt cọc bảo đảm: </Text>
-                    <Text style={[styles.boldText, { color: '#15803D' }]}>{appointment.depositAmount}</Text> (Tương đương 100% tiền đặt cọc quy định). Bên B đã hoàn tất thanh toán khoản tiền cọc này qua cổng thanh toán trực tuyến.
+                    <Text style={styles.clauseNum}>3.2. Quyết toán tiền đặt cọc: </Text>
+                    Toàn bộ khoản tiền đặt cọc ban đầu (<Text style={[styles.boldText, { color: '#15803D' }]}>{appointment.depositAmount}</Text>) <Text style={styles.boldText}>đã được Bên A khấu trừ trực tiếp 100% vào tổng tiền thuê kho</Text> của kỳ hạn này. Do đó, số dư tiền cọc bảo đảm tại thời điểm ký kết hợp đồng bằng 0 VNĐ.
                   </Text>
                   <Text style={styles.paragraph}>
                     <Text style={styles.clauseNum}>3.3. Phương thức thanh toán: </Text>
@@ -311,6 +324,28 @@ export default function ContractPreviewModal({
                 </View>
               </View>
 
+              {/* CHECKBOX XÁC NHẬN ĐỒNG Ý ĐIỀU KHOẢN (BẮT BUỘC TRƯỚC KHI KÝ) */}
+              <TouchableOpacity
+                style={[
+                  styles.agreementCheckboxContainer,
+                  isAgreed && styles.agreementCheckboxContainerActive,
+                ]}
+                activeOpacity={0.75}
+                onPress={() => setIsAgreed(!isAgreed)}
+              >
+                <View style={[styles.customCheckbox, isAgreed && styles.customCheckboxChecked]}>
+                  {isAgreed ? (
+                    <MaterialIcons name="check" size={17} color="#FFFFFF" />
+                  ) : null}
+                </View>
+                <Text style={styles.agreementText}>
+                  <Text style={styles.agreementTextBold}>
+                    Tôi đã đọc, hiểu rõ và đồng ý với tất cả các điều khoản của Hợp đồng thuê kho tự quản này.
+                  </Text>
+                  
+                </Text>
+              </TouchableOpacity>
+
               {/* 6. CHỮ KÝ 2 BÊN */}
               <View style={styles.signatureSection}>
                 <View style={styles.signatureRow}>
@@ -353,7 +388,7 @@ export default function ContractPreviewModal({
                         <Text style={styles.stampTime}>Ký lúc: {signedTime || `${dayStr}/${monthStr}/${yearStr}`}</Text>
                         <TouchableOpacity
                           style={styles.reSignBtn}
-                          onPress={() => setShowSignPad(true)}
+                          onPress={handleOpenSignPad}
                           activeOpacity={0.7}
                         >
                           <MaterialIcons name="edit" size={11} color="#004AC6" />
@@ -362,15 +397,19 @@ export default function ContractPreviewModal({
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={styles.emptySignBox}
-                        onPress={() => setShowSignPad(true)}
+                        style={[styles.emptySignBox, !isAgreed && styles.disabledEmptySignBox]}
+                        onPress={handleOpenSignPad}
                         activeOpacity={0.8}
                       >
-                        <View style={styles.emptySignIconCircle}>
-                          <MaterialIcons name="draw" size={20} color="#004AC6" />
+                        <View style={[styles.emptySignIconCircle, !isAgreed && { backgroundColor: '#E2E8F0' }]}>
+                          <MaterialIcons name={isAgreed ? "draw" : "lock-outline"} size={20} color={isAgreed ? "#004AC6" : "#64748B"} />
                         </View>
-                        <Text style={styles.emptySignTitle}>Bấm để ký tên</Text>
-                        <Text style={styles.emptySignSub}>Vẽ chữ ký trực tiếp</Text>
+                        <Text style={[styles.emptySignTitle, !isAgreed && { color: '#64748B' }]}>
+                          {isAgreed ? 'Bấm để ký tên' : 'Cần tick đồng ý'}
+                        </Text>
+                        <Text style={styles.emptySignSub}>
+                          {isAgreed ? 'Vẽ chữ ký trực tiếp' : 'Khóa cho đến khi tick'}
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -381,15 +420,19 @@ export default function ContractPreviewModal({
               {customerSignature.length === 0 ? (
                 <View style={styles.signActionArea}>
                   <TouchableOpacity
-                    style={styles.mainSignBtn}
-                    onPress={() => setShowSignPad(true)}
+                    style={[styles.mainSignBtn, !isAgreed && styles.disabledSignBtn]}
+                    onPress={handleOpenSignPad}
                     activeOpacity={0.85}
                   >
-                    <MaterialIcons name="draw" size={20} color="#FFFFFF" />
-                    <Text style={styles.mainSignBtnText}>Ký Hợp Đồng Ngay</Text>
+                    <MaterialIcons name={isAgreed ? "draw" : "lock"} size={20} color="#FFFFFF" />
+                    <Text style={styles.mainSignBtnText}>
+                      {isAgreed ? 'Ký Hợp Đồng Ngay' : 'Đồng Ý Điều Khoản Để Ký'}
+                    </Text>
                   </TouchableOpacity>
-                  <Text style={styles.signHintText}>
-                    Khách hàng vẽ chữ ký trực tiếp trên màn hình, chữ ký sẽ được in vào văn bản hợp đồng
+                  <Text style={[styles.signHintText, !isAgreed && { color: '#DC2626', fontWeight: '600' }]}>
+                    {isAgreed
+                      ? 'Khách hàng vẽ chữ ký trực tiếp trên màn hình, chữ ký sẽ được in vào văn bản hợp đồng'
+                      : 'Vui lòng tích chọn vào ô vuông xác nhận đồng ý điều khoản ở trên để mở khóa nút ký'}
                   </Text>
                 </View>
               ) : (
@@ -865,6 +908,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#059669',
+  },
+  agreementCheckboxContainer: {
+    marginTop: 16,
+    marginBottom: 6,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  agreementCheckboxContainerActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  customCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  customCheckboxChecked: {
+    backgroundColor: '#004AC6',
+    borderColor: '#004AC6',
+  },
+  agreementText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  agreementTextBold: {
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  disabledSignBtn: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  disabledEmptySignBox: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
   },
 
 });
