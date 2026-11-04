@@ -291,6 +291,42 @@ export default function CustomerAccountScreen({
           </TouchableOpacity>
         </View>
 
+        {/* CÁC PHÍM TẮT TIỆN ÍCH (KHÔNG KHUNG) */}
+        <View style={s.quickActionsContainer}>
+          <TouchableOpacity
+            style={s.quickActionBtn}
+            activeOpacity={0.7}
+            onPress={() => onNavigateBottomTab?.('my-storage')}
+          >
+            <View style={s.quickActionCircle}>
+              <MaterialIcons name="meeting-room" size={24} color="#2563eb" />
+            </View>
+            <Text style={s.quickActionLabel}>Kho</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={s.quickActionBtn}
+            activeOpacity={0.7}
+            onPress={() => onNavigateSubTab?.('payments')}
+          >
+            <View style={s.quickActionCircle}>
+              <MaterialIcons name="local-offer" size={24} color="#2563eb" />
+            </View>
+            <Text style={s.quickActionLabel}>Hóa đơn</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={s.quickActionBtn}
+            activeOpacity={0.7}
+            onPress={() => onNavigateBottomTab?.('support')}
+          >
+            <View style={s.quickActionCircle}>
+              <MaterialIcons name="account-balance-wallet" size={24} color="#2563eb" />
+            </View>
+            <Text style={s.quickActionLabel}>Hỗ trợ</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* SECTION 1: LỊCH HẸN NHẬN KHO SẮP TỚI */}
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>Lịch hẹn nhận kho sắp tới</Text>
@@ -1428,5 +1464,40 @@ const s = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  quickActionBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  quickActionCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  quickActionLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1e293b',
+    textAlign: 'center',
   },
 });
