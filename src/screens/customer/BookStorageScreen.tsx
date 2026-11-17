@@ -190,12 +190,85 @@ export default function BookStorageScreen({
   // Step 2 Form States
   const [moveInDateStr, setMoveInDateStr] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 3);
+    d.setDate(d.getDate() + 1);
     return d.toISOString().split("T")[0];
   });
-  const [appointmentTimeSlot, setAppointmentTimeSlot] = useState("09:00 - 10:00");
+  const [timeSlots, setTimeSlots] = useState<
+    Array<{
+      id: string;
+      label: string;
+      startTime: string;
+      endTime: string;
+      iso: string;
+      available: boolean;
+      bookedCount?: number;
+      remainingCapacity?: number;
+      reason?: string | null;
+    }>
+  >([]);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
+    id: string;
+    label: string;
+    startTime: string;
+    endTime: string;
+    iso: string;
+    available: boolean;
+    bookedCount?: number;
+    remainingCapacity?: number;
+    reason?: string | null;
+  } | null>({
+    id: "slot_0900_1000",
+    label: "09:00 - 10:00 (Sáng)",
+    startTime: "09:00",
+    endTime: "10:00",
+    iso: "T09:00:00+07:00",
+    available: true,
+    remainingCapacity: 3,
+  });
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const appointmentTimeSlot = selectedTimeSlot
+    ? `${selectedTimeSlot.startTime} - ${selectedTimeSlot.endTime}`
+    : "09:00 - 10:00";
   const [rentalTermMonths, setRentalTermMonths] = useState<1 | 3 | 6 | 12>(6);
   const [contractNotes, setContractNotes] = useState("");
+
+  useEffect(() => {
+    const facId = selectedUnit?.facilityId;
+    if (!facId || !moveInDateStr) return;
+
+    let isCancelled = false;
+    (async () => {
+      try {
+        setLoadingSlots(true);
+        const data = await apiRequest<any>(
+          `/facilities/${facId}/time-slots?date=${moveInDateStr}`
+        );
+        if (!isCancelled && Array.isArray(data?.slots) && data.slots.length > 0) {
+          setTimeSlots(data.slots);
+          const stillAvailable = selectedTimeSlot
+            ? data.slots.find(
+                (s: any) => s.id === selectedTimeSlot.id && s.available
+              )
+            : null;
+          if (stillAvailable) {
+            setSelectedTimeSlot(stillAvailable);
+          } else {
+            const firstAvail =
+              data.slots.find((s: any) => s.available) || data.slots[0];
+            setSelectedTimeSlot(firstAvail || null);
+          }
+        }
+      } catch {
+        // Fallback default slots if offline
+      } finally {
+        if (!isCancelled) setLoadingSlots(false);
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedUnit?.facilityId, moveInDateStr]);
 
   // SePay VietQR Deposit States (Step 3)
   const [qrData, setQrData] = useState<{
@@ -521,17 +594,22 @@ export default function BookStorageScreen({
       Alert.alert("Lỗi", "Chưa chọn buồng kho.");
       return;
     }
+    if (!selectedTimeSlot || !selectedTimeSlot.available) {
+      Alert.alert("Chưa chọn khung giờ", "Vui lòng chọn khung giờ nhận kho còn trống.");
+      return;
+    }
     try {
       setSubmitting(true);
       if (!getAuthToken()) {
         await loginCustomerApi().catch(() => null);
       }
 
-      const isoDate = new Date(`${moveInDateStr}T09:00:00.000Z`).toISOString();
+      const slotIso = selectedTimeSlot.iso || "T09:00:00+07:00";
+      const appointmentDate = `${moveInDateStr}${slotIso}`;
       const payload = {
         facilityId: selectedUnit.facilityId,
         unitTypeId: selectedUnit.unitTypeId,
-        appointmentDate: isoDate,
+        appointmentDate,
         rentalPeriod: rentalTermMonths,
         rentalPeriodUnit: "MONTHS",
         notes: contractNotes.trim() || undefined,
@@ -754,6 +832,10 @@ export default function BookStorageScreen({
             setRentalTermMonths={setRentalTermMonths}
             moveInDateStr={moveInDateStr}
             setMoveInDateStr={setMoveInDateStr}
+            timeSlots={timeSlots}
+            selectedTimeSlot={selectedTimeSlot}
+            setSelectedTimeSlot={setSelectedTimeSlot}
+            loadingSlots={loadingSlots}
             calc={calc}
             submitting={submitting}
             handleSignContract={handleSignContract}

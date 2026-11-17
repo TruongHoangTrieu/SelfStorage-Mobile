@@ -16,12 +16,38 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { StorageDisplayItem, T, formatVND, calculateRentalDates } from "../bookingTypes";
 
+export interface MobileTimeSlotOption {
+  id: string;
+  label: string;
+  startTime: string;
+  endTime: string;
+  iso: string;
+  available: boolean;
+  bookedCount?: number;
+  remainingCapacity?: number;
+  reason?: string | null;
+}
+
+const DEFAULT_MOBILE_SLOTS: MobileTimeSlotOption[] = [
+  { id: "slot_0800_0900", label: "08:00 - 09:00 (Sáng)", startTime: "08:00", endTime: "09:00", iso: "T08:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_0900_1000", label: "09:00 - 10:00 (Sáng)", startTime: "09:00", endTime: "10:00", iso: "T09:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_1000_1100", label: "10:00 - 11:00 (Sáng)", startTime: "10:00", endTime: "11:00", iso: "T10:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_1100_1200", label: "11:00 - 12:00 (Trưa)", startTime: "11:00", endTime: "12:00", iso: "T11:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_1300_1400", label: "13:00 - 14:00 (Chiều)", startTime: "13:00", endTime: "14:00", iso: "T13:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_1400_1500", label: "14:00 - 15:00 (Chiều)", startTime: "14:00", endTime: "15:00", iso: "T14:00:00+07:00", available: true, remainingCapacity: 3 },
+  { id: "slot_1500_1600", label: "15:00 - 16:00 (Chiều)", startTime: "15:00", endTime: "16:00", iso: "T15:00:00+07:00", available: true, remainingCapacity: 3 },
+];
+
 interface Step2Props {
   selectedUnit: StorageDisplayItem;
   rentalTermMonths: 1 | 3 | 6 | 12;
   setRentalTermMonths: (months: 1 | 3 | 6 | 12) => void;
   moveInDateStr: string;
   setMoveInDateStr: (date: string) => void;
+  timeSlots?: MobileTimeSlotOption[];
+  selectedTimeSlot?: MobileTimeSlotOption | null;
+  setSelectedTimeSlot?: (slot: MobileTimeSlotOption) => void;
+  loadingSlots?: boolean;
   calc: {
     ratePerMonth: number;
     discountPct: number;
@@ -41,6 +67,10 @@ export default function Step2ContractConfig({
   setRentalTermMonths,
   moveInDateStr,
   setMoveInDateStr,
+  timeSlots,
+  selectedTimeSlot,
+  setSelectedTimeSlot,
+  loadingSlots,
   calc,
   submitting,
   handleSignContract,
@@ -56,7 +86,10 @@ export default function Step2ContractConfig({
   const remainingAtCheckIn = Math.max(0, calc.totalRent - calc.depositAmount);
 
   const minMoveInDate = new Date();
-  minMoveInDate.setDate(minMoveInDate.getDate() + 1);
+  minMoveInDate.setHours(0, 0, 0, 0);
+
+  const displaySlots =
+    timeSlots && timeSlots.length > 0 ? timeSlots : DEFAULT_MOBILE_SLOTS;
 
   const handleDateValueChange = (
     _event: DateTimePickerChangeEvent,
@@ -221,7 +254,9 @@ export default function Step2ContractConfig({
                   })}
                 </Text>
                 <Text style={s.dateSubText}>
-                  Giờ nhận kho tự do: Từ 06:00 sáng
+                  {selectedTimeSlot
+                    ? `Khung giờ nhận kho: ${selectedTimeSlot.startTime} - ${selectedTimeSlot.endTime}`
+                    : "Vui lòng chọn khung giờ nhận kho bên dưới"}
                 </Text>
               </View>
             </View>
@@ -269,6 +304,83 @@ export default function Step2ContractConfig({
               />
             )
           )}
+
+          {/* 2.5 Check-in Time Slot Selector */}
+          <View style={s.step2Card}>
+            <View style={s.cardSectionHeader}>
+              <View style={s.headerWithIcon}>
+                <MaterialIcons
+                  name="schedule"
+                  size={22}
+                  color={T.secondary}
+                />
+                <Text style={s.sectionTitle}>Khung giờ nhận kho</Text>
+              </View>
+              {loadingSlots && (
+                <ActivityIndicator size="small" color={T.secondary} />
+              )}
+            </View>
+
+            <View style={s.termGrid}>
+              {displaySlots.map((slot) => {
+                const isSelected = selectedTimeSlot?.id === slot.id;
+                const isAvail = slot.available !== false;
+                return (
+                  <TouchableOpacity
+                    key={slot.id}
+                    style={[
+                      s.termCard,
+                      isSelected && isAvail && s.termCardSelected,
+                      !isAvail && {
+                        opacity: 0.5,
+                        backgroundColor: "#f1f5f9",
+                      },
+                    ]}
+                    onPress={() => {
+                      if (isAvail && setSelectedTimeSlot) {
+                        setSelectedTimeSlot(slot);
+                      }
+                    }}
+                    disabled={!isAvail}
+                    activeOpacity={0.85}
+                  >
+                    <View style={s.termCardTop}>
+                      <Text
+                        style={[
+                          s.termMonths,
+                          isSelected && isAvail && {
+                            fontWeight: "800",
+                            color: T.secondary,
+                          },
+                        ]}
+                      >
+                        {slot.startTime} - {slot.endTime}
+                      </Text>
+                      <View
+                        style={[
+                          s.radioCircle,
+                          isSelected && isAvail && s.radioCircleSelected,
+                        ]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        s.termSubtitle,
+                        {
+                          color: isAvail ? "#15803d" : "#dc2626",
+                          fontWeight: "600",
+                        },
+                      ]}
+                    >
+                      {isAvail
+                        ? `Còn ${slot.remainingCapacity ?? 3} chỗ trống`
+                        : slot.reason || "Hết chỗ / Qua giờ"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
           {/* 3. Rental Duration Selector */}
           <View style={s.step2Card}>
