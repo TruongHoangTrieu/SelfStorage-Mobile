@@ -108,7 +108,7 @@ export default function HandoverDetailScreen({
   const identityType = "CCCD";
   const [identityNumber, setIdentityNumber] = useState<string>(() => {
     let raw = appointment.identityNumber || appointment.idCard || '';
-    if (raw.includes(':') || raw === 'Đã đối chiếu tại quầy') {
+    if (raw.includes(':') || raw.includes('*') || raw === 'Đã đối chiếu tại quầy') {
       raw = '';
     }
     const clean = raw.replace(/\D/g, '').slice(0, 12);
@@ -183,30 +183,72 @@ export default function HandoverDetailScreen({
 
   const handleCaptureCccd = async (side: "front" | "back") => {
     setIsCapturingCccd(true);
-    const photo = await takePhotoWithCamera();
-    if (photo) {
-      const customized = {
-        ...photo,
-        title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
-      };
-      if (side === "front") setFrontCccdPhoto(customized);
-      else setBackCccdPhoto(customized);
+    try {
+      const photo = await takePhotoWithCamera();
+      if (photo) {
+        const customized: CapturedPhoto = {
+          ...photo,
+          title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
+        };
+        if (side === "front") setFrontCccdPhoto(customized);
+        else setBackCccdPhoto(customized);
+
+        // Tải ngay lên Cloudinary có đóng dấu Watermark
+        const res = await uploadCccdApi(
+          photo.uri,
+          side,
+          appointment.id,
+          photo.base64,
+        );
+        const cloudUrl = res.signedUrl || res.url;
+        if (cloudUrl && cloudUrl.startsWith("http")) {
+          const uploadedPhoto: CapturedPhoto = {
+            ...customized,
+            uri: cloudUrl,
+            base64: undefined,
+          };
+          if (side === "front") setFrontCccdPhoto(uploadedPhoto);
+          else setBackCccdPhoto(uploadedPhoto);
+        }
+      }
+    } finally {
+      setIsCapturingCccd(false);
     }
-    setIsCapturingCccd(false);
   };
 
   const handlePickCccd = async (side: "front" | "back") => {
     setIsCapturingCccd(true);
-    const photo = await pickPhotoFromGallery();
-    if (photo) {
-      const customized = {
-        ...photo,
-        title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
-      };
-      if (side === "front") setFrontCccdPhoto(customized);
-      else setBackCccdPhoto(customized);
+    try {
+      const photo = await pickPhotoFromGallery();
+      if (photo) {
+        const customized: CapturedPhoto = {
+          ...photo,
+          title: side === "front" ? "Mặt trước CCCD" : "Mặt sau CCCD",
+        };
+        if (side === "front") setFrontCccdPhoto(customized);
+        else setBackCccdPhoto(customized);
+
+        // Tải ngay lên Cloudinary có đóng dấu Watermark
+        const res = await uploadCccdApi(
+          photo.uri,
+          side,
+          appointment.id,
+          photo.base64,
+        );
+        const cloudUrl = res.signedUrl || res.url;
+        if (cloudUrl && cloudUrl.startsWith("http")) {
+          const uploadedPhoto: CapturedPhoto = {
+            ...customized,
+            uri: cloudUrl,
+            base64: undefined,
+          };
+          if (side === "front") setFrontCccdPhoto(uploadedPhoto);
+          else setBackCccdPhoto(uploadedPhoto);
+        }
+      }
+    } finally {
+      setIsCapturingCccd(false);
     }
-    setIsCapturingCccd(false);
   };
 
   // Bước 2: Hiện trạng ô kho & Chụp ảnh (Nạp ảnh đã có nếu là đơn đã bàn giao / xem lại)
@@ -581,6 +623,7 @@ export default function HandoverDetailScreen({
             frontCccdPhoto.uri,
             "front",
             appointment.id,
+            frontCccdPhoto.base64,
           );
           frontUrl = resFront.signedUrl || resFront.url;
         } catch (e) {
@@ -599,6 +642,7 @@ export default function HandoverDetailScreen({
             backCccdPhoto.uri,
             "back",
             appointment.id,
+            backCccdPhoto.base64,
           );
           backUrl = resBack.signedUrl || resBack.url;
         } catch (e) {

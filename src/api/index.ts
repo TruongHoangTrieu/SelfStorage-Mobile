@@ -272,9 +272,22 @@ export async function performCheckInApi(payload: {
 export async function uploadCccdApi(
   photoUri: string,
   side: 'front' | 'back',
-  reservationCode?: string
+  reservationCode?: string,
+  base64?: string
 ): Promise<{ url: string; signedUrl: string; public_id: string; expiresAt: number }> {
   try {
+    const rawBase64 = base64 || (photoUri?.startsWith('data:') ? photoUri : undefined);
+    if (rawBase64) {
+      return await apiRequest('/handovers/upload-cccd', {
+        method: 'POST',
+        body: JSON.stringify({
+          base64: rawBase64,
+          side,
+          reservationCode,
+        }),
+      });
+    }
+
     const formData = new FormData();
     const uriParts = (photoUri || '').split('.');
     const fileType = uriParts[uriParts.length - 1] || 'jpg';
@@ -329,14 +342,22 @@ export async function uploadCccdApi(
 /**
  * Ghi nhận Audit Log truy vết và giải mã CCCD (POST /handovers/log-cccd-access)
  */
-export async function logCccdAccessApi(contractId: string, reason: string): Promise<{
+export async function logCccdAccessApi(contractOrResId: string, reason: string): Promise<{
   success: boolean;
   decryptedNumber: string | null;
   maskedNumber: string | null;
+  identityNumber?: string | null;
+  identityFrontUrl?: string | null;
+  identityBackUrl?: string | null;
 }> {
   return apiRequest('/handovers/log-cccd-access', {
     method: 'POST',
-    body: JSON.stringify({ contractId, reason }),
+    body: JSON.stringify({
+      reservationId: contractOrResId,
+      contractId: contractOrResId,
+      action: 'VIEW_UNMASKED_CCCD',
+      reason,
+    }),
   });
 }
 
