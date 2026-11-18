@@ -294,68 +294,91 @@ export async function uploadCccdApi(
   reservationCode?: string,
   base64?: string
 ): Promise<{ url: string; signedUrl: string; public_id: string; expiresAt: number }> {
+  const orderCode = (reservationCode || 'CHECKIN').replace(/[^a-zA-Z0-9\-_]/g, '');
+  const sideText = side === 'back' ? 'MAT SAU' : 'MAT TRUOC';
+  const now = new Date();
+  const nowStr = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
+  const watermarkText = `SELFSTORAGE - HO SO NHAN KHO ${orderCode} - ${nowStr} - ${sideText}`;
+  const rawBase64 = base64 || (photoUri?.startsWith('data:') ? photoUri : undefined);
+
+  // 1. Thử qua Backend endpoint /handovers/upload-cccd trước
   try {
-    const rawBase64 = base64 || (photoUri?.startsWith('data:') ? photoUri : undefined);
     if (rawBase64) {
-      return await apiRequest('/handovers/upload-cccd', {
-        method: 'POST',
-        body: JSON.stringify({
-          base64: rawBase64,
-          side,
-          reservationCode,
-        }),
-      });
+      const beRes = await apiRequest<{ url: string; signedUrl: string; public_id: string; expiresAt: number }>(
+        '/handovers/upload-cccd',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            base64: rawBase64,
+            side,
+            reservationCode,
+          }),
+        }
+      );
+      if (beRes?.url && beRes.url.startsWith('http')) {
+        return beRes;
+      }
     }
+  } catch {
+    // Nếu Backend trên Render chưa cập nhật route base64, chuyển ngay sang Bước 2 (Upload trực tiếp Cloudinary + Watermark)
+  }
 
-    const formData = new FormData();
-    const uriParts = (photoUri || '').split('.');
-    const fileType = uriParts[uriParts.length - 1] || 'jpg';
-    const fileName = `cccd_${side}_${Date.now()}.${fileType}`;
+  // 2. Upload trực tiếp lên Cloudinary thư mục selfstorage/cccd và gắn bộ lọc đóng dấu Watermark
+  try {
+    const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'micb9okr';
+    const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'selfstorage_uploads';
+    const data = new FormData();
 
-    if (Platform.OS === 'web' && photoUri.startsWith('data:')) {
-      const res = await fetch(photoUri);
-      const blob = await res.blob();
-      formData.append('photo', blob, fileName);
+    if (rawBase64) {
+      const formatted = rawBase64.startsWith('data:')
+        ? rawBase64
+        : `data:image/jpeg;base64,${rawBase64}`;
+      data.append('file', formatted);
     } else {
-      formData.append('photo', {
+      const uriParts = (photoUri || '').split('.');
+      const fileType = uriParts[uriParts.length - 1] || 'jpg';
+      data.append('file', {
         uri: photoUri,
-        name: fileName,
+        name: `cccd_${side}_${Date.now()}.${fileType}`,
         type: `image/${fileType.toLowerCase() === 'png' ? 'png' : 'jpeg'}`,
       } as any);
     }
 
-    if (reservationCode) {
-      formData.append('reservationCode', reservationCode);
-    }
-    formData.append('side', side);
+    data.append('upload_preset', uploadPreset);
+    data.append('folder', 'selfstorage/cccd');
 
-    const headers: Record<string, string> = {
-      'X-Requested-With': 'XMLHttpRequest',
-    };
-    if (storedToken) {
-      headers['Authorization'] = `Bearer ${storedToken}`;
-    }
-
-    const res = await fetch(`${PRIMARY_API_BASE_URL}/handovers/upload-cccd`, {
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
       method: 'POST',
-      headers,
-      body: formData,
+      body: data,
     });
+    const json = await res.json();
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.message || 'Không thể tải ảnh CCCD lên máy chủ');
+    if (json?.secure_url) {
+      const transformSegment = `w_1200,c_limit,q_auto/l_text:Arial_36_bold:${encodeURIComponent(
+        watermarkText
+      )},co_rgb:ffffff,b_rgb:dc2626,o_70,a_-22,g_center`;
+      const watermarkedUrl = json.secure_url.replace(
+        '/image/upload/',
+        `/image/upload/${transformSegment}/`
+      );
+      const expiresAt = Math.floor(Date.now() / 1000) + 300;
+      return {
+        url: watermarkedUrl,
+        signedUrl: `${watermarkedUrl}?expiresAt=${expiresAt}`,
+        public_id: json.public_id || `selfstorage/cccd/cccd_${side}_${Date.now()}`,
+        expiresAt,
+      };
     }
-    return data;
   } catch (err: any) {
-    console.warn('Lỗi upload CCCD lên Cloud, sử dụng ảnh trực tiếp:', err?.message || err);
-    return {
-      url: photoUri,
-      signedUrl: photoUri,
-      public_id: `offline-cccd-${Date.now()}`,
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    };
+    console.warn('Lỗi upload CCCD trực tiếp lên Cloudinary:', err?.message || err);
   }
+
+  return {
+    url: photoUri,
+    signedUrl: photoUri,
+    public_id: `offline-cccd-${Date.now()}`,
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
 }
 
 /**

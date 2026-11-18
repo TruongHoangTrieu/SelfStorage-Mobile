@@ -263,6 +263,9 @@ export default function HandoverDetailScreen({
           };
           if (side === "front") setFrontCccdPhoto(uploadedPhoto);
           else setBackCccdPhoto(uploadedPhoto);
+          setPreviewImage((prev) =>
+            prev === photo.uri || prev === photo.base64 ? cloudUrl : prev,
+          );
         }
       }
     } finally {
@@ -298,6 +301,9 @@ export default function HandoverDetailScreen({
           };
           if (side === "front") setFrontCccdPhoto(uploadedPhoto);
           else setBackCccdPhoto(uploadedPhoto);
+          setPreviewImage((prev) =>
+            prev === photo.uri || prev === photo.base64 ? cloudUrl : prev,
+          );
         }
       }
     } finally {
@@ -977,6 +983,39 @@ export default function HandoverDetailScreen({
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
+                      {!(frontCccdPhoto.uri || "").includes("l_text:") && (
+                        <View
+                          pointerEvents="none"
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <View
+                            style={{
+                              backgroundColor: "rgba(220, 38, 38, 0.72)",
+                              paddingHorizontal: 6,
+                              paddingVertical: 3,
+                              borderRadius: 3,
+                              transform: [{ rotate: "-22deg" }],
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: "#FFFFFF",
+                                fontSize: 7.5,
+                                fontWeight: "800",
+                                textAlign: "center",
+                              }}
+                              numberOfLines={1}
+                            >
+                              {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT TRUOC`}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
                     </TouchableOpacity>
 
                     <View style={s.cccdWatermarkTag}>
@@ -1094,6 +1133,39 @@ export default function HandoverDetailScreen({
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
+                      {!(backCccdPhoto.uri || "").includes("l_text:") && (
+                        <View
+                          pointerEvents="none"
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <View
+                            style={{
+                              backgroundColor: "rgba(220, 38, 38, 0.72)",
+                              paddingHorizontal: 6,
+                              paddingVertical: 3,
+                              borderRadius: 3,
+                              transform: [{ rotate: "-22deg" }],
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: "#FFFFFF",
+                                fontSize: 7.5,
+                                fontWeight: "800",
+                                textAlign: "center",
+                              }}
+                              numberOfLines={1}
+                            >
+                              {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT SAU`}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
                     </TouchableOpacity>
 
                     <View style={s.cccdWatermarkTag}>
@@ -2011,6 +2083,49 @@ export default function HandoverDetailScreen({
               style={s.lightboxImg}
               resizeMode="contain"
             />
+            {(previewImage === frontCccdPhoto?.uri ||
+              previewImage === frontCccdPhoto?.base64 ||
+              previewImage === backCccdPhoto?.uri ||
+              previewImage === backCccdPhoto?.base64) &&
+              !previewImage.includes("l_text:") && (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    left: 16,
+                    right: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <View
+                    style={{
+                      backgroundColor: "rgba(220, 38, 38, 0.72)",
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 6,
+                      transform: [{ rotate: "-22deg" }],
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#FFFFFF",
+                        fontSize: 13,
+                        fontWeight: "900",
+                        textAlign: "center",
+                        letterSpacing: 0.4,
+                      }}
+                    >
+                      {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - ${new Date().toLocaleDateString("vi-VN").replace(/\//g, "-")} - ${
+                        previewImage === backCccdPhoto?.uri ||
+                        previewImage === backCccdPhoto?.base64
+                          ? "MAT SAU"
+                          : "MAT TRUOC"
+                      }`}
+                    </Text>
+                  </View>
+                </View>
+              )}
           </TouchableOpacity>
         </Modal>
       )}
