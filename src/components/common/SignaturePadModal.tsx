@@ -122,14 +122,10 @@ export default function SignaturePadModal({
     onClose();
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
+    <View style={[StyleSheet.absoluteFill, styles.overlay, { zIndex: 9999 }]}>
       <View style={styles.overlay}>
         <View style={styles.modalCard}>
           {/* Header */}
@@ -216,7 +212,7 @@ export default function SignaturePadModal({
           </View>
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 

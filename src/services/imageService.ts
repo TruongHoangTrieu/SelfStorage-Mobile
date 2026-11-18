@@ -1,6 +1,73 @@
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Platform, Keyboard } from 'react-native';
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForInteractions(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+    } else {
+      resolve();
+    }
+  });
+  await delay(250);
+}
+
+async function launchLibraryWithRetry(
+  options: ImagePicker.ImagePickerOptions,
+): Promise<ImagePicker.ImagePickerResult> {
+  if (Platform.OS === 'ios') {
+    await waitForInteractions();
+  }
+
+  let lastErr: any;
+  const delays = [0, 450, 800, 1200];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) {
+      await delay(delays[i]);
+    }
+    try {
+      return await ImagePicker.launchImageLibraryAsync(options);
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      if (Platform.OS === 'ios' && msg.includes('Cannot determine')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+async function launchCameraWithRetry(
+  options: ImagePicker.ImagePickerOptions,
+): Promise<ImagePicker.ImagePickerResult> {
+  if (Platform.OS === 'ios') {
+    await waitForInteractions();
+  }
+
+  let lastErr: any;
+  const delays = [0, 450, 800, 1200];
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) {
+      await delay(delays[i]);
+    }
+    try {
+      return await ImagePicker.launchCameraAsync(options);
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      if (Platform.OS === 'ios' && msg.includes('Cannot determine')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 export interface CapturedPhoto {
   id: string;
   uri: string;
@@ -9,11 +76,36 @@ export interface CapturedPhoto {
   createdAt: string;
 }
 
-/**
- * Cấu hình Cloudinary (Tùy chọn)
- * Nếu bạn có Cloudinary, điền Cloud Name và Upload Preset không ký (unsigned preset) vào đây.
- * Nếu để trống, hệ thống sẽ tự động dùng ảnh Base64 / Local URI mà không cần tài khoản thứ 3!
- */
+const DEMO_FALLBACK_PHOTO_URL =
+  'https://res.cloudinary.com/micb9okr/image/upload/v1794997366/selfstorage/xcynitzxyjgnmhmbbsn1.jpg';
+
+function promptIosFallbackPhoto(titlePrefix: string): Promise<CapturedPhoto | null> {
+  const now = new Date();
+  const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Thiết bị đang bận trình xem ảnh',
+      'Phiên Expo Go trên iOS đang giữ một hộp thoại trước đó. Bạn có thể đóng hẳn app Expo Go mở lại, hoặc chọn "Dùng ảnh mẫu ngay" để tiếp tục thao tác:',
+      [
+        {
+          text: 'Dùng ảnh mẫu ngay',
+          onPress: () =>
+            resolve({
+              id: `photo-fallback-${Date.now()}`,
+              uri: DEMO_FALLBACK_PHOTO_URL,
+              title: `${titlePrefix} lúc ${timeStr}`,
+              createdAt: now.toISOString(),
+            }),
+        },
+        {
+          text: 'Hủy',
+          style: 'cancel',
+          onPress: () => resolve(null),
+        },
+      ],
+    );
+  });
+}
 export const CLOUDINARY_CONFIG = {
   cloudName: process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'micb9okr',
   uploadPreset: process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'selfstorage_uploads',
@@ -29,38 +121,23 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
-    // Xin quyền truy cập Camera
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    // Xin quyền truy cập Camera (chỉ hỏi nếu chưa được cấp để tránh kẹt ViewController trên iOS)
+    let permissionResult = await ImagePicker.getCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (Platform.OS === 'ios') await delay(400);
+    }
     if (!permissionResult.granted) {
       console.warn('Quyền truy cập Camera chưa được cấp.');
       return null;
     }
 
-    if (Platform.OS === 'ios') {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-
-    let result: ImagePicker.ImagePickerResult;
-    try {
-      result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.85,
-        base64: true,
-      });
-    } catch (launchErr: any) {
-      if (Platform.OS === 'ios' && launchErr?.message?.includes('Cannot determine')) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          allowsEditing: false,
-          quality: 0.85,
-          base64: true,
-        });
-      } else {
-        throw launchErr;
-      }
-    }
+    const result = await launchCameraWithRetry({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      base64: true,
+    });
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
       return null;
@@ -82,6 +159,9 @@ export async function takePhotoWithCamera(): Promise<CapturedPhoto | null> {
     };
   } catch (err: any) {
     console.warn('Không thể mở camera:', err?.message || err);
+    if (String(err?.message || '').includes('Cannot determine')) {
+      return await promptIosFallbackPhoto('Ảnh chụp');
+    }
     return null;
   }
 }
@@ -96,37 +176,22 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    let permissionResult = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (Platform.OS === 'ios') await delay(400);
+    }
     if (!permissionResult.granted) {
       console.warn('Quyền thư viện ảnh chưa được cấp.');
       return null;
     }
 
-    if (Platform.OS === 'ios') {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-
-    let result: ImagePicker.ImagePickerResult;
-    try {
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.85,
-        base64: true,
-      });
-    } catch (launchErr: any) {
-      if (Platform.OS === 'ios' && launchErr?.message?.includes('Cannot determine')) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: false,
-          quality: 0.85,
-          base64: true,
-        });
-      } else {
-        throw launchErr;
-      }
-    }
+    const result = await launchLibraryWithRetry({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      base64: true,
+    });
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
       return null;
@@ -148,6 +213,9 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
     };
   } catch (err: any) {
     console.warn('Không thể mở thư viện ảnh:', err?.message || err);
+    if (String(err?.message || '').includes('Cannot determine')) {
+      return await promptIosFallbackPhoto('Ảnh thư viện');
+    }
     return null;
   }
 }
@@ -161,7 +229,12 @@ export async function pickPhotoFromGallery(): Promise<CapturedPhoto | null> {
  */
 export async function pickMultiplePhotosFromGallery(maxPhotos: number = 10): Promise<CapturedPhoto[]> {
   try {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    Keyboard.dismiss();
+    let permissionResult = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (Platform.OS === 'ios') await delay(400);
+    }
     if (!permissionResult.granted) {
       Alert.alert(
         'Quyền thư viện ảnh',
@@ -170,7 +243,7 @@ export async function pickMultiplePhotosFromGallery(maxPhotos: number = 10): Pro
       return [];
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await launchLibraryWithRetry({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: maxPhotos,
@@ -202,6 +275,10 @@ export async function pickMultiplePhotosFromGallery(maxPhotos: number = 10): Pro
     });
   } catch (err: any) {
     console.error('Lỗi khi chọn nhiều ảnh từ thư viện:', err);
+    if (String(err?.message || '').includes('Cannot determine')) {
+      const fallback = await promptIosFallbackPhoto('Ảnh hiện trạng kho');
+      return fallback ? [fallback] : [];
+    }
     Alert.alert('Lỗi Thư Viện', err.message || 'Không thể truy cập thư viện ảnh.');
     return [];
   }

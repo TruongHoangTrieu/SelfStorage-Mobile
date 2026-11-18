@@ -72,14 +72,10 @@ export default function ContractPreviewModal({
     onSignContract?.(paths);
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
+    <View style={[StyleSheet.absoluteFill, styles.backdrop, { zIndex: 9998 }]}>
       <View style={styles.backdrop}>
         <View style={styles.modalContainer}>
           {/* Header */}
@@ -468,7 +464,7 @@ export default function ContractPreviewModal({
         onSaveSignature={handleSaveSignature}
         customerName={appointment.customerName}
       />
-    </Modal>
+    </View>
   );
 }
 

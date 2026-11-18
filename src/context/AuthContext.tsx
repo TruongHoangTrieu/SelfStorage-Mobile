@@ -115,6 +115,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const effectiveToken = token || getAuthToken();
     await saveSession(effectiveToken, user);
 
+    // Trên iOS, chờ Modal đăng nhập đóng hoàn tất (350ms) trước khi unmount CustomerNavigator chuyển sang StaffNavigator
+    if (Platform.OS === 'ios') {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
     const role: 'staff' | 'customer' = isStaffRole(user) ? 'staff' : 'customer';
     setAppMode(role);
 

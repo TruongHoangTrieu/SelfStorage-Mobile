@@ -134,12 +134,7 @@ export default function CccdQrScannerModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
-    >
+    <View style={[StyleSheet.absoluteFill, styles.container, { zIndex: 9999 }]}>
       <View style={styles.container}>
         {!permission ? (
           <View style={styles.centerBox}>
@@ -231,7 +226,7 @@ export default function CccdQrScannerModal({
           </View>
         )}
       </View>
-    </Modal>
+    </View>
   );
 }
 

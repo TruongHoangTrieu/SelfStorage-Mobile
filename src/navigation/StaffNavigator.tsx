@@ -291,7 +291,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
       )}
 
       {/* Quick Print Modal khi in lại ở Trang C */}
-      {selectedAppointment && (
+      {selectedAppointment && showQuickPrintModal && (
         <PrintReceiptModal
           visible={showQuickPrintModal}
           onClose={() => setShowQuickPrintModal(false)}
@@ -301,20 +301,22 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
       )}
 
       {/* ─── MODAL TRUNG TÂM THÔNG BÁO NHÂN VIÊN ─── */}
-      <NotificationsModal
-        visible={showStaffNotifModal}
-        onClose={() => setShowStaffNotifModal(false)}
-        notifications={staffNotifState.notifications}
-        unreadCount={staffNotifState.unreadCount}
-        isLoading={staffNotifState.loading}
-        isRefreshing={staffNotifState.refreshing}
-        onRefresh={() => staffNotifState.loadNotifications(true)}
-        onMarkAsRead={staffNotifState.markAsRead}
-        onMarkAllAsRead={staffNotifState.markAllAsRead}
-        onDeleteNotification={staffNotifState.deleteNotification}
-        role="staff"
-        onSelectNotification={handleSelectStaffNotification}
-      />
+      {showStaffNotifModal && (
+        <NotificationsModal
+          visible={showStaffNotifModal}
+          onClose={() => setShowStaffNotifModal(false)}
+          notifications={staffNotifState.notifications}
+          unreadCount={staffNotifState.unreadCount}
+          isLoading={staffNotifState.loading}
+          isRefreshing={staffNotifState.refreshing}
+          onRefresh={() => staffNotifState.loadNotifications(true)}
+          onMarkAsRead={staffNotifState.markAsRead}
+          onMarkAllAsRead={staffNotifState.markAllAsRead}
+          onDeleteNotification={staffNotifState.deleteNotification}
+          role="staff"
+          onSelectNotification={handleSelectStaffNotification}
+        />
+      )}
     </View>
   );
 }

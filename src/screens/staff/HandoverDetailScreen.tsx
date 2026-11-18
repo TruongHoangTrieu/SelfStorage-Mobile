@@ -187,11 +187,13 @@ export default function HandoverDetailScreen({
       .filter(Boolean)
       .join("\n");
 
-    Alert.alert(
-      "Quét CCCD thành công",
-      `Đã trích xuất thông tin Căn cước công dân:\n${infoLines}\n\nDữ liệu đã được tự động điền vào hồ sơ bàn giao.`,
-      [{ text: "Đồng ý" }],
-    );
+    setTimeout(() => {
+      Alert.alert(
+        "Quét CCCD thành công",
+        `Đã trích xuất thông tin Căn cước công dân:\n${infoLines}\n\nDữ liệu đã được tự động điền vào hồ sơ bàn giao.`,
+        [{ text: "Đồng ý" }],
+      );
+    }, 400);
   };
 
   // Ảnh 2 mặt CCCD: Chỉ nạp sẵn nếu là đơn đã hoàn tất trước đó hoặc có link online hợp lệ
@@ -1383,32 +1385,34 @@ export default function HandoverDetailScreen({
               </Text>
             </View>
 
-            {/* Nút chụp ảnh Camera & Chọn Thư viện */}
-            <View style={s.photoActionRow}>
-              <TouchableOpacity
-                style={s.cameraBtn}
-                onPress={handleCapturePhoto}
-                disabled={isCapturing}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name="photo-camera" size={18} color="#fff" />
-                <Text style={s.cameraBtnText}>Chụp Ảnh Kho Mới</Text>
-              </TouchableOpacity>
+            {/* Nút chụp ảnh Camera & Chọn Thư viện (chỉ hiện thanh nút gọn ở trên khi đã có ảnh) */}
+            {photos.length > 0 && (
+              <View style={s.photoActionRow}>
+                <TouchableOpacity
+                  style={s.cameraBtn}
+                  onPress={handleCapturePhoto}
+                  disabled={isCapturing}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="photo-camera" size={18} color="#fff" />
+                  <Text style={s.cameraBtnText}>Chụp Ảnh Kho Mới</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={s.galleryBtn}
-                onPress={handlePickPhoto}
-                disabled={isCapturing}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons
-                  name="photo-library"
-                  size={18}
-                  color={T.primary}
-                />
-                <Text style={s.galleryBtnText}>Chọn Từ Thư Viện</Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity
+                  style={s.galleryBtn}
+                  onPress={handlePickPhoto}
+                  disabled={isCapturing}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons
+                    name="photo-library"
+                    size={18}
+                    color={T.primary}
+                  />
+                  <Text style={s.galleryBtnText}>Chọn Từ Thư Viện</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Danh sách ảnh hiện trạng */}
             <View
@@ -1531,8 +1535,11 @@ export default function HandoverDetailScreen({
               </ScrollView>
             )}
 
-            {/* Checklist kiểm tra */}
-            <View style={s.checklistCard}>
+            {/* Checklist kiểm tra 3 điểm */}
+            <Text style={[s.sectionSubtitle, { marginTop: 14, marginBottom: 8 }]}>
+              Hạng mục kiểm tra an toàn &amp; vận hành:
+            </Text>
+            <View style={[s.checklistCard, { marginTop: 0 }]}>
               {[
                 { key: "lockTested", label: "Khóa Smart PIN hoạt động tốt" },
                 { key: "lightingChecked", label: "Đèn chiếu sáng ổn định" },
@@ -1567,7 +1574,75 @@ export default function HandoverDetailScreen({
               ))}
             </View>
 
-            
+            {/* Mô tả hiện trạng ghi vào biên bản bàn giao */}
+            <View style={{ marginTop: 14 }}>
+              <Text style={[s.sectionSubtitle, { marginBottom: 6 }]}>
+                Mô tả hiện trạng ghi vào biên bản bàn giao:
+              </Text>
+              <View
+                style={{
+                  backgroundColor: "#F8FAFC",
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                }}
+              >
+                <TextInput
+                  style={{
+                    fontSize: 13,
+                    color: T.textMain,
+                    minHeight: 54,
+                    textAlignVertical: "top",
+                  }}
+                  multiline
+                  value={condition}
+                  onChangeText={setCondition}
+                  placeholder="Nhập mô tả tình trạng tường, sàn, đèn, ổ khóa trước khi bàn giao..."
+                  placeholderTextColor={T.textMuted}
+                />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 8,
+                }}
+              >
+                {[
+                  "Kho sạch sẽ, khóa Smart PIN hoạt động tốt",
+                  "Sàn tường nguyên vẹn, không ẩm mốc",
+                  "Đã nghiệm thu cùng khách hàng",
+                ].map((preset) => (
+                  <TouchableOpacity
+                    key={preset}
+                    onPress={() => setCondition(preset)}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 999,
+                      backgroundColor:
+                        condition === preset ? "#EFF6FF" : "#F1F5F9",
+                      borderWidth: 1,
+                      borderColor:
+                        condition === preset ? "#93C5FD" : "#E2E8F0",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "600",
+                        color: condition === preset ? T.primary : T.textMuted,
+                      }}
+                    >
+                      {preset}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
         )}
 
@@ -2035,9 +2110,15 @@ export default function HandoverDetailScreen({
         )}
       </View>
 
-      {/* ─── Modal Đổi Ô Kho ─── */}
-      <Modal visible={showUnitPickerModal} transparent animationType="fade">
-        <View style={s.modalBackdrop}>
+      {/* ─── Overlay Đổi Ô Kho (Không dùng native Modal tránh kẹt ViewController trên iOS) ─── */}
+      {showUnitPickerModal && (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            s.modalBackdrop,
+            { zIndex: 9998 },
+          ]}
+        >
           <View style={s.modalCard}>
             <Text style={s.modalTitle}>Chọn ô kho thay thế</Text>
             <ScrollView style={{ maxHeight: 260 }}>
@@ -2068,66 +2149,68 @@ export default function HandoverDetailScreen({
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      )}
 
-      {/* ─── Modal Lightbox Xem Ảnh ─── */}
+      {/* ─── Overlay Lightbox Xem Ảnh (Không dùng native Modal tránh lỗi Cannot determine currently presented view controller trên iOS) ─── */}
       {previewImage && (
-        <Modal visible transparent animationType="fade">
-          <TouchableOpacity
-            style={s.lightboxBackdrop}
-            onPress={() => setPreviewImage(null)}
-            activeOpacity={1}
-          >
-            <Image
-              source={{ uri: previewImage }}
-              style={s.lightboxImg}
-              resizeMode="contain"
-            />
-            {(previewImage === frontCccdPhoto?.uri ||
-              previewImage === frontCccdPhoto?.base64 ||
-              previewImage === backCccdPhoto?.uri ||
-              previewImage === backCccdPhoto?.base64) &&
-              !previewImage.includes("l_text:") && (
+        <TouchableOpacity
+          style={[
+            StyleSheet.absoluteFill,
+            s.lightboxBackdrop,
+            { zIndex: 9999 },
+          ]}
+          onPress={() => setPreviewImage(null)}
+          activeOpacity={1}
+        >
+          <Image
+            source={{ uri: previewImage }}
+            style={s.lightboxImg}
+            resizeMode="contain"
+          />
+          {(previewImage === frontCccdPhoto?.uri ||
+            previewImage === frontCccdPhoto?.base64 ||
+            previewImage === backCccdPhoto?.uri ||
+            previewImage === backCccdPhoto?.base64) &&
+            !previewImage.includes("l_text:") && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  left: 16,
+                  right: 16,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <View
-                  pointerEvents="none"
                   style={{
-                    position: "absolute",
-                    left: 16,
-                    right: 16,
-                    alignItems: "center",
-                    justifyContent: "center",
+                    backgroundColor: "rgba(220, 38, 38, 0.72)",
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 6,
+                    transform: [{ rotate: "-22deg" }],
                   }}
                 >
-                  <View
+                  <Text
                     style={{
-                      backgroundColor: "rgba(220, 38, 38, 0.72)",
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      borderRadius: 6,
-                      transform: [{ rotate: "-22deg" }],
+                      color: "#FFFFFF",
+                      fontSize: 13,
+                      fontWeight: "900",
+                      textAlign: "center",
+                      letterSpacing: 0.4,
                     }}
                   >
-                    <Text
-                      style={{
-                        color: "#FFFFFF",
-                        fontSize: 13,
-                        fontWeight: "900",
-                        textAlign: "center",
-                        letterSpacing: 0.4,
-                      }}
-                    >
-                      {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - ${new Date().toLocaleDateString("vi-VN").replace(/\//g, "-")} - ${
-                        previewImage === backCccdPhoto?.uri ||
-                        previewImage === backCccdPhoto?.base64
-                          ? "MAT SAU"
-                          : "MAT TRUOC"
-                      }`}
-                    </Text>
-                  </View>
+                    {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - ${new Date().toLocaleDateString("vi-VN").replace(/\//g, "-")} - ${
+                      previewImage === backCccdPhoto?.uri ||
+                      previewImage === backCccdPhoto?.base64
+                        ? "MAT SAU"
+                        : "MAT TRUOC"
+                    }`}
+                  </Text>
                 </View>
-              )}
-          </TouchableOpacity>
-        </Modal>
+              </View>
+            )}
+        </TouchableOpacity>
       )}
 
       {/* Modal Xem Hợp Đồng Điện Tử */}
