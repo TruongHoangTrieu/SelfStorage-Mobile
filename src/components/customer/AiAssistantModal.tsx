@@ -65,7 +65,7 @@ const INITIAL_MESSAGE: MessageItem = {
   id: 'welcome_msg',
   role: 'assistant',
   content:
-    'Xin chào! Tôi là **Trợ lý AI SelfStorage**.\n\nTôi có thể hỗ trợ bạn:\n• 📦 **Tư vấn kích cỡ kho**: Kể tên đồ đạc, tôi sẽ tính thể tích và tìm kho trống vừa vặn nhất.\n• 📜 **Hỏi đáp chính sách**: Đồ cấm, phí quá hạn, khoá mã PIN thông minh, hoàn cọc.\n• 🔄 **Gợi ý gói gia hạn**: Đề xuất kỳ hạn tối ưu chi phí theo mô hình AI.',
+    'Xin chào! Tôi là **Trợ lý AI SelfStorage**.\n\nTôi có thể hỗ trợ bạn:\n• 📦 **Tư vấn kích cỡ kho**: Kể tên đồ đạc, tôi sẽ tính thể tích và tìm kho trống vừa vặn nhất.\n• 📜 **Hỏi đáp chính sách**: Đồ cấm, phí quá hạn, khoá mã PIN thông minh, điều kiện trả kho.\n• 🔄 **Gợi ý gói gia hạn**: Đề xuất kỳ hạn tối ưu chi phí theo mô hình AI.',
   createdAt: new Date(),
 };
 

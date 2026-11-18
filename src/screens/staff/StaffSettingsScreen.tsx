@@ -88,17 +88,9 @@ export default function StaffSettingsScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Chuyển chế độ & Đăng xuất */}
+        {/* Tài khoản & Đăng xuất */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>TÀI KHOẢN & PHÂN QUYỀN</Text>
-
-          <TouchableOpacity style={styles.settingRow} onPress={onSwitchToCustomer}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.settingName, { color: '#2563EB' }]}>🔄 Chuyển sang Giao diện Khách hàng</Text>
-              <Text style={styles.settingDesc}>Đăng xuất ca trực và quay lại trang chủ khách hàng</Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.settingRow}

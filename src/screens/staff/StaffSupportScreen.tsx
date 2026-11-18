@@ -28,6 +28,7 @@ import {
   updateTicketProgressApi,
   addTicketNoteApi,
 } from '../../api';
+import { getSocket } from '../../services/socketService';
 
 interface StaffSupportScreenProps {
   facilityId?: string | number;
@@ -63,9 +64,9 @@ export default function StaffSupportScreen({
   const [isUpdatingProgress, setIsUpdatingProgress] = useState<boolean>(false);
 
   // Tải danh sách yêu cầu sự cố từ Backend API
-  const loadTickets = useCallback(async () => {
+  const loadTickets = useCallback(async (isSilent = false) => {
     try {
-      setIsLoading(true);
+      if (!isSilent) setIsLoading(true);
       const res = await fetchStaffSupportRequestsApi(facilityId).catch(() => null);
 
       const rawItems = Array.isArray(res?.data)
@@ -117,17 +118,79 @@ export default function StaffSupportScreen({
       });
 
       setTickets(mapped);
+      setSelectedTicket((prev) => {
+        if (!prev) return prev;
+        const fresh = mapped.find((m) => String(m.id) === String(prev.id));
+        return fresh ? { ...prev, ...fresh } : prev;
+      });
     } catch (err: any) {
-      console.warn('Lỗi tải dữ liệu sự cố từ BE:', err.message);
+      if (!isSilent) console.warn('Lỗi tải dữ liệu sự cố từ BE:', err.message);
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
       setIsRefreshing(false);
     }
   }, [facilityId]);
 
   useEffect(() => {
     loadTickets();
-  }, [loadTickets]);
+
+    let isMounted = true;
+    let activeSocket: any = null;
+
+    const handleConnect = () => {
+      if (facilityId && activeSocket) {
+        activeSocket.emit('join_facility', String(facilityId));
+      }
+      if (isMounted) loadTickets(true);
+    };
+
+    const handleRealtimeRefresh = () => {
+      if (isMounted) loadTickets(true);
+    };
+
+    const handleNoteAdded = (payload: { ticketId: string; log: any }) => {
+      if (!payload?.ticketId) return;
+      const targetId = String(payload.ticketId);
+      setSelectedTicket((prev) => {
+        if (!prev || String(prev.id) !== targetId) return prev;
+        const currentLogs = prev.logs || [];
+        if (payload.log?.id && currentLogs.some((l: any) => String(l.id) === String(payload.log.id))) {
+          return prev;
+        }
+        return payload.log ? { ...prev, logs: [...currentLogs, payload.log] } : prev;
+      });
+      if (isMounted) loadTickets(true);
+    };
+
+    const initSocket = async () => {
+      try {
+        const socket = await getSocket();
+        if (!isMounted || !socket) return;
+        activeSocket = socket;
+        if (socket.connected && facilityId) {
+          socket.emit('join_facility', String(facilityId));
+        }
+        socket.on('connect', handleConnect);
+        socket.on('support_ticket_created', handleRealtimeRefresh);
+        socket.on('support_ticket_updated', handleRealtimeRefresh);
+        socket.on('support_ticket_note_added', handleNoteAdded);
+      } catch (e) {
+        console.warn('Staff support socket warning:', e);
+      }
+    };
+
+    initSocket();
+
+    return () => {
+      isMounted = false;
+      if (activeSocket) {
+        activeSocket.off('connect', handleConnect);
+        activeSocket.off('support_ticket_created', handleRealtimeRefresh);
+        activeSocket.off('support_ticket_updated', handleRealtimeRefresh);
+        activeSocket.off('support_ticket_note_added', handleNoteAdded);
+      }
+    };
+  }, [loadTickets, facilityId, staffUser?.id]);
 
   const onRefresh = () => {
     setIsRefreshing(true);

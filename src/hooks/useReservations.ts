@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest, Facility, UnitType, Reservation } from '../api';
 import {
   DEFAULT_FACILITY_IMAGES,
@@ -8,8 +9,25 @@ import {
   FALLBACK_UNIT_TYPES,
 } from '../data/mockCustomerData';
 
+const CUSTOMER_TAB_STORAGE_KEY = '@selfstorage_customer_tab';
+
 export function useReservations(onReservationChanged?: () => void) {
-  const [customerTab, setCustomerTab] = useState<'my_units' | 'book' | 'my_reservations'>('book');
+  const [customerTab, setCustomerTabState] = useState<'my_units' | 'book' | 'my_reservations'>('book');
+
+  useEffect(() => {
+    AsyncStorage.getItem(CUSTOMER_TAB_STORAGE_KEY)
+      .then((savedTab) => {
+        if (savedTab === 'my_units' || savedTab === 'book' || savedTab === 'my_reservations') {
+          setCustomerTabState(savedTab);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const setCustomerTab = useCallback((tab: 'my_units' | 'book' | 'my_reservations') => {
+    setCustomerTabState(tab);
+    AsyncStorage.setItem(CUSTOMER_TAB_STORAGE_KEY, tab).catch(() => {});
+  }, []);
   const [step, setStep] = useState<number>(1);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);

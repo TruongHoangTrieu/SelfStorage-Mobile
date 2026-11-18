@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   StyleSheet,
@@ -10,11 +10,22 @@ import {
   RefreshControl,
   Platform,
   Alert,
+  Modal,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { checkCheckInEligibility } from '../../utils/checkInSchedule';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckInAppointment, StaffReturnOrder } from '../../types/handover';
-import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
+import {
+  fetchStaffContractsApi,
+  rescheduleReservationApi,
+  cancelReservationApi,
+} from '../../api';
+import {
+  isReturnOrderCompleted,
+  mapContractsToReturnOrders,
+} from '../../utils/staffReturnOrders';
 import { MaterialIcons } from '@expo/vector-icons';
 import SimpleReturnInspectionModal from '../../components/staff/SimpleReturnInspectionModal';
 
@@ -43,6 +54,7 @@ interface CheckInQueueScreenProps {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   facilityName?: string;
+  facilityId?: string | number;
   onOpenSidebar: () => void;
   onOpenNotifications?: () => void;
   unreadNotifCount?: number;
@@ -115,14 +127,40 @@ function normalizeAppointmentDate(dateStr?: string): string {
   return trimmed;
 }
 
+// Chuyển đổi định dạng giờ về chuẩn 24h (loại bỏ hoàn toàn SA/CH/AM/PM)
+export function to24hFormat(timeStr?: string): string {
+  if (!timeStr) return '--:--';
+  const clean = timeStr.trim();
+  if (clean.includes('-')) {
+    return clean
+      .split('-')
+      .map((p) => to24hFormat(p.trim()))
+      .join(' - ');
+  }
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(SA|CH|AM|PM)?$/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = match[2];
+    const period = (match[3] || '').toUpperCase();
+    if (period === 'CH' || period === 'PM') {
+      if (h < 12) h += 12;
+    } else if (period === 'SA' || period === 'AM') {
+      if (h === 12) h = 0;
+    }
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+  return clean;
+}
+
 export default function CheckInQueueScreen({
   appointments,
   onStartHandover,
-  returnOrders = INITIAL_RETURN_ORDERS,
+  returnOrders = [],
   onOpenReturnOrder,
   onRefresh,
   isRefreshing = false,
   facilityName = 'Trụ sở chính Thủ Đức',
+  facilityId,
   onOpenSidebar,
   onOpenNotifications,
   unreadNotifCount = 0,
@@ -137,14 +175,112 @@ export default function CheckInQueueScreen({
 
   // Quản lý Modal Nghiệm Thu Trả Kho (MỞ THẲNG MODAL TẠI CHỖ, KHÔNG CHUYỂN UI CŨ)
   const [localReturnOrders, setLocalReturnOrders] = useState<StaffReturnOrder[]>(returnOrders);
+  const [backendReturnOrders, setBackendReturnOrders] = useState<StaffReturnOrder[] | null>(null);
   const [selectedReturnOrder, setSelectedReturnOrder] = useState<StaffReturnOrder | null>(null);
   const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
+
+  // Modal Dời lịch hẹn nhận kho (đồng bộ quy trình trễ hẹn Web FE)
+  const [rescheduleTarget, setRescheduleTarget] = useState<UnifiedScheduleItem | null>(null);
+  const [rescheduleDayOffset, setRescheduleDayOffset] = useState<0 | 1>(1);
+  const [rescheduleSlot, setRescheduleSlot] = useState<string>('09:00');
+  const [rescheduleNote, setRescheduleNote] = useState<string>('');
+  const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false);
+
+  const RESCHEDULE_SLOTS = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
+
+  const openRescheduleModal = (item: UnifiedScheduleItem) => {
+    setRescheduleTarget(item);
+    setRescheduleDayOffset(1);
+    setRescheduleSlot('09:00');
+    setRescheduleNote('Đã liên hệ khách hàng xác nhận dời lịch nhận kho');
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleTarget?.rawCheckIn) return;
+    const rawId = rescheduleTarget.rawCheckIn.rawId || rescheduleTarget.rawCheckIn.id;
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + rescheduleDayOffset);
+    const [hh, mm] = rescheduleSlot.split(':').map((n) => parseInt(n, 10));
+    targetDate.setHours(hh || 9, mm || 0, 0, 0);
+
+    setIsSubmittingReschedule(true);
+    try {
+      await rescheduleReservationApi(
+        rawId,
+        targetDate.toISOString(),
+        rescheduleNote.trim() || 'Khách dời lịch hẹn nhận kho',
+      );
+      setRescheduleTarget(null);
+      Alert.alert(
+        'Đã dời lịch hẹn',
+        `Lịch nhận kho của ${rescheduleTarget.customerName} đã được dời sang ${formatDateKey(targetDate)} lúc ${rescheduleSlot}.`,
+      );
+      onRefresh?.();
+    } catch (err: any) {
+      Alert.alert('Lỗi dời lịch', err?.message || 'Không thể cập nhật lịch hẹn. Vui lòng thử lại.');
+    } finally {
+      setIsSubmittingReschedule(false);
+    }
+  };
+
+  const handleMarkNoShow = (item: UnifiedScheduleItem) => {
+    if (!item.rawCheckIn) return;
+    const rawId = item.rawCheckIn.rawId || item.rawCheckIn.id;
+    Alert.alert(
+      'Xác nhận báo vắng & Giải phóng kho',
+      `Hủy đơn nhận kho của ${item.customerName} (ô ${item.assignedUnit}) và mở lại ô kho về trạng thái Khả dụng?`,
+      [
+        { text: 'Hủy bỏ', style: 'cancel' },
+        {
+          text: 'Xác nhận giải phóng',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelReservationApi(rawId, 'Khách không đến nhận kho quá thời hạn quy định');
+              Alert.alert('Thành công', `Đã giải phóng ô kho ${item.assignedUnit}.`);
+              onRefresh?.();
+            } catch (err: any) {
+              Alert.alert('Lỗi', err?.message || 'Không thể hủy đơn.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // Lấy danh sách hợp đồng thật từ Backend để lịch trả kho không dùng dữ liệu mock.
+  // Nhờ vậy khách gửi yêu cầu trả kho sẽ xuất hiện đúng trạng thái "chờ nghiệm thu".
+  const loadBackendReturnOrders = useCallback(async () => {
+    try {
+      const res = await fetchStaffContractsApi(facilityId);
+      const contractList = Array.isArray(res)
+        ? res
+        : Array.isArray((res as any)?.data)
+        ? (res as any).data
+        : null;
+      if (contractList) {
+        // Set cả mảng rỗng: chi nhánh không có đơn thì phải trống, không rơi về mock
+        setBackendReturnOrders(mapContractsToReturnOrders(contractList, facilityName, facilityId));
+      }
+    } catch {
+      // Giữ danh sách hiện có nếu không kết nối được Backend
+    }
+  }, [facilityId, facilityName]);
+
+  React.useEffect(() => {
+    loadBackendReturnOrders();
+  }, [loadBackendReturnOrders]);
 
   // Đồng bộ returnOrders kèm các cập nhật/mã PIN đã lưu và khôi phục modal nếu vừa quay lại từ App Ngân Hàng
   React.useEffect(() => {
     let isMounted = true;
     async function syncSavedReturnState() {
-      const baseOrders = returnOrders && returnOrders.length > 0 ? returnOrders : INITIAL_RETURN_ORDERS;
+      const baseOrders =
+        backendReturnOrders !== null
+          ? backendReturnOrders
+          : returnOrders && returnOrders.length > 0
+          ? returnOrders
+          : [];
       const hydrated = await Promise.all(
         baseOrders.map(async (ord) => {
           try {
@@ -152,7 +288,11 @@ export default function CheckInQueueScreen({
             const savedPin = await AsyncStorage.getItem(`unit_smart_pin_${ord.unitCode}`);
             let merged = { ...ord };
             if (savedOrdStr) {
-              merged = { ...merged, ...JSON.parse(savedOrdStr) };
+              // Không khôi phục status/returnType: trạng thái "đã trả kho" chỉ có
+              // sau khi nhân viên nghiệm thu và Backend xác nhận (TERMINATED).
+              const { status: _savedStatus, returnType: _savedReturnType, ...savedRest } =
+                JSON.parse(savedOrdStr);
+              merged = { ...merged, ...savedRest };
             }
             if (savedPin && savedPin.trim().length >= 4) {
               merged.smartLockPin = savedPin.trim();
@@ -182,7 +322,7 @@ export default function CheckInQueueScreen({
     return () => {
       isMounted = false;
     };
-  }, [returnOrders]);
+  }, [returnOrders, backendReturnOrders]);
 
   // Tính 7 ngày trong tuần
   const weekDays = useMemo(() => getWeekDays(selectedMonday), [selectedMonday]);
@@ -217,8 +357,10 @@ export default function CheckInQueueScreen({
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowFormatted = formatDateKey(tomorrow);
 
-    // 1. Chuyển đổi các đơn Nhận kho
-    const checkinList: UnifiedScheduleItem[] = appointments.map((app) => ({
+    // 1. Chuyển đổi các đơn Nhận kho (giữ cả đơn EXPIRED để nhân viên demo/xử lý dời lịch, chỉ bỏ CANCELLED)
+    const checkinList: UnifiedScheduleItem[] = appointments
+      .filter((app) => app.status !== 'cancelled')
+      .map((app) => ({
       id: `checkin-${app.id}`,
       orderType: 'checkin',
       customerName: app.customerName,
@@ -235,11 +377,13 @@ export default function CheckInQueueScreen({
 
     // 2. Chuyển đổi các đơn Trả kho (gộp chung vào lịch với màu card khác biệt)
     const checkoutList: UnifiedScheduleItem[] = localReturnOrders.map((ord, idx) => {
-      // Gán ngày trả kho: nếu là 'today' hoặc đã 'completed' hoặc 'TERMINATED' thì luôn gán ở ngày hôm nay (todayFormatted), không để bị nhảy về endDate cũ
+      // Ưu tiên ngày khách đã đăng ký trả kho; nếu chưa có mới suy ra theo hạn hợp đồng
+      const scheduledDate = normalizeAppointmentDate(ord.returnDate);
       let returnDateStr =
-        ord.returnType === 'today' || ord.returnType === 'completed' || ord.status === 'TERMINATED'
+        scheduledDate ||
+        (isReturnOrderCompleted(ord) || ord.returnType === 'today'
           ? todayFormatted
-          : normalizeAppointmentDate(ord.endDate);
+          : normalizeAppointmentDate(ord.endDate));
       if (!returnDateStr) {
         returnDateStr = idx % 2 === 0 ? todayFormatted : tomorrowFormatted;
       }
@@ -253,9 +397,9 @@ export default function CheckInQueueScreen({
         unitSize: ord.unitSize,
         unitType: ord.unitType || 'Kho Gia đình',
         startDate: returnDateStr,
-        slotTime: idx % 2 === 0 ? '02:00 PM' : '10:30 AM',
-        status: ord.status === 'TERMINATED' || ord.returnType === 'completed' ? 'completed' : 'pending',
-        specialNotes: ord.notes || 'Hẹn trả ô kho & kiểm tra tài sản',
+        slotTime: ord.returnTimeSlot || (idx % 2 === 0 ? '02:00 PM' : '10:30 AM'),
+        status: isReturnOrderCompleted(ord) ? 'completed' : 'pending',
+        specialNotes: ord.notes || undefined,
         rawReturnOrder: ord,
       };
     });
@@ -309,10 +453,9 @@ export default function CheckInQueueScreen({
       : { allowed: true };
     const isCheckInAllowed = checkInEligibility.allowed;
 
-    // Tách giờ '1:00' và 'PM'
-    const timeParts = (item.slotTime || (isCheckout ? '02:00 PM' : '09:00 AM')).trim().split(/\s+/);
-    const timeMain = timeParts[0] || '1:00';
-    const timePeriod = timeParts[1] || 'PM';
+    // Giờ hiển thị chuẩn 24h (bỏ SA/CH/AM/PM)
+    const time24h = to24hFormat(item.slotTime || (isCheckout ? '14:00' : '09:00'));
+    const [timeMain, timePeriod] = time24h.split(' - ');
 
     // Nhãn kích thước kho
     const unitSizeLabel = item.unitSize
@@ -335,13 +478,40 @@ export default function CheckInQueueScreen({
           return;
         }
 
-        // Chặn nếu ngoài khung giờ nhận kho: trước tối đa 1 tiếng hoặc trễ tối đa 3 tiếng
+        // Chặn nếu ngoài khung giờ nhận kho (trước > 1h hoặc trễ > 24h đồng bộ Web FE)
         if (!isCheckInAllowed) {
-          Alert.alert(
-            'Chưa thể nhận kho',
-            checkInEligibility.reason || 'Đơn chỉ được làm thủ tục nhận kho trước giờ hẹn tối đa 1 tiếng hoặc trễ tối đa 3 tiếng.',
-            [{ text: 'Đã hiểu' }]
-          );
+          if (checkInEligibility.isTooLate) {
+            Alert.alert(
+              'Đơn quá hạn (> 24 giờ)',
+              checkInEligibility.reason || 'Đơn trễ quá 24 giờ. Vui lòng liên hệ khách để dời lịch hẹn hoặc báo vắng giải phóng kho.',
+              [
+                ...(item.phone
+                  ? [
+                      {
+                        text: 'Gọi khách',
+                        onPress: () => Linking.openURL(`tel:${item.phone.replace(/\s+/g, '')}`),
+                      },
+                    ]
+                  : []),
+                {
+                  text: 'Dời lịch hẹn',
+                  onPress: () => openRescheduleModal(item),
+                },
+                {
+                  text: 'Báo vắng & Giải phóng',
+                  style: 'destructive',
+                  onPress: () => handleMarkNoShow(item),
+                },
+                { text: 'Đóng', style: 'cancel' },
+              ],
+            );
+          } else {
+            Alert.alert(
+              'Chưa thể nhận kho',
+              checkInEligibility.reason || 'Đơn chỉ được làm thủ tục nhận kho trước giờ hẹn tối đa 1 tiếng.',
+              [{ text: 'Đã hiểu' }],
+            );
+          }
           return;
         }
 
@@ -410,7 +580,7 @@ export default function CheckInQueueScreen({
               <Text style={[styles.wTimeMain, isCheckout && { color: '#C2410C' }]}>
                 {timeMain}
               </Text>
-              <Text style={styles.wTimePeriod}>{timePeriod}</Text>
+              <Text style={styles.wTimePeriod}>{timePeriod ? `- ${timePeriod}` : ''}</Text>
             </View>
           </View>
 
@@ -519,29 +689,52 @@ export default function CheckInQueueScreen({
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương hoặc XÁM nếu ngoài khung giờ */
-                  <View
-                    style={[
-                      styles.wActionButton,
-                      isCheckInAllowed
-                        ? (item.status === 'in_progress' ? styles.wActionButtonInProgress : styles.wActionButtonCheckin)
-                        : styles.wActionButtonDisabled,
-                    ]}
-                  >
-                    <Text
+                  /* CHƯA NHẬN KHO: Nút [ Nhận kho ] xanh dương hoặc XÁM nếu ngoài khung giờ + Nút Dời lịch nếu trễ */
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {(checkInEligibility.isLateWarning || checkInEligibility.isTooLate) && (
+                      <TouchableOpacity
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 7,
+                          borderRadius: 10,
+                          backgroundColor: '#FEF3C7',
+                          borderWidth: 1,
+                          borderColor: '#FCD34D',
+                        }}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          openRescheduleModal(item);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E' }}>
+                          Dời lịch
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <View
                       style={[
-                        styles.wActionText,
-                        !isCheckInAllowed && styles.wActionTextDisabled,
+                        styles.wActionButton,
+                        isCheckInAllowed
+                          ? (item.status === 'in_progress' ? styles.wActionButtonInProgress : styles.wActionButtonCheckin)
+                          : styles.wActionButtonDisabled,
                       ]}
                     >
-                      {item.status === 'in_progress'
-                        ? 'Tiếp tục'
-                        : isCheckInAllowed
-                          ? 'Nhận kho'
-                          : checkInEligibility.isTooLate
-                            ? 'Quá hạn'
-                            : 'Chưa tới giờ'}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.wActionText,
+                          !isCheckInAllowed && styles.wActionTextDisabled,
+                        ]}
+                      >
+                        {item.status === 'in_progress'
+                          ? 'Tiếp tục'
+                          : isCheckInAllowed
+                            ? 'Nhận kho'
+                            : checkInEligibility.isTooLate
+                              ? 'Quá hạn'
+                              : 'Chưa tới giờ'}
+                      </Text>
+                    </View>
                   </View>
                 )
               )}
@@ -717,67 +910,73 @@ export default function CheckInQueueScreen({
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              tintColor="#1D4ED8"
-              colors={['#1D4ED8']}
-            />
-          ) : undefined
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              loadBackendReturnOrders();
+              onRefresh?.();
+            }}
+            tintColor="#1D4ED8"
+            colors={['#1D4ED8']}
+          />
         }
       >
+        {/* Không có đơn nào trong tuần (hoặc do tìm kiếm/lọc) → hiển thị trạng thái trống */}
+        {filteredItems.length === 0 ? (
+          <View style={styles.emptyWeekWrap}>
+            <MaterialIcons name="event-busy" size={34} color="#94A3B8" />
+            <Text style={styles.emptyWeekTitle}>Không có lịch hẹn</Text>
+            <Text style={styles.emptyWeekText}>
+              Chưa có đơn nhận / trả kho phù hợp trong tuần này
+            </Text>
+          </View>
+        ) : null}
+
         {weekDays.map((dayDate) => {
           const dateKey = formatDateKey(dayDate);
           const dayItems = itemsByDay.get(dateKey) || [];
           const isToday = isTodayDate(dayDate);
           const dayIndex = dayDate.getDay();
           const dayNameLabel = DAY_NAMES[dayIndex];
-          const dayNumberStr = String(dayDate.getDate());
+          const dayNumberStr = String(dayDate.getDate()).padStart(2, '0');
+          const monthStr = String(dayDate.getMonth() + 1).padStart(2, '0');
+
+          // Ngày không có đơn: bỏ hẳn khỏi danh sách, không để lại khoảng trống "Trống lịch hẹn"
+          if (dayItems.length === 0) return null;
 
           return (
-            <View
-              key={dateKey}
-              style={[
-                styles.dayTimelineRow,
-                isToday && styles.dayTimelineRowToday,
-              ]}
-            >
-              {/* Cột trái: Thứ & Số ngày & Badge HÔM NAY */}
-              <View style={styles.dayLeftCol}>
+            <View key={dateKey} style={styles.daySection}>
+              {/* Đường ngăn cách duy nhất: Thứ · ngày/tháng, chạy hết chiều ngang */}
+              <View style={styles.dayDividerRow}>
                 <Text
+                  numberOfLines={1}
                   style={[
-                    styles.dayOfWeekText,
-                    isToday && styles.dayOfWeekTextToday,
+                    styles.dayDividerLabel,
+                    isToday && styles.dayDividerLabelToday,
                   ]}
                 >
-                  {dayNameLabel}
+                  {dayNameLabel} · {dayNumberStr}/{monthStr}
                 </Text>
 
                 {isToday ? (
-                  <View style={styles.todayBlueCircle}>
-                    <Text style={styles.todayCircleText}>{dayNumberStr}</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.normalDayNumber}>{dayNumberStr}</Text>
-                )}
-
-                {isToday ? (
                   <View style={styles.todayBadgePill}>
-                    <Text style={styles.todayBadgePillText}>HÔM NAY</Text>
+                    <Text style={styles.todayBadgePillText} numberOfLines={1}>
+                      HÔM NAY
+                    </Text>
                   </View>
                 ) : null}
+
+                <View
+                  style={[
+                    styles.dayDividerLine,
+                    isToday && styles.dayDividerLineToday,
+                  ]}
+                />
               </View>
 
-              {/* Cột phải: Danh sách đơn nhận & trả kho với màu sắc card riêng biệt */}
-              <View style={styles.dayRightCol}>
-                {dayItems.length === 0 ? (
-                  <View style={styles.emptyDayWrap}>
-                    <Text style={styles.emptyDayText}>Trống lịch hẹn</Text>
-                  </View>
-                ) : (
-                  dayItems.map((item) => renderScheduleCard(item))
-                )}
+              {/* Thẻ nhận / trả kho: full chiều rộng hàng */}
+              <View style={styles.dayCardsWrap}>
+                {dayItems.map((item) => renderScheduleCard(item))}
               </View>
             </View>
           );
@@ -799,8 +998,168 @@ export default function CheckInQueueScreen({
           );
           AsyncStorage.setItem(`return_order_state_${updatedOrder.id}`, JSON.stringify(updatedOrder)).catch(() => null);
           AsyncStorage.removeItem('active_return_inspection_order_id').catch(() => null);
+          loadBackendReturnOrders();
+          onRefresh?.();
         }}
       />
+
+      {/* ─── MODAL DỜI LỊCH HẸN NHẬN KHO (ĐỒNG BỘ WEB FE) ─── */}
+      <Modal
+        visible={!!rescheduleTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isSubmittingReschedule) setRescheduleTarget(null);
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            justifyContent: 'center',
+            padding: 18,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              padding: 18,
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                Dời Lịch Hẹn Check-in
+              </Text>
+              <TouchableOpacity
+                onPress={() => !isSubmittingReschedule && setRescheduleTarget(null)}
+              >
+                <MaterialIcons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {rescheduleTarget && (
+              <Text style={{ fontSize: 12, color: '#475569' }}>
+                Khách: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{rescheduleTarget.customerName}</Text> • Ô {rescheduleTarget.assignedUnit}
+              </Text>
+            )}
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155' }}>
+              1. Chọn ngày hẹn mới (tối đa sang ngày hôm sau):
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {([0, 1] as const).map((offset) => {
+                const d = new Date();
+                d.setDate(d.getDate() + offset);
+                const selected = rescheduleDayOffset === offset;
+                return (
+                  <TouchableOpacity
+                    key={offset}
+                    onPress={() => setRescheduleDayOffset(offset)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: selected ? '#1D4ED8' : '#E2E8F0',
+                      backgroundColor: selected ? '#EFF6FF' : '#F8FAFC',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: selected ? '#1D4ED8' : '#334155' }}>
+                      {offset === 0 ? 'Hôm nay' : 'Ngày mai'} ({formatDayMonth(d)})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155' }}>
+              2. Chọn khung giờ nhận kho:
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {RESCHEDULE_SLOTS.map((slot) => {
+                const selected = rescheduleSlot === slot;
+                return (
+                  <TouchableOpacity
+                    key={slot}
+                    onPress={() => setRescheduleSlot(slot)}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: selected ? '#1D4ED8' : '#E2E8F0',
+                      backgroundColor: selected ? '#1D4ED8' : '#F8FAFC',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: selected ? '#FFFFFF' : '#334155' }}>
+                      {slot}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155' }}>
+              3. Ghi chú / Lý do dời lịch:
+            </Text>
+            <TextInput
+              value={rescheduleNote}
+              onChangeText={setRescheduleNote}
+              placeholder="VD: Khách xin dời sang sáng mai..."
+              style={{
+                borderWidth: 1,
+                borderColor: '#E2E8F0',
+                backgroundColor: '#F8FAFC',
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 12,
+                color: '#0F172A',
+              }}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <TouchableOpacity
+                disabled={isSubmittingReschedule}
+                onPress={() => setRescheduleTarget(null)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 11,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569' }}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={isSubmittingReschedule}
+                onPress={handleConfirmReschedule}
+                style={{
+                  flex: 2,
+                  paddingVertical: 11,
+                  borderRadius: 12,
+                  backgroundColor: '#1D4ED8',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {isSubmittingReschedule ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>
+                    Xác nhận dời lịch
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1032,58 +1391,42 @@ const styles = StyleSheet.create({
   calendarContent: {
     paddingTop: 2,
   },
-  dayTimelineRow: {
+  // ─── ĐƯỜNG NGĂN CÁCH NGÀY: "THỨ 6 · 06/11 ─────────────" ───
+  daySection: {
+    paddingBottom: 4,
+  },
+  dayDividerRow: {
     flexDirection: 'row',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    backgroundColor: '#FFFFFF',
-    marginBottom: 2,
-  },
-  dayTimelineRowToday: {
-    backgroundColor: '#F8FAFC',
-    borderLeftWidth: 3.5,
-    borderLeftColor: '#1D4ED8',
-  },
-  dayLeftCol: {
-    width: 54,
     alignItems: 'center',
-    paddingTop: 2,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  dayOfWeekText: {
-    fontSize: 9.5,
-    fontWeight: '700',
+  dayDividerLabel: {
+    flexShrink: 0,
+    fontSize: 10,
+    fontWeight: '800',
     color: '#64748B',
-    marginBottom: 3,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  dayOfWeekTextToday: {
+  dayDividerLabelToday: {
     color: '#1D4ED8',
-    fontWeight: '900',
   },
-  normalDayNumber: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1E293B',
+  dayDividerLine: {
+    flex: 1,
+    minWidth: 12,
+    height: 1,
+    backgroundColor: '#E2E8F0',
   },
-  todayBlueCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#1D4ED8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayCircleText: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  dayDividerLineToday: {
+    backgroundColor: '#BFDBFE',
   },
   todayBadgePill: {
-    marginTop: 3,
+    maxWidth: '100%',
     backgroundColor: '#DBEAFE',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
     paddingVertical: 1.5,
     borderRadius: 4,
   },
@@ -1094,19 +1437,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Cột phải: chứa các card
-  dayRightCol: {
-    flex: 1,
-    paddingLeft: 6,
+  // Thẻ nhận / trả kho: full chiều rộng hàng
+  dayCardsWrap: {
+    paddingHorizontal: 10,
   },
-  emptyDayWrap: {
-    paddingVertical: 12,
+  // Trạng thái trống cho cả tuần (không còn dòng "Trống lịch hẹn" cho từng ngày)
+  emptyWeekWrap: {
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 56,
+    paddingHorizontal: 24,
   },
-  emptyDayText: {
+  emptyWeekTitle: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  emptyWeekText: {
+    marginTop: 4,
     fontSize: 11.5,
     color: '#94A3B8',
-    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: 17,
   },
 
   // ─── STYLES CARD NHẬN KHO (NỀN TRẮNG, VIỀN XANH) ───

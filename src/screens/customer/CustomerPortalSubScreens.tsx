@@ -128,13 +128,6 @@ export function CustomerPaymentsScreen({
       .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
   }, [allPayments]);
 
-  // Tổng tiền cọc đang giữ
-  const totalDeposit = useMemo(() => {
-    return allPayments
-      .filter((p) => p.type === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS' || !p.status))
-      .reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
-  }, [allPayments]);
-
   // Cước quá hạn / chưa thanh toán
   const overdueBalance = useMemo(() => {
     return allPayments

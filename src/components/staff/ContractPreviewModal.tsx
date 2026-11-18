@@ -252,8 +252,8 @@ export default function ContractPreviewModal({
                     Bên B có quyền làm thủ tục chấm dứt hợp đồng và hoàn trả ngăn kho trước ngày kết thúc thời hạn thuê khi không còn nhu cầu sử dụng.
                   </Text>
                   <Text style={styles.paragraph}>
-                    <Text style={styles.clauseNum}>2.4. Chính sách không hoàn tiền: </Text>
-                    Do toàn bộ tiền đặt cọc ban đầu đã được khấu trừ trọn gói vào tiền thuê theo Điều 3, Bên A <Text style={styles.boldText}>không hoàn lại bất kỳ khoản tiền nào</Text> (bao gồm tiền thuê của các ngày/tháng còn lại chưa sử dụng). Bên B có trách nhiệm dọn sạch tài sản, rác thải và bàn giao nguyên trạng thiết bị; trường hợp có hư hại tài sản hoặc phát sinh phí vệ sinh đặc biệt, Bên B có nghĩa vụ thanh toán chi phí bồi thường cho Bên A tại thời điểm bàn giao.
+                    <Text style={styles.clauseNum}>2.4. Chính sách hoàn trả tiền đặt cọc khi trả kho: </Text>
+                    Khoản tiền đặt cọc ban đầu được bảo lưu làm cọc bảo đảm hợp đồng trong suốt thời gian thuê. Khi Bên B làm thủ tục trả kho, Bên A sẽ <Text style={styles.boldText}>hoàn trả lại tiền đặt cọc cho Bên B (chủ yếu bằng tiền mặt trực tiếp tại quầy cơ sở)</Text> ngay sau khi hoàn tất nghiệm thu kho nguyên vẹn, sau khi đã cấn trừ các chi phí bồi thường hư hại hoặc vệ sinh phát sinh (nếu có). Tiền thuê của các ngày/tháng còn lại chưa sử dụng không được hoàn lại trong trường hợp trả kho trước hạn.
                   </Text>
                 </View>
 
@@ -265,8 +265,8 @@ export default function ContractPreviewModal({
                     <Text style={[styles.boldText, { color: '#1D4ED8' }]}>{appointment.monthlyRent}</Text> (Đã bao gồm thuế GTGT 10%, phí an ninh giám sát 24/7 và phí quản lý bảo trì cơ sở).
                   </Text>
                   <Text style={styles.paragraph}>
-                    <Text style={styles.clauseNum}>3.2. Quyết toán tiền đặt cọc: </Text>
-                    Toàn bộ khoản tiền đặt cọc ban đầu (<Text style={[styles.boldText, { color: '#15803D' }]}>{appointment.depositAmount}</Text>) <Text style={styles.boldText}>đã được Bên A khấu trừ trực tiếp 100% vào tổng tiền thuê kho</Text> của kỳ hạn này. Do đó, số dư tiền cọc bảo đảm tại thời điểm ký kết hợp đồng bằng 0 VNĐ.
+                    <Text style={styles.clauseNum}>3.2. Tiền đặt cọc bảo đảm hợp đồng: </Text>
+                    Khoản tiền đặt cọc ban đầu (<Text style={[styles.boldText, { color: '#15803D' }]}>{appointment.depositAmount}</Text>) <Text style={styles.boldText}>được bảo lưu làm tiền cọc bảo đảm hợp đồng (không cấn trừ vào tiền thuê)</Text>. Bên B có nghĩa vụ thanh toán đủ 100% tiền thuê kho theo thời hạn thuê đã thỏa thuận khi nhận bàn giao kho. Tiền đặt cọc sẽ được hoàn trả cho Bên B khi kết thúc hợp đồng theo quy định tại Điều 2.
                   </Text>
                   <Text style={styles.paragraph}>
                     <Text style={styles.clauseNum}>3.3. Phương thức thanh toán: </Text>

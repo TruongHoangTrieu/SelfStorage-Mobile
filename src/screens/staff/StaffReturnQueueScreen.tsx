@@ -13,9 +13,13 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { StaffReturnOrder, ReturnCategory } from '../../types/handover';
-import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
 import { fetchStaffContractsApi } from '../../api';
 import { formatVND } from '../../utils/formatters';
+import {
+  isReturnOrderCompleted,
+  isReturnOrderPendingInspection,
+  mapContractsToReturnOrders,
+} from '../../utils/staffReturnOrders';
 import SimpleReturnInspectionModal from '../../components/staff/SimpleReturnInspectionModal';
 
 interface StaffReturnQueueScreenProps {
@@ -26,6 +30,31 @@ interface StaffReturnQueueScreenProps {
   unreadNotifCount?: number;
 }
 
+// Chuẩn hóa giờ về dạng 24h
+function to24hFormat(timeStr?: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (clean.includes('-')) {
+    return clean
+      .split('-')
+      .map((p) => to24hFormat(p.trim()))
+      .join(' - ');
+  }
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(SA|CH|AM|PM)?$/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = match[2];
+    const period = (match[3] || '').toUpperCase();
+    if (period === 'CH' || period === 'PM') {
+      if (h < 12) h += 12;
+    } else if (period === 'SA' || period === 'AM') {
+      if (h === 12) h = 0;
+    }
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+  return clean;
+}
+
 export default function StaffReturnQueueScreen({
   facilityId,
   facilityName = 'Kho Tự Quản Trụ Sở Chính Võ Nguyên Giáp',
@@ -34,7 +63,7 @@ export default function StaffReturnQueueScreen({
   unreadNotifCount = 0,
 }: StaffReturnQueueScreenProps) {
   const insets = useSafeAreaInsets();
-  const [returnOrders, setReturnOrders] = useState<StaffReturnOrder[]>(INITIAL_RETURN_ORDERS);
+  const [returnOrders, setReturnOrders] = useState<StaffReturnOrder[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -50,73 +79,23 @@ export default function StaffReturnQueueScreen({
     try {
       setIsLoading(true);
       const res = await fetchStaffContractsApi(facilityId).catch(() => null);
+      const contractList = Array.isArray(res)
+        ? res
+        : Array.isArray((res as any)?.data)
+        ? (res as any).data
+        : null;
 
-      let baseList = INITIAL_RETURN_ORDERS;
-      if (Array.isArray(res) && res.length > 0) {
+      let baseList: StaffReturnOrder[] = [];
+      if (contractList) {
         setBackendSynced(true);
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-        const mapped: StaffReturnOrder[] = res.map((item: any) => {
-          const firstUnitItem = item.contractItems?.[0];
-          const endDateObj = item.endDate ? new Date(item.endDate) : new Date();
-          const endDateTime = endDateObj.getTime();
-
-          let returnType: StaffReturnOrder['returnType'] = 'today';
-          let overdueDays = 0;
-          let overdueFine = 0;
-
-          if (item.status === 'TERMINATED') {
-            returnType = 'completed';
-          } else if (item.status === 'OVERDUE' || endDateTime < startOfToday) {
-            returnType = 'overdue';
-            const diffDays = Math.ceil((startOfToday - endDateTime) / 86400000);
-            overdueDays = Math.max(1, diffDays);
-            overdueFine = overdueDays * 50000;
-          } else if (endDateTime >= startOfToday && endDateTime <= startOfToday + 86400000) {
-            returnType = 'today';
-          } else {
-            returnType = 'early';
-          }
-
-          const existingPhotos =
-            Array.isArray(firstUnitItem?.handoverRecords?.[0]?.photos)
-              ? firstUnitItem.handoverRecords[0].photos
-              : [];
-
-          return {
-            id: item.id,
-            contractCode: item.contractCode,
-            customerName: item.customer?.fullName || 'Khách hàng',
-            phone: item.customer?.phone || '0908123456',
-            email: item.customer?.email || 'customer@example.com',
-            unitCode: firstUnitItem?.unit?.unitNumber || 'A-101',
-            smartLockPin: firstUnitItem?.accessCode || '821301',
-            unitType: firstUnitItem?.unit?.unitType?.name || 'Kho Tiêu Chuẩn',
-            unitSize: `${firstUnitItem?.unit?.unitType?.size || 9.0}m²`,
-            facilityName: item.reservation?.facility?.name || facilityName,
-            startDate: item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : '01/10/2026',
-            endDate: item.endDate ? new Date(item.endDate).toLocaleDateString('vi-VN') : '31/10/2026',
-            status: item.status,
-            returnType,
-            depositAmount: firstUnitItem?.depositAmount || 1000000,
-            unpaidFees: 0,
-            overdueDays,
-            overdueFine,
-            extraChargesTotal: overdueFine,
-            notes: item.terms || undefined,
-            handoverPhotos: existingPhotos,
-            handoverCondition: firstUnitItem?.handoverRecords?.[0]?.condition || 'Kho sạch sẽ, nguyên vẹn.',
-          };
-        });
-
-        // Kết hợp và ưu tiên các đơn test hiện tại
-        const existingCodes = new Set(mapped.map((m) => m.contractCode));
-        const mergedMock = INITIAL_RETURN_ORDERS.filter((o) => !existingCodes.has(o.contractCode));
-        baseList = [...INITIAL_RETURN_ORDERS, ...mapped.filter((m) => !mergedMock.some((b) => b.id === m.id))];
+        // Chỉ dùng dữ liệu thật của đúng chi nhánh. Không fallback mock để tránh
+        // hiển thị khách của chi nhánh khác.
+        baseList = mapContractsToReturnOrders(contractList, facilityName, facilityId);
       }
 
-      // Khôi phục trạng thái đã nghiệm thu từ AsyncStorage
+      // Khôi phục ảnh/PIN đã lưu. KHÔNG khôi phục status/returnType từ bộ nhớ cục bộ:
+      // trạng thái "đã trả kho" chỉ được xác nhận bởi Backend sau khi nhân viên nghiệm thu.
+
       const hydrated = await Promise.all(
         baseList.map(async (ord) => {
           try {
@@ -124,9 +103,13 @@ export default function StaffReturnQueueScreen({
             const savedPin = await AsyncStorage.getItem(`unit_smart_pin_${ord.unitCode}`);
             if (saved) {
               const parsed = JSON.parse(saved);
+              // Chỉ khôi phục dữ liệu phụ (ảnh, tình trạng, PIN...).
+              // Không khôi phục status/returnType để tránh đơn tự thành "đã trả kho"
+              // khi nhân viên chưa nghiệm thu.
+              const { status: _savedStatus, returnType: _savedReturnType, ...savedRest } = parsed;
               return {
                 ...ord,
-                ...parsed,
+                ...savedRest,
                 smartLockPin: savedPin || parsed.smartLockPin || ord.smartLockPin,
               };
             }
@@ -137,7 +120,8 @@ export default function StaffReturnQueueScreen({
 
       setReturnOrders(hydrated);
     } catch {
-      setReturnOrders(INITIAL_RETURN_ORDERS);
+      // Không hiển thị dữ liệu giả của chi nhánh khác khi mất kết nối Backend
+      setReturnOrders([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -157,27 +141,30 @@ export default function StaffReturnQueueScreen({
   const stats = useMemo(() => {
     return {
       total: returnOrders.length,
-      today: returnOrders.filter((o) => o.returnType === 'today').length,
-      early: returnOrders.filter((o) => o.returnType === 'early').length,
-      overdue: returnOrders.filter((o) => o.returnType === 'overdue' || (o.overdueDays && o.overdueDays > 0)).length,
-      completed: returnOrders.filter((o) => o.returnType === 'completed' || o.status === 'TERMINATED').length,
+      today: returnOrders.filter((o) => !isReturnOrderCompleted(o) && o.returnType === 'today').length,
+      early: returnOrders.filter((o) => !isReturnOrderCompleted(o) && o.returnType === 'early').length,
+      overdue: returnOrders.filter((o) => !isReturnOrderCompleted(o) && (o.returnType === 'overdue' || (o.overdueDays && o.overdueDays > 0))).length,
+      completed: returnOrders.filter((o) => isReturnOrderCompleted(o)).length,
     };
   }, [returnOrders]);
 
   // Lọc theo từ khóa tìm kiếm & danh mục
   const filteredOrders = useMemo(() => {
     return returnOrders.filter((order) => {
-      if (selectedCategory === 'today' && order.returnType !== 'today') return false;
-      if (selectedCategory === 'early' && order.returnType !== 'early') return false;
-      if (
-        selectedCategory === 'overdue' &&
-        order.returnType !== 'overdue' &&
-        (!order.overdueDays || order.overdueDays <= 0)
-      ) {
-        return false;
-      }
-      if (selectedCategory === 'completed' && order.returnType !== 'completed' && order.status !== 'TERMINATED') {
-        return false;
+      const isCompleted = isReturnOrderCompleted(order);
+      if (selectedCategory === 'completed') {
+        if (!isCompleted) return false;
+      } else if (selectedCategory === 'today') {
+        if (isCompleted || order.returnType !== 'today') return false;
+      } else if (selectedCategory === 'early') {
+        if (isCompleted || order.returnType !== 'early') return false;
+      } else if (selectedCategory === 'overdue') {
+        if (
+          isCompleted ||
+          (order.returnType !== 'overdue' && (!order.overdueDays || order.overdueDays <= 0))
+        ) {
+          return false;
+        }
       }
 
       if (!searchQuery.trim()) return true;
@@ -193,12 +180,20 @@ export default function StaffReturnQueueScreen({
 
   // Badge trạng thái ngắn gọn
   const renderReturnTypeBadge = (order: StaffReturnOrder) => {
-    const isCompleted = order.status === 'TERMINATED' || order.returnType === 'completed';
+    const isCompleted = isReturnOrderCompleted(order);
     if (isCompleted) {
       return (
         <View style={[styles.typeBadge, styles.badgeCompleted]}>
           <MaterialIcons name="check-circle" size={12} color="#16A34A" />
           <Text style={[styles.typeBadgeText, styles.textCompleted]}>Đã thanh lý</Text>
+        </View>
+      );
+    }
+    if (isReturnOrderPendingInspection(order)) {
+      return (
+        <View style={[styles.typeBadge, styles.badgePending]}>
+          <MaterialIcons name="hourglass-top" size={12} color="#7C3AED" />
+          <Text style={[styles.typeBadgeText, styles.textPending]}>Chờ nghiệm thu</Text>
         </View>
       );
     }
@@ -352,7 +347,7 @@ export default function StaffReturnQueueScreen({
           </View>
         ) : (
           filteredOrders.map((order) => {
-            const isCompleted = order.status === 'TERMINATED' || order.returnType === 'completed';
+            const isCompleted = isReturnOrderCompleted(order);
             const isOverdue = Boolean(order.overdueDays && order.overdueDays > 0);
 
             return (
@@ -387,18 +382,29 @@ export default function StaffReturnQueueScreen({
                   <Text style={styles.phoneText}>{order.phone}</Text>
                 </View>
 
-                {/* Hàng 4: Nếu trễ hạn thì hiện 1 dòng cảnh báo ngắn gọn */}
-                {isOverdue ? (
+                {/* Lịch hẹn trả kho khách đã đăng ký */}
+                {order.returnDate ? (
+                  <View style={styles.appointmentRow}>
+                    <MaterialIcons name="event-available" size={14} color="#1D4ED8" />
+                    <Text style={styles.appointmentText} numberOfLines={2}>
+                      Giờ trả kho: {order.returnTimeSlot ? `${to24hFormat(order.returnTimeSlot)} · ` : ''}
+                      {order.returnDate}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Hàng 4: Ưu tiên hiển thị Đã hoàn tất nếu đơn đã nghiệm thu, ngược lại hiện cảnh báo quá hạn */}
+                {isCompleted ? (
+                  <View style={styles.completedAlertRow}>
+                    <MaterialIcons name="check-circle" size={13} color="#16A34A" />
+                    <Text style={styles.completedAlertText}>Đã hoàn tất thanh lý hợp đồng</Text>
+                  </View>
+                ) : isOverdue ? (
                   <View style={styles.overdueAlertRow}>
                     <MaterialIcons name="warning" size={13} color="#D97706" />
                     <Text style={styles.overdueAlertText}>
                       Quá hạn {order.overdueDays} ngày • Phạt trễ: +{formatVND(order.overdueFine || order.overdueDays * 50000)}
                     </Text>
-                  </View>
-                ) : isCompleted ? (
-                  <View style={styles.completedAlertRow}>
-                    <MaterialIcons name="check-circle" size={13} color="#16A34A" />
-                    <Text style={styles.completedAlertText}>Đã hoàn tất thanh lý hợp đồng</Text>
                   </View>
                 ) : null}
 
@@ -440,6 +446,7 @@ export default function StaffReturnQueueScreen({
             `return_order_state_${updatedOrder.id}`,
             JSON.stringify(updatedOrder)
           ).catch(() => null);
+          loadReturnOrders();
         }}
       />
     </View>
@@ -655,11 +662,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#16A34A',
   },
+  badgePending: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#DDD6FE',
+  },
+  textPending: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
   badgeOverdue: {
     backgroundColor: '#FEF3C7',
     borderColor: '#FDE68A',
-  },
-  textOverdue: {
+  },  textOverdue: {
     fontSize: 10.5,
     fontWeight: '700',
     color: '#B45309',
@@ -713,6 +728,24 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '700',
     color: '#475569',
+  },
+  appointmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  appointmentText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
   overdueAlertRow: {
     flexDirection: 'row',

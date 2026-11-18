@@ -9,9 +9,12 @@ import {
   RefreshControl,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { CheckInAppointment, StaffTab, StaffUser } from '../../types/handover';
-import { INITIAL_RETURN_ORDERS } from '../../data/mockStaffData';
-import { fetchStaffSupportRequestsApi } from '../../api';
+import { CheckInAppointment, StaffReturnOrder, StaffTab, StaffUser } from '../../types/handover';
+import { fetchStaffContractsApi, fetchStaffSupportRequestsApi } from '../../api';
+import {
+  isReturnOrderCompleted,
+  mapContractsToReturnOrders,
+} from '../../utils/staffReturnOrders';
 
 interface StaffDashboardScreenProps {
   appointments: CheckInAppointment[];
@@ -40,18 +43,46 @@ export default function StaffDashboardScreen({
 }: StaffDashboardScreenProps) {
   const insets = useSafeAreaInsets();
 
-  // 1. Số khách cần giao kho hôm nay (chờ hoặc đã đến, hoặc tổng các đơn nhận hôm nay)
-  const pendingHandover = appointments.filter(
-    (a) => a.status === 'pending' || a.status === 'arrived'
+  // 1. Số khách cần giao kho: chỉ đếm các đơn CHƯA hoàn thành
+  const handoverCount = appointments.filter(
+    (a) =>
+      a.status === 'pending' ||
+      a.status === 'confirmed' ||
+      a.status === 'arrived' ||
+      a.status === 'in_progress'
   ).length;
-  const handoverCount = pendingHandover > 0 ? pendingHandover : appointments.length;
 
-  // 2. Số khách cần trả kho hôm nay
+  // 2. Số khách cần trả kho: lấy hợp đồng thật theo đúng cơ sở, chỉ đếm đơn CHƯA nghiệm thu
+  const [returnOrders, setReturnOrders] = useState<StaffReturnOrder[]>([]);
+  const staffFacilityId = currentUser?.facilityId;
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchStaffContractsApi(staffFacilityId)
+      .then((res) => {
+        if (!isMounted) return;
+        const contractList = Array.isArray(res)
+          ? res
+          : Array.isArray((res as any)?.data)
+          ? (res as any).data
+          : null;
+        if (!contractList) return;
+        setReturnOrders(mapContractsToReturnOrders(contractList, facilityName, staffFacilityId));
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [facilityName, staffFacilityId, isRefreshing]);
+
   const returnCount = useMemo(() => {
-    return INITIAL_RETURN_ORDERS.filter(
-      (o) => o.returnType === 'today' && o.status !== 'TERMINATED'
-    ).length || 1;
-  }, []);
+    // Chỉ tính đơn cần xử lý hôm nay / quá hạn / khách đã hẹn trả, và chưa hoàn tất
+    return returnOrders.filter(
+      (o) =>
+        !isReturnOrderCompleted(o) &&
+        (o.returnType === 'today' || o.returnType === 'overdue' || Boolean(o.returnRequestedAt))
+    ).length;
+  }, [returnOrders]);
 
   // 3. Số sự cố cần trợ giúp (Lấy trực tiếp từ Database qua API)
   const [supportCount, setSupportCount] = useState<number>(0);
@@ -272,7 +303,7 @@ export default function StaffDashboardScreen({
           </View>
         </View>
 
-        {/* ─── DẠNG LƯỚI 3 CỘT (GRID VIEW NHƯ ẢNH MẪU - ĐÃ BỎ GIAO CA) ─── */}
+        {/* ─── DẠNG LƯỚI 2 CỘT CÂN ĐỐI (4 THẺ THÀNH 2x2, KHÔNG CÓ THẺ LẺ) ─── */}
         <Text style={styles.sectionHeaderTitle}>CHỨC NĂNG VẬN HÀNH</Text>
         <View style={styles.gridContainer}>
           {gridMenuItems.map((item) => (
@@ -304,25 +335,8 @@ export default function StaffDashboardScreen({
           ))}
         </View>
 
-        {/* ─── Nút chuyển sang Khách hàng & Đăng xuất ─── */}
+        {/* ─── Đăng xuất ─── */}
         <View style={styles.footerSection}>
-          {onSwitchToCustomer && (
-            <TouchableOpacity
-              style={styles.switchModeCard}
-              onPress={onSwitchToCustomer}
-              activeOpacity={0.8}
-            >
-              <View style={styles.switchIconBox}>
-                <MaterialIcons name="swap-horiz" size={20} color="#1D4ED8" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchTitle}>Chuyển sang Chế độ Khách hàng</Text>
-                <Text style={styles.switchSub}>Đăng xuất tài khoản nhân viên và về trang chính</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={20} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
-
           {onLogout && (
             <TouchableOpacity
               style={styles.logoutFullBtn}
@@ -536,16 +550,17 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
 
-  // ─── DẠNG LƯỚI 3 CỘT (GRID LAYOUT NHƯ ẢNH MẪU) ───
+  // ─── DẠNG LƯỚI 2 CỘT (CÂN ĐỐI, KHÔNG ĐỂ THẺ LẺ RƠI VÀO KHOẢNG TRỐNG) ───
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 11,
+    justifyContent: 'space-between',
+    rowGap: 11,
     marginBottom: 20,
   },
   gridItem: {
-    width: '31%',
-    aspectRatio: 1,
+    width: '48.2%',
+    aspectRatio: 1.32,
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     alignItems: 'center',

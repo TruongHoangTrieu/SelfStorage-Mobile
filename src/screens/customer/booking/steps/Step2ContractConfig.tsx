@@ -83,7 +83,7 @@ export default function Step2ContractConfig({
     return calculateRentalDates(moveInDateStr, rentalTermMonths);
   }, [moveInDateStr, rentalTermMonths]);
 
-  const remainingAtCheckIn = Math.max(0, calc.totalRent - calc.depositAmount);
+  const remainingAtCheckIn = calc.totalRent;
 
   const minMoveInDate = new Date();
   minMoveInDate.setHours(0, 0, 0, 0);
@@ -582,9 +582,9 @@ export default function Step2ContractConfig({
                 </Text>
               </View>
               <View style={s.depositOrangeNoteRow}>
-                <MaterialIcons name="check" size={14} color="#15803d" />
+                <MaterialIcons name="security" size={14} color="#15803d" />
                 <Text style={s.depositOrangeNoteText}>
-                  Khấu trừ 100% vào tiền thuê khi ký hợp đồng nhận phòng
+                  Bảo lưu làm cọc bảo đảm hợp đồng & hoàn trả (chủ yếu bằng tiền mặt) khi trả kho
                 </Text>
               </View>
             </View>
@@ -600,7 +600,7 @@ export default function Step2ContractConfig({
                     </Text>
                   </View>
                   <Text style={s.checkInZeroSub}>
-                    Đã thanh toán trọn gói tháng đầu • Không phát sinh thêm phí
+                    Đã thanh toán trọn gói • Không phát sinh thêm phí
                   </Text>
                 </View>
                 <Text style={s.checkInZeroAmount}>0 đ</Text>
@@ -609,10 +609,10 @@ export default function Step2ContractConfig({
               <View style={s.checkInRemainingBox}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={s.checkInRemainingTitle}>
-                    Còn lại thanh toán khi nhận kho:
+                    Tiền thuê thanh toán khi nhận kho:
                   </Text>
                   <Text style={s.checkInRemainingSub}>
-                    (Tổng tiền thuê - Tiền cọc đã nộp)
+                    (Thanh toán trọn gói kỳ hạn {rentalTermMonths} tháng đã chọn)
                   </Text>
                 </View>
                 <Text style={s.checkInRemainingAmount}>
@@ -623,7 +623,7 @@ export default function Step2ContractConfig({
 
             {/* Non-refundable disclaimer note */}
             <Text style={s.disclaimerText}>
-              * Tiền cọc giữ chỗ được trừ trực tiếp vào tiền thuê khi ký hợp đồng và không hoàn lại nếu quý khách hủy đơn.
+              * Tiền cọc giữ chỗ được chuyển thành tiền cọc bảo đảm hợp đồng và sẽ được hoàn lại cho quý khách (chủ yếu bằng tiền mặt tại cơ sở) khi nghiệm thu trả kho. Tiền cọc không hoàn lại nếu quý khách hủy đơn trước khi nhận kho.
             </Text>
           </View>
         </View>

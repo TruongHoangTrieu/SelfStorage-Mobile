@@ -13,7 +13,9 @@ import {
   Image,
   Clipboard,
   Platform,
+  AppState,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from "@expo/vector-icons";
 import Svg, { Path } from "react-native-svg";
 import { CheckInAppointment, AvailableUnit } from "../../types/handover";
@@ -100,9 +102,43 @@ export default function HandoverDetailScreen({
   const insets = useSafeAreaInsets();
   // Stepper State 1 -> 5 (giống hệt luồng Web)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [isCheckingPayment, setIsCheckingPayment] = useState<boolean>(false);
+
+  // Khôi phục bước đang làm dở khi mở lại màn hình (ví dụ đang ở Bước 4 thanh toán mà thoát ra app ngân hàng rồi quay lại)
+  useEffect(() => {
+    AsyncStorage.getItem(`@selfstorage_handover_step_${appointment.id}`)
+      .then((savedStep) => {
+        if (savedStep) {
+          const stepNum = parseInt(savedStep, 10);
+          if (stepNum >= 1 && stepNum <= 4) {
+            setCurrentStep(stepNum);
+          }
+        }
+      })
+      .catch(() => null);
+  }, [appointment.id]);
+
+  // Lưu bước hiện tại và trạng thái bàn giao vào bộ nhớ để không bị mất khi thoát ra quét mã
+  useEffect(() => {
+    AsyncStorage.setItem(
+      `@selfstorage_handover_step_${appointment.id}`,
+      String(currentStep)
+    ).catch(() => null);
+
+    AsyncStorage.setItem(
+      "@selfstorage_active_handover",
+      JSON.stringify({
+        appointmentId: appointment.id,
+        appointment,
+        step: currentStep,
+      })
+    ).catch(() => null);
+  }, [currentStep, appointment.id]);
   const isAlreadyHandedOver =
     appointment.status === "completed" ||
     Boolean(appointment.contractCode);
+
+  const isDone = appointment.status === "completed";
 
   // Bước 1: KYC Định danh & Ô kho (Chuẩn hóa duy nhất CCCD 12 số)
   const identityType = "CCCD";
@@ -112,7 +148,7 @@ export default function HandoverDetailScreen({
       raw = '';
     }
     const clean = raw.replace(/\D/g, '').slice(0, 12);
-    return clean || '079095012345';
+    return clean;
   });
 
   const handleIdentityNumberChange = (val: string) => {
@@ -120,10 +156,10 @@ export default function HandoverDetailScreen({
     setIdentityNumber(digitsOnly);
   };
   const [identityAddress, setIdentityAddress] = useState<string>(
-    appointment.identityAddress || "Số 123 Đường Nguyễn Huệ, Quận 1, TP.HCM",
+    appointment.identityAddress || "",
   );
   const [isCccdVerified, setIsCccdVerified] = useState<boolean>(
-    appointment.isIdentityVerified ?? true,
+    isDone ? (appointment.isIdentityVerified ?? true) : false,
   );
   const [selectedUnitCode, setSelectedUnitCode] = useState<string>(
     appointment.assignedUnit || "A-101",
@@ -158,27 +194,45 @@ export default function HandoverDetailScreen({
     );
   };
 
-  // Ảnh 2 mặt CCCD có đóng dấu Watermark chống sao chép
-  const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityFrontUrl
-      ? {
-          id: "cccd-front-initial",
-          title: "Mặt trước CCCD",
-          uri: appointment.identityFrontUrl,
-          createdAt: new Date().toISOString(),
-        }
-      : null,
-  );
-  const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(
-    appointment.identityBackUrl
-      ? {
-          id: "cccd-back-initial",
-          title: "Mặt sau CCCD",
-          uri: appointment.identityBackUrl,
-          createdAt: new Date().toISOString(),
-        }
-      : null,
-  );
+  // Ảnh 2 mặt CCCD: Chỉ nạp sẵn nếu là đơn đã hoàn tất trước đó hoặc có link online hợp lệ
+  const [frontCccdPhoto, setFrontCccdPhoto] = useState<CapturedPhoto | null>(() => {
+    if (isDone && appointment.identityFrontUrl) {
+      return {
+        id: "cccd-front-initial",
+        title: "Mặt trước CCCD",
+        uri: appointment.identityFrontUrl,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    if (!isDone && appointment.identityFrontUrl && /^https?:\/\//i.test(appointment.identityFrontUrl)) {
+      return {
+        id: "cccd-front-initial",
+        title: "Mặt trước CCCD",
+        uri: appointment.identityFrontUrl,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    return null;
+  });
+  const [backCccdPhoto, setBackCccdPhoto] = useState<CapturedPhoto | null>(() => {
+    if (isDone && appointment.identityBackUrl) {
+      return {
+        id: "cccd-back-initial",
+        title: "Mặt sau CCCD",
+        uri: appointment.identityBackUrl,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    if (!isDone && appointment.identityBackUrl && /^https?:\/\//i.test(appointment.identityBackUrl)) {
+      return {
+        id: "cccd-back-initial",
+        title: "Mặt sau CCCD",
+        uri: appointment.identityBackUrl,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    return null;
+  });
   const [isCapturingCccd, setIsCapturingCccd] = useState<boolean>(false);
 
   const handleCaptureCccd = async (side: "front" | "back") => {
@@ -251,8 +305,9 @@ export default function HandoverDetailScreen({
     }
   };
 
-  // Bước 2: Hiện trạng ô kho & Chụp ảnh (Nạp ảnh đã có nếu là đơn đã bàn giao / xem lại)
+  // Bước 2: Hiện trạng ô kho & Chụp ảnh (Chỉ nạp sẵn nếu là đơn ĐÃ hoàn tất bàn giao xem lại; đơn mới thì để trống [])
   const [photos, setPhotos] = useState<CapturedPhoto[]>(() => {
+    if (!isDone) return [];
     const existing = appointment.handoverPhotos || appointment.photos || [];
     return existing.map((url, idx) => ({
       id: `existing-photo-${idx}`,
@@ -261,25 +316,66 @@ export default function HandoverDetailScreen({
       createdAt: new Date().toISOString(),
     }));
   });
+  // Đảm bảo reset sạch toàn bộ state khi mở đơn mới (không bị dính ảnh, CCCD từ đơn cũ)
+  useEffect(() => {
+    setCurrentStep(1);
+    if (!isDone) {
+      setPhotos([]);
+      setIsContractSigned(false);
+      setContractSignature([]);
+      setIsPaid(false);
+      setSepayQrInfo(null);
+      setIsCccdVerified(false);
+
+      let cleanNumber = (appointment.identityNumber || appointment.idCard || '').replace(/\D/g, '').slice(0, 12);
+      if (cleanNumber.length !== 12) cleanNumber = '';
+      setIdentityNumber(cleanNumber);
+      setIdentityAddress(appointment.identityAddress || '');
+
+      if (appointment.identityFrontUrl && /^https?:\/\//i.test(appointment.identityFrontUrl)) {
+        setFrontCccdPhoto({
+          id: `cccd-front-${appointment.id}`,
+          title: 'Mặt trước CCCD',
+          uri: appointment.identityFrontUrl,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        setFrontCccdPhoto(null);
+      }
+
+      if (appointment.identityBackUrl && /^https?:\/\//i.test(appointment.identityBackUrl)) {
+        setBackCccdPhoto({
+          id: `cccd-back-${appointment.id}`,
+          title: 'Mặt sau CCCD',
+          uri: appointment.identityBackUrl,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        setBackCccdPhoto(null);
+      }
+    }
+  }, [appointment.id, isDone]);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState<boolean>(false);
 
   useEffect(() => {
-    const existing = appointment.handoverPhotos || appointment.photos;
-    if (existing && existing.length > 0 && photos.length === 0) {
-      setPhotos(
-        existing.map((url, idx) => ({
-          id: `existing-photo-${idx}-${Date.now()}`,
-          title: `Ảnh hiện trạng ${idx + 1}`,
-          uri: url,
-          createdAt: new Date().toISOString(),
-        })),
-      );
+    if (isDone) {
+      const existing = appointment.handoverPhotos || appointment.photos;
+      if (existing && existing.length > 0 && photos.length === 0) {
+        setPhotos(
+          existing.map((url, idx) => ({
+            id: `existing-photo-${idx}-${Date.now()}`,
+            title: `Ảnh hiện trạng ${idx + 1}`,
+            uri: url,
+            createdAt: new Date().toISOString(),
+          })),
+        );
+      }
+      if (appointment.condition) {
+        setCondition(appointment.condition);
+      }
     }
-    if (appointment.condition) {
-      setCondition(appointment.condition);
-    }
-  }, [appointment.id, appointment.handoverPhotos, appointment.photos]);
+  }, [appointment.id, isDone]);
 
   const handleCapturePhoto = async () => {
     setIsCapturing(true);
@@ -374,7 +470,8 @@ export default function HandoverDetailScreen({
   const rawTotal = monthlyRentNum * durationMonths;
   const discountAmount = Math.round(rawTotal * (discountPercent / 100));
   const totalRent = rawTotal - discountAmount;
-  const remainingAmount = Math.max(0, totalRent - depositNum);
+  // Tiền cọc giữ lại làm cọc bảo đảm hợp đồng (hoàn trả bằng tiền mặt khi trả kho), không cấn trừ vào tiền thuê
+  const remainingAmount = totalRent;
 
   // Cấu hình ngân hàng SePay (ưu tiên từ Backend, sau đó tới biến môi trường, cuối cùng fallback)
   const fallbackBankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || "MBBank";
@@ -420,31 +517,54 @@ export default function HandoverDetailScreen({
     };
   }, [currentStep, appointment.id, isPaid]);
 
-  // Polling tự động lắng nghe Webhook SePay mỗi 3.5 giây khi ở Bước 4
+  // Hàm kiểm tra thanh toán ngay lập tức
+  const checkPaymentStatus = React.useCallback(async () => {
+    try {
+      const resId =
+        (appointment as any).rawId || appointment.id.replace("RSV-", "");
+      const summary = await getReservationPaymentSummaryApi(resId);
+      if (
+        summary.rentalPaid ||
+        summary.reservationStatus === "COMPLETED"
+      ) {
+        setIsPaid(true);
+        return true;
+      }
+    } catch {
+      // silent
+    }
+    return false;
+  }, [appointment.id, (appointment as any).rawId]);
+
+  // Polling tự động lắng nghe Webhook SePay mỗi 2.5 giây khi ở Bước 4 + Lắng nghe AppState khi chuyển từ App Ngân Hàng quay lại
   useEffect(() => {
     if (currentStep !== 4 || isPaid) return;
     let isSubscribed = true;
+
+    // Kiểm tra ngay khi vào bước 4
+    checkPaymentStatus();
+
     const interval = setInterval(async () => {
-      try {
-        const resId =
-          (appointment as any).rawId || appointment.id.replace("RSV-", "");
-        const summary = await getReservationPaymentSummaryApi(resId);
-        if (
-          isSubscribed &&
-          (summary.rentalPaid || summary.reservationStatus === "COMPLETED")
-        ) {
-          setIsPaid(true);
-          clearInterval(interval);
-        }
-      } catch {
-        // silent
+      if (!isSubscribed) return;
+      const paid = await checkPaymentStatus();
+      if (paid && isSubscribed) {
+        clearInterval(interval);
       }
-    }, 3500);
+    }, 2500);
+
+    // Lắng nghe sự kiện chuyển đổi giữa ứng dụng và App Ngân Hàng (AppState active)
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        checkPaymentStatus();
+      }
+    });
+
     return () => {
       isSubscribed = false;
       clearInterval(interval);
+      appStateSub.remove();
     };
-  }, [currentStep, appointment.id, isPaid]);
+  }, [currentStep, isPaid, checkPaymentStatus]);
 
   const handleCopy = (text: string, label: string) => {
     Clipboard.setString(text);
@@ -658,6 +778,8 @@ export default function HandoverDetailScreen({
       setIsUploadingPhotos(false);
     }
 
+    AsyncStorage.removeItem('@selfstorage_active_handover').catch(() => null);
+    AsyncStorage.removeItem(`@selfstorage_handover_step_${appointment.id}`).catch(() => null);
     onCompleteHandover({
       appointmentId: appointment.id,
       unitCode: selectedUnitCode,
@@ -1373,29 +1495,7 @@ export default function HandoverDetailScreen({
               ))}
             </View>
 
-            {/* Nút lưu nhanh khi chỉnh sửa đơn đã hoàn tất */}
-            {isAlreadyHandedOver && (
-              <TouchableOpacity
-                style={[
-                  s.quickSaveBtn,
-                  (isSubmitting || isUploadingPhotos) && { opacity: 0.7 },
-                ]}
-                onPress={handleFinish}
-                disabled={isSubmitting || isUploadingPhotos}
-                activeOpacity={0.85}
-              >
-                {isSubmitting || isUploadingPhotos ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <MaterialIcons name="save" size={18} color="#fff" />
-                    <Text style={s.quickSaveBtnText}>
-                      Hoàn Tất Chỉnh Sửa
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
+            
           </View>
         )}
 
@@ -1536,6 +1636,26 @@ export default function HandoverDetailScreen({
               <Text style={s.cardTitle}>Bước 4: Quyết Toán Tiền Thuê Kho</Text>
             </View>
 
+            {/* Thông báo tiền cọc bảo lưu */}
+            <View
+              style={{
+                backgroundColor: "#eff6ff",
+                borderWidth: 1,
+                borderColor: "#bfdbfe",
+                borderRadius: 10,
+                padding: 10,
+                marginBottom: 14,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <MaterialIcons name="security" size={18} color="#1d4ed8" />
+              <Text style={{ fontSize: 12, color: "#1e40af", flex: 1, lineHeight: 18 }}>
+                Tiền cọc ({appointment.depositAmount || formatVND(depositNum)}) được bảo lưu làm tiền cọc bảo đảm hợp đồng và sẽ hoàn trả cho khách (chủ yếu bằng tiền mặt) khi thanh lý trả kho.
+              </Text>
+            </View>
+
             {/* Chọn hình thức */}
             <View style={s.payMethodRow}>
               <TouchableOpacity
@@ -1619,6 +1739,32 @@ export default function HandoverDetailScreen({
                     <Text style={s.qrHint}>
                       Đưa màn hình cho khách quét bằng App Ngân hàng
                     </Text>
+
+                    <TouchableOpacity
+                      style={s.manualCheckBtn}
+                      onPress={async () => {
+                        setIsCheckingPayment(true);
+                        const paid = await checkPaymentStatus();
+                        setIsCheckingPayment(false);
+                        if (!paid) {
+                          Alert.alert(
+                            "Đang chờ giao dịch",
+                            "Hệ thống chưa ghi nhận tiền chuyển khoản. Vui lòng quét mã trên app ngân hàng và đợi vài giây."
+                          );
+                        }
+                      }}
+                      disabled={isCheckingPayment}
+                      activeOpacity={0.8}
+                    >
+                      {isCheckingPayment ? (
+                        <ActivityIndicator size="small" color={T.primary} />
+                      ) : (
+                        <>
+                          <MaterialIcons name="sync" size={16} color={T.primary} />
+                          <Text style={s.manualCheckBtnText}>Kiểm tra thanh toán ngay</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -1807,7 +1953,7 @@ export default function HandoverDetailScreen({
               <>
                 <Text style={s.finishBtnText}>
                   {isAlreadyHandedOver
-                    ? "Hoàn Tất Chỉnh Sửa"
+                    ? "Hoàn Tất "
                     : "Hoàn Tất Bàn Giao"}
                 </Text>
                 <MaterialIcons name="check-circle" size={18} color="#fff" />
@@ -2535,8 +2681,36 @@ const s = StyleSheet.create({
     alignItems: "center",
     width: "100%",
   },
-  qrImage: { width: 180, height: 180 },
-  qrHint: { fontSize: 10, color: T.textMuted, marginTop: 6 },
+  qrImage: { width: 280, height: 280, maxWidth: "100%", resizeMode: "contain" },
+  qrHint: {
+      fontSize: 12,
+      color: "#1E40AF",
+      backgroundColor: "#EFF6FF",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      marginTop: 10,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    manualCheckBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      backgroundColor: "#EFF6FF",
+      borderWidth: 1,
+      borderColor: "#BFDBFE",
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      marginTop: 10,
+    },
+    manualCheckBtnText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: T.primary,
+    },
   bankDetailList: {
     width: "100%",
     backgroundColor: "#F8FAFC",

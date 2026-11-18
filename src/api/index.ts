@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 export const CLOUD_API_BASE_URL =
@@ -83,27 +84,38 @@ export async function apiRequest<T>(
   };
 
   let token = storedToken;
-  if (!token && Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
-    try {
-      token =
-        window.localStorage.getItem('@selfstorage_token') ||
-        window.localStorage.getItem('token') ||
-        null;
-      if (token) storedToken = token;
-    } catch {}
+  if (!token) {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+      try {
+        token =
+          window.localStorage.getItem('@selfstorage_token') ||
+          window.localStorage.getItem('token') ||
+          null;
+        if (token) storedToken = token;
+      } catch {}
+    } else {
+      try {
+        token = await AsyncStorage.getItem('@selfstorage_token');
+        if (token) storedToken = token;
+      } catch {}
+    }
   }
 
-  if (token) {
+  if (headers['Authorization'] === '') {
+    delete headers['Authorization'];
+  } else if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   // 1. Thử gọi URL chính
   try {
     const url = `${PRIMARY_API_BASE_URL}${endpoint}`;
+    const resolvedCredentials: RequestCredentials =
+      options.credentials ?? (Platform.OS === 'web' ? 'include' : 'omit');
     const response = await fetch(url, {
       ...options,
       headers,
-      credentials: 'include',
+      credentials: resolvedCredentials,
     });
 
     const data = await response.json().catch(() => ({}));
@@ -111,18 +123,25 @@ export async function apiRequest<T>(
     if (!response.ok) {
       const errorMsg =
         data?.message || data?.error || `Yêu cầu thất bại (${response.status})`;
-      throw new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+      const httpError: any = new Error(Array.isArray(errorMsg) ? errorMsg.join(', ') : errorMsg);
+      httpError.status = response.status;
+      httpError.isHttpError = response.status < 500;
+      throw httpError;
     }
 
     return data as T;
   } catch (err: any) {
-    // 2. Thử sang URL dự phòng nếu URL chính không kết nối được
+    // Nếu lỗi là lỗi nghiệp vụ HTTP 4xx từ server chính, ném thẳng lỗi về UI, không gọi fallback localhost
+    if (err?.isHttpError) {
+      throw err;
+    }
+    // 2. Thử sang URL dự phòng nếu URL chính không kết nối được (Network error hoặc 5xx)
     try {
       const fallbackUrl = `${FALLBACK_API_BASE_URL}${endpoint}`;
       const res = await fetch(fallbackUrl, {
         ...options,
         headers,
-        credentials: 'include',
+        credentials: options.credentials ?? (Platform.OS === 'web' ? 'include' : 'omit'),
       });
       const fallbackData = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -394,6 +413,8 @@ export interface CheckOutPayload {
   refundAmount?: number;
   unitCondition?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
   customerSignature?: string;
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+  newAccessCode?: string;
   // Legacy fields for backward compatibility
   actualOverdueDays?: number;
   actualOverdueFine?: number;
@@ -403,8 +424,25 @@ export interface CheckOutPayload {
   targetUnitStatus?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
 }
 
+export async function fetchOverduePolicyApi() {
+  const res = await apiRequest<any>('/operations/policies?policyType=OVERDUE', {
+    method: 'GET',
+  });
+  const list = Array.isArray(res) ? res : res?.data || [];
+  const pol = list[0];
+  const val = pol?.value || {};
+  const liquidationThresholdDays = Number(
+    val.liquidationThresholdDays ?? val.gracePeriodDays ?? val.grace_period_days ?? 7
+  );
+  return {
+    liquidationThresholdDays,
+    gracePeriodDays: liquidationThresholdDays,
+    dailyFinePercent: Number(val.dailyFinePercent ?? val.daily_fine_rate ?? 1.5),
+  };
+}
+
 export async function performCheckOutApi(payload: CheckOutPayload) {
-  const body = {
+  const coreBody = {
     contractId: payload.contractId,
     condition: payload.condition,
     notes: payload.notes || '',
@@ -416,10 +454,28 @@ export async function performCheckOutApi(payload: CheckOutPayload) {
     unitCondition: payload.unitCondition ?? payload.targetUnitStatus ?? 'AVAILABLE',
     customerSignature: payload.customerSignature || undefined,
   };
-  return apiRequest<any>('/handovers/check-out', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  const extendedBody = {
+    ...coreBody,
+    actualOverdueDays: payload.actualOverdueDays,
+    actualOverdueFine: payload.actualOverdueFine,
+    paymentMethod: payload.paymentMethod || 'CASH',
+    newAccessCode: payload.newAccessCode || undefined,
+  };
+  try {
+    return await apiRequest<any>('/handovers/check-out', {
+      method: 'POST',
+      body: JSON.stringify(extendedBody),
+    });
+  } catch (err: any) {
+    // Tương thích ngược với Backend chưa cập nhật DTO các field mở rộng
+    if (err?.status === 400 && String(err?.message || '').includes('should not exist')) {
+      return apiRequest<any>('/handovers/check-out', {
+        method: 'POST',
+        body: JSON.stringify(coreBody),
+      });
+    }
+    throw err;
+  }
 }
 
 /**
@@ -453,11 +509,18 @@ export async function fetchMyContractsApi() {
 /**
  * Đổi mã PIN Smart Lock của ô kho (POST /contracts/:contractId/units/:unitId/smart-lock/change-pin)
  */
-export async function changeSmartLockPinApi(contractId: number, unitId: number, newPin: string) {
-  return apiRequest<any>(`/contracts/${contractId}/units/${unitId}/smart-lock/change-pin`, {
-    method: 'POST',
-    body: JSON.stringify({ newPin }),
-  });
+export async function changeSmartLockPinApi(
+  contractId: number | string,
+  unitId: number | string,
+  newPin: string
+) {
+  return apiRequest<any>(
+    `/contracts/${encodeURIComponent(String(contractId))}/units/${encodeURIComponent(String(unitId))}/smart-lock/change-pin`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ newPin }),
+    }
+  );
 }
 
 /**
@@ -536,10 +599,11 @@ export async function getSupportRequestDetailApi(id: string) {
 /**
  * Cập nhật tiến độ xử lý và trạng thái sự cố (PATCH /support/requests/:id/progress)
  */
-export async function updateTicketProgressApi(id: string, status: string, note: string, photos?: string[]) {
+export async function updateTicketProgressApi(id: string, status: string, note?: string, photos?: string[]) {
+  const effectiveNote = note?.trim() || `Cập nhật trạng thái sang ${status}`;
   return apiRequest<any>(`/support/requests/${id}/progress`, {
     method: 'PATCH',
-    body: JSON.stringify({ status, note, photos }),
+    body: JSON.stringify({ status, note: effectiveNote, photos }),
   });
 }
 
@@ -576,6 +640,27 @@ export async function renewContractApi(
     method: 'POST',
     body: JSON.stringify({ extendedMonths, paymentMethod, paymentCode }),
   });
+}
+
+/**
+ * Khách hàng gửi yêu cầu trả kho kèm ngày & khung giờ bàn giao (POST /contracts/:id/return-request)
+ */
+export interface ReturnRequestPayload {
+  returnDate: string; // ISO date: YYYY-MM-DD
+  returnTimeSlot: string; // "10:00 - 11:00"
+}
+
+export async function submitReturnRequestApi(
+  contractId: number | string,
+  payload: ReturnRequestPayload,
+) {
+  return apiRequest<any>(
+    `/contracts/${encodeURIComponent(String(contractId))}/return-request`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 /**
@@ -852,12 +937,31 @@ export async function simulatePaymentWebhookApi(payload: {
 }
 
 
+let staffPaymentLookupToken: string | null = null;
+
 /**
- * Đảm bảo có JWT Token nhân viên để tra cứu danh sách giao dịch SePay trên Cloud
+ * Lấy JWT Token nhân viên riêng biệt chỉ dùng để tra cứu danh sách giao dịch SePay,
+ * TUYỆT ĐỐI KHÔNG ghi đè setAuthToken của khách hàng đang đăng nhập.
  */
-async function ensureStaffAuthForPayments() {
-  if (!getAuthToken()) {
-    await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
+async function getStaffTokenForPaymentLookup(forceRefresh = false): Promise<string | null> {
+  if (staffPaymentLookupToken && !forceRefresh) {
+    return staffPaymentLookupToken;
+  }
+  try {
+    // credentials: 'omit' để cookie phiên đăng nhập hiện tại (ví dụ staff An Phú hoặc khách) không bao giờ bị ghi đè sang Võ Nguyên Giáp
+    const res = await apiRequest<{ accessToken?: string; token?: string }>('/auth/login', {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { Authorization: '' },
+      body: JSON.stringify({ email: 'staff@selfstorage.vn', password: '123456' }),
+    });
+    const token = res?.accessToken || res?.token || null;
+    if (token) {
+      staffPaymentLookupToken = token;
+    }
+    return token;
+  } catch {
+    return null;
   }
 }
 
@@ -865,20 +969,126 @@ async function ensureStaffAuthForPayments() {
  * Lấy danh sách các giao dịch thanh toán gần nhất từ hệ thống (hỗ trợ cả Render Cloud & Local)
  */
 export async function fetchRecentSystemPaymentsApi(limit = 50): Promise<any[]> {
-  await ensureStaffAuthForPayments();
   try {
-    const res = await apiRequest<any>(`/payments?limit=${limit}`);
+    // Nếu đang có token nhân viên (ví dụ staff An Phú), ưu tiên gọi trực tiếp bằng token hiện tại trước
+    const currentToken = getAuthToken();
+    if (currentToken) {
+      const directRes = await apiRequest<any>(`/payments?limit=${limit}`).catch(() => null);
+      const directList = Array.isArray(directRes?.data)
+        ? directRes.data
+        : Array.isArray(directRes)
+        ? directRes
+        : null;
+      if (directList) {
+        return directList;
+      }
+    }
+
+    const staffToken = await getStaffTokenForPaymentLookup(false);
+    const headers: Record<string, string> = staffToken
+      ? { Authorization: `Bearer ${staffToken}` }
+      : {};
+    const res = await apiRequest<any>(`/payments?limit=${limit}`, {
+      headers,
+      credentials: 'omit',
+    });
     return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
   } catch {
-    await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
-    const res = await apiRequest<any>(`/payments?limit=${limit}`).catch(() => null);
+    const refreshedToken = await getStaffTokenForPaymentLookup(true);
+    const headers: Record<string, string> = refreshedToken
+      ? { Authorization: `Bearer ${refreshedToken}` }
+      : {};
+    const res = await apiRequest<any>(`/payments?limit=${limit}`, {
+      headers,
+      credentials: 'omit',
+    }).catch(() => null);
     return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
   }
 }
 
 /**
- * Tạo yêu cầu thanh toán phụ thu (Surcharge) tích hợp SePay VietQR động
- * Hoạt động trực tiếp với cả Render Cloud Webhook (mã SSREN...0T) và Local Backend
+ * Tạo phiên thanh toán gia hạn hợp đồng (Đăng ký Payment PENDING trên Database & lấy mã VietQR)
+ */
+export async function createRenewalPaymentSessionApi(payload: {
+  contractId: string | number;
+  unitCode: string;
+  amount: number;
+  months: number;
+}) {
+  const bankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
+  const accountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0838500046';
+  const accountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'TRUONG DINH LONG';
+
+  // 1. Gọi trực tiếp API Backend để tạo bản ghi Payment PENDING trên MongoDB
+  try {
+    const res = await apiRequest<{
+      payment: any;
+      qr: {
+        qrCodeUrl: string;
+        bankCode: string;
+        accountNumber: string;
+        accountName: string;
+        amount: number;
+        transferContent: string;
+      };
+      paymentCode: string;
+    }>('/payments/surcharge', {
+      method: 'POST',
+      body: JSON.stringify({
+        contractId: String(payload.contractId),
+        unitCode: payload.unitCode,
+        amount: payload.amount,
+        reason: `Gia hạn hợp đồng kho #${payload.unitCode} thêm ${payload.months} tháng`,
+      }),
+    });
+
+    if (res?.paymentCode) {
+      const code = res.paymentCode;
+      const qrUrl =
+        res.qr?.qrCodeUrl ||
+        `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${payload.amount}&addInfo=${encodeURIComponent(
+          code
+        )}&accountName=${encodeURIComponent(accountName)}`;
+
+      return {
+        paymentCode: code,
+        qrCodeUrl: qrUrl,
+        bankName: res.qr?.bankCode || bankCode,
+        accountNumber: res.qr?.accountNumber || accountNumber,
+        accountName: res.qr?.accountName || accountName,
+        transferContent: code,
+        amount: payload.amount,
+      };
+    }
+  } catch (err: any) {
+    console.warn('createRenewalPaymentSessionApi backend fallback notice:', err?.message);
+  }
+
+  // 2. Dự phòng: Tạo mã PAYSUR duy nhất
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const timestampSuffix = Date.now().toString(36).slice(-4).toUpperCase();
+  const fallbackCode = `PAYSUR${timestampSuffix}${randomSuffix}`;
+  const qrCodeUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${payload.amount}&addInfo=${encodeURIComponent(
+    fallbackCode
+  )}&accountName=${encodeURIComponent(accountName)}`;
+
+  return {
+    paymentCode: fallbackCode,
+    qrCodeUrl,
+    bankName: bankCode,
+    accountNumber,
+    accountName,
+    transferContent: fallbackCode,
+    amount: payload.amount,
+  };
+}
+
+/**
+ * Tra cứu trạng thái thanh toán theo paymentCode (Polling SePay Webhook trực tiếp trên Cloud DB)
+ */
+
+/**
+ * Tạo yêu cầu thanh toán phụ thu (Surcharge) cho nhân viên
  */
 export async function createSurchargePaymentApi(payload: {
   contractId?: string;
@@ -891,61 +1101,45 @@ export async function createSurchargePaymentApi(payload: {
   const accountNumber = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NUMBER || '0838500046';
   const accountName = process.env.EXPO_PUBLIC_SEPAY_ACCOUNT_NAME || 'TRUONG DINH LONG';
 
-  // 1. Lấy danh sách các mã đã dùng trên Database để chọn mã mới duy nhất
-  const recentPayments = await fetchRecentSystemPaymentsApi(60);
-  const usedCodes = new Set(
-    recentPayments.map((p: any) => String(p?.paymentCode || '').trim().toUpperCase())
-  );
+  try {
+    const res = await apiRequest<{
+      payment: any;
+      qr: {
+        qrCodeUrl: string;
+        bankCode: string;
+        accountNumber: string;
+        accountName: string;
+        amount: number;
+        transferContent: string;
+      };
+      paymentCode: string;
+    }>('/payments/surcharge', {
+      method: 'POST',
+      body: JSON.stringify({
+        contractId: payload.contractId,
+        unitCode: payload.unitCode,
+        amount: payload.amount,
+        reason: payload.reason || `Phụ thu đơn #${payload.unitCode || 'UNIT'}`,
+      }),
+    });
 
-  // Ưu tiên tiền tố khớp với unitCode hiện tại của đơn, sau đó đến các tiền tố kho đang ACTIVE
-  const unitLetters = String(payload.unitCode || '')
-    .toUpperCase()
-    .split(/[^A-Z]+/)
-    .filter((w) => w.length >= 2);
-
-  const prefixes = Array.from(
-    new Set([
-      ...unitLetters,
-      'VNG',
-      'MINI',
-      'STD',
-      'LARGE',
-      'MIN',
-      'INI',
-      'VN',
-      'NG',
-      'MI',
-      'IN',
-      'NI',
-      'LAR',
-      'V',
-      'N',
-      'G',
-      'M',
-      'I',
-      '',
-    ])
-  );
-
-  let selectedCode = 'SSRENVNG0T';
-  outer: for (let zLen = 1; zLen <= 12; zLen++) {
-    const zeros = '0'.repeat(zLen);
-    for (const prefix of prefixes) {
-      const candidate = `SSREN${prefix}${zeros}T`;
-      if (!usedCodes.has(candidate)) {
-        selectedCode = candidate;
-        break outer;
-      }
+    if (res?.paymentCode) {
+      return res;
     }
+  } catch (err: any) {
+    console.warn('createSurchargePaymentApi fallback:', err?.message);
   }
 
+  const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const timestampSuffix = Date.now().toString(36).slice(-4).toUpperCase();
+  const fallbackCode = `PAYSUR${timestampSuffix}${randomSuffix}`;
   const qrCodeUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${payload.amount}&addInfo=${encodeURIComponent(
-    selectedCode
+    fallbackCode
   )}&accountName=${encodeURIComponent(accountName)}`;
 
   return {
     payment: {
-      paymentCode: selectedCode,
+      paymentCode: fallbackCode,
       amount: payload.amount,
       status: 'PENDING',
     },
@@ -955,16 +1149,12 @@ export async function createSurchargePaymentApi(payload: {
       accountNumber,
       accountName,
       amount: payload.amount,
-      transferContent: selectedCode,
+      transferContent: fallbackCode,
     },
-    paymentCode: selectedCode,
-    isPaid: false,
+    paymentCode: fallbackCode,
   };
 }
 
-/**
- * Tra cứu trạng thái thanh toán theo paymentCode (Polling SePay Webhook trực tiếp trên Cloud DB)
- */
 export async function checkPaymentCodeStatusApi(
   paymentCode: string,
   expectedAmount?: number,
@@ -1016,17 +1206,6 @@ export async function checkPaymentCodeStatusApi(
     if (paidTime < sinceTimestamp - 5000) {
       matched = null;
     }
-  }
-
-  // 2. Fallback: Nếu ngân hàng/khách vừa chuyển khoản thành công trong phiên hiện tại với số tiền khớp
-  if (!matched && sinceTimestamp) {
-    matched = recentPayments.find((p: any) => {
-      if (String(p?.status || '').toUpperCase() !== 'PAID') return false;
-      const paidTime = new Date(p?.paidAt || p?.updatedAt || p?.createdAt || 0).getTime();
-      const isRecent = paidTime >= sinceTimestamp - 45000;
-      const isAmountOk = !expectedAmount || Number(p?.amount || 0) >= expectedAmount;
-      return isRecent && isAmountOk;
-    });
   }
 
   if (matched) {
@@ -1082,4 +1261,46 @@ export async function fetchFeeTypesApi() {
       status: 'ACTIVE' | 'INACTIVE';
     }>
   >('/operations/fee-types');
+}
+
+/**
+ * Dời lịch hẹn nhận kho (PATCH /reservations/:id) - Đồng bộ Web FE
+ */
+export async function rescheduleReservationApi(
+  reservationId: string | number,
+  newAppointmentDate: string,
+  notes?: string,
+) {
+  const rawId =
+    typeof reservationId === 'string' && reservationId.startsWith('RSV-')
+      ? reservationId.replace('RSV-', '')
+      : reservationId;
+
+  return apiRequest<any>(`/reservations/${rawId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      appointmentDate: newAppointmentDate,
+      notes: notes || undefined,
+    }),
+  });
+}
+
+/**
+ * Báo vắng mặt / Hủy đơn và giải phóng ô kho (POST /reservations/:id/cancel)
+ */
+export async function cancelReservationApi(
+  reservationId: string | number,
+  reason: string,
+) {
+  const rawId =
+    typeof reservationId === 'string' && reservationId.startsWith('RSV-')
+      ? reservationId.replace('RSV-', '')
+      : reservationId;
+
+  return apiRequest<any>(`/reservations/${rawId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({
+      reason: reason || 'Khách không đến quá thời hạn quy định',
+    }),
+  });
 }

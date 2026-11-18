@@ -32,6 +32,11 @@ export default function InspectionSuccessModal({
 
   const hasFine = totalExtraCharges > 0;
   const photoCount = returnPhotosCount || order.returnPhotos?.length || 0;
+  const depositAmount = order.depositAmount || 1000000;
+  const netRefundAmount =
+    order.estimatedRefund !== undefined
+      ? order.estimatedRefund
+      : Math.max(0, depositAmount - totalExtraCharges);
 
   return (
     <Modal
@@ -130,7 +135,7 @@ export default function InspectionSuccessModal({
             </View>
 
             {/* Mục 4: Quyết toán phụ phí */}
-            <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.detailRow}>
               <View style={styles.detailLeft}>
                 <View
                   style={[
@@ -153,6 +158,24 @@ export default function InspectionSuccessModal({
                 ]}
               >
                 {hasFine ? `+${formatVND(totalExtraCharges)}` : '0 đ (Đã thu đủ)'}
+              </Text>
+            </View>
+
+            {/* Mục 5: Hoàn trả tiền cọc cho khách */}
+            <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+              <View style={styles.detailLeft}>
+                <View style={[styles.detailIconBox, { backgroundColor: '#DCFCE7' }]}>
+                  <MaterialIcons name="payments" size={14} color="#15803D" />
+                </View>
+                <Text style={styles.detailLabel}>Hoàn cọc (Tiền mặt):</Text>
+              </View>
+              <Text
+                style={[
+                  styles.feeAmountText,
+                  { color: '#15803D', fontWeight: '800' },
+                ]}
+              >
+                {formatVND(netRefundAmount)}
               </Text>
             </View>
           </View>

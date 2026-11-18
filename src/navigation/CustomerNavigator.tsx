@@ -13,7 +13,9 @@ import {
   Animated,
   StatusBar,
   TextInput,
+  AppState,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatVND } from '../utils/formatters';
@@ -21,7 +23,11 @@ import CustomerSidebar from '../components/customer/CustomerSidebar';
 import MyUnitsDashboardScreen from '../screens/customer/MyUnitsDashboardScreen';
 import UnitDetailManageScreen from '../screens/customer/UnitDetailManageScreen';
 import CreateGuestPinModal from '../components/customer/CreateGuestPinModal';
-import RenewContractModal from '../components/customer/RenewContractModal';
+import ReturnContractModal from '../components/customer/ReturnContractModal';
+import RenewContractModal, {
+  PENDING_RENEWAL_SESSION_KEY,
+  PendingRenewalSession,
+} from '../components/customer/RenewContractModal';
 import UpgradeUnitModal from '../components/customer/UpgradeUnitModal';
 import ReportIssueModal from '../components/customer/ReportIssueModal';
 import ChangePinModal from '../components/customer/ChangePinModal';
@@ -87,6 +93,9 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     setShowReportIssueModal,
     showChangePinModal,
     setShowChangePinModal,
+    showReturnModal,
+    setShowReturnModal,
+    handleReturnSuccess,
     loadCustomerContracts,
     handleGuestPinCreated,
     handleRenewSuccess,
@@ -224,6 +233,51 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
     loadMyReservations();
     customerNotifState.loadNotifications();
   }, [loadCustomerData, loadCustomerContracts, currentUser]);
+
+  // Tự động khôi phục màn hình mã QR gia hạn khi khách hàng thoát ra ứng dụng ngân hàng để quét mã rồi quay lại
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser || !rentedUnits || rentedUnits.length === 0) return;
+
+    const checkAndRestorePendingRenewal = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PENDING_RENEWAL_SESSION_KEY);
+        if (!raw) return;
+        const parsed: PendingRenewalSession = JSON.parse(raw);
+        const isRecent = Date.now() - (parsed.savedAt || 0) < 30 * 60 * 1000;
+        if (!isRecent) {
+          await AsyncStorage.removeItem(PENDING_RENEWAL_SESSION_KEY);
+          return;
+        }
+
+        const matchedUnit =
+          rentedUnits.find(
+            (u) =>
+              (parsed.contractId && String(u.contractId) === String(parsed.contractId)) ||
+              (parsed.unitCode && u.unitCode === parsed.unitCode)
+          ) || rentedUnits[0];
+
+        if (matchedUnit) {
+          setSelectedRentedUnit(matchedUnit);
+          setCustomerTab('my_units');
+          setCustomerNavTab('my_units');
+          setCustomerFlowStep('dashboard');
+          setShowRenewModal(true);
+        }
+      } catch {}
+    };
+
+    checkAndRestorePendingRenewal();
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkAndRestorePendingRenewal();
+      }
+    });
+
+    return () => {
+      appStateSub.remove();
+    };
+  }, [isLoggedIn, currentUser, rentedUnits]);
 
   // Điều hướng thanh dưới đáy & kiểm tra bắt buộc đăng nhập
   const handleNavigateBottomTab = (tab: CustomerTabType) => {
@@ -418,6 +472,8 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             /* TRANG A: Bảng điều khiển Ô kho của tôi (Unit Cards Grid & Smart Lock Control) */
             <MyUnitsDashboardScreen
               units={rentedUnits}
+              selectedUnit={selectedRentedUnit}
+              isRenewModalOpen={showRenewModal}
               onViewDetail={(unit) => {
                 setSelectedRentedUnit(unit);
                 setCustomerFlowStep('detail');
@@ -437,6 +493,10 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               onOpenChangePin={(unit) => {
                 setSelectedRentedUnit(unit);
                 setShowChangePinModal(true);
+              }}
+              onOpenReturn={(unit) => {
+                setSelectedRentedUnit(unit);
+                setShowReturnModal(true);
               }}
               onRentMoreUnits={() => setCustomerTab('book')}
               
@@ -467,6 +527,7 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
               onOpenUpgradeModal={() => setShowUpgradeModal(true)}
               onOpenReportIssueModal={() => setShowReportIssueModal(true)}
               onOpenChangePinModal={() => setShowChangePinModal(true)}
+              onOpenReturnModal={() => setShowReturnModal(true)}
             />
           ) : null
         ) : customerNavTab === 'payments' ? (
@@ -985,6 +1046,14 @@ export default function CustomerNavigator({ onRefreshStaffData }: CustomerNaviga
             onClose={() => setShowChangePinModal(false)}
             unit={selectedRentedUnit}
             onPinChanged={handlePinChanged}
+          />
+
+          {/* Modal 6: Trả Kho & Thanh Lý Hợp Đồng */}
+          <ReturnContractModal
+            visible={showReturnModal}
+            onClose={() => setShowReturnModal(false)}
+            unit={selectedRentedUnit}
+            onReturnSuccess={handleReturnSuccess}
           />
         </>
       )}

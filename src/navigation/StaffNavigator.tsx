@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
-import { View } from 'react-native';
+import { View, AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CheckInQueueScreen from '../screens/staff/CheckInQueueScreen';
 import HandoverDetailScreen from '../screens/staff/HandoverDetailScreen';
 import HandoverSuccessScreen from '../screens/staff/HandoverSuccessScreen';
@@ -64,6 +65,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
     appointments,
     availableUnits,
     selectedAppointment,
+    setSelectedAppointment,
     isStaffLoading,
     isSubmittingHandover,
     showQuickPrintModal,
@@ -89,20 +91,54 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
   const [selectedStaffNotification, setSelectedStaffNotification] = React.useState<any | null>(null);
   const staffNotifState = useNotifications('staff');
 
-  // Mở Trang Home Nhân Viên khi đăng nhập, nhưng nếu đang nghiệm thu trả kho (chuyển qua app ngân hàng quay lại) thì giữ nguyên màn hình Lịch
+  // Khôi phục màn hình bàn giao nhận kho hoặc nghiệm thu trả kho (khi chuyển qua app ngân hàng quay lại hoặc reload)
   useEffect(() => {
-    import('@react-native-async-storage/async-storage')
-      .then(({ default: AsyncStorage }) => AsyncStorage.getItem('active_return_inspection_order_id'))
-      .then((activeOrderId) => {
-        if (activeOrderId) {
+    let isSubscribed = true;
+
+    const restoreActiveState = async () => {
+      try {
+        const savedHandover = await AsyncStorage.getItem('@selfstorage_active_handover');
+        if (savedHandover && isSubscribed) {
+          const parsed = JSON.parse(savedHandover);
+          if (parsed?.appointmentId) {
+            const target = appointments.find((a) => a.id === parsed.appointmentId) || parsed.appointment;
+            if (target) {
+              setSelectedAppointment(target);
+            }
+            setStaffTab('queue');
+            setFlowStep('handover');
+            return;
+          }
+        }
+
+        const activeOrderId = await AsyncStorage.getItem('active_return_inspection_order_id');
+        if (activeOrderId && isSubscribed) {
           setStaffTab('queue');
           setFlowStep('queue');
-        } else {
-          setStaffTab('dashboard');
+          return;
         }
-      })
-      .catch(() => setStaffTab('dashboard'));
-  }, [currentUser?.id]);
+
+        if (isSubscribed) {
+          setStaffTab((prev) => (prev === 'queue' ? 'queue' : 'dashboard'));
+        }
+      } catch {
+        if (isSubscribed) setStaffTab('dashboard');
+      }
+    };
+
+    restoreActiveState();
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        restoreActiveState();
+      }
+    });
+
+    return () => {
+      isSubscribed = false;
+      appStateSub.remove();
+    };
+  }, [currentUser?.id, appointments]);
 
   useEffect(() => {
     loadStaffData();
@@ -156,6 +192,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             onRefresh={loadStaffData}
             isRefreshing={isStaffLoading}
             onOpenSidebar={handleBackToHome}
+            facilityId={dynamicStaffUser.facilityId}
             facilityName={dynamicStaffUser.facilityName}
             onOpenNotifications={() => setShowStaffNotifModal(true)}
             unreadNotifCount={staffNotifState.unreadCount}
@@ -165,7 +202,13 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
           <HandoverDetailScreen
             appointment={selectedAppointment}
             availableUnits={availableUnits}
-            onBackToQueue={() => setFlowStep('queue')}
+            onBackToQueue={() => {
+              AsyncStorage.removeItem('@selfstorage_active_handover').catch(() => null);
+              if (selectedAppointment) {
+                AsyncStorage.removeItem(`@selfstorage_handover_step_${selectedAppointment.id}`).catch(() => null);
+              }
+              setFlowStep('queue');
+            }}
             onCompleteHandover={handleCompleteHandover}
             isSubmitting={isSubmittingHandover}
           />
@@ -192,6 +235,7 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
             onRefresh={loadStaffData}
             isRefreshing={isStaffLoading}
             onOpenSidebar={handleBackToHome}
+            facilityId={dynamicStaffUser.facilityId}
             facilityName={dynamicStaffUser.facilityName}
             onOpenNotifications={() => setShowStaffNotifModal(true)}
             unreadNotifCount={staffNotifState.unreadCount}

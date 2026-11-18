@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Alert, Platform } from 'react-native';
 import { apiRequest, setAuthToken, getAuthToken } from '../api';
 import { saveSession, getSession, clearSession } from '../utils/authStorage';
+import { disconnectSocket } from '../services/socketService';
 import { useAppMode } from './AppModeContext';
 
 export function isStaffRole(user: any): boolean {
@@ -123,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const handleLogout = async () => {
+    disconnectSocket();
     await clearSession();
     setCurrentUser(null);
     setIsLoggedIn(false);

@@ -13,6 +13,7 @@ import {
   Modal,
   RefreshControl,
   StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -71,6 +72,7 @@ export default function CustomerAccountScreen({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [isChangingPass, setIsChangingPass] = useState(false);
   const [passMsg, setPassMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -169,16 +171,28 @@ export default function CustomerAccountScreen({
 
   // Change password
   const handleChangePassword = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setPassMsg({ type: 'error', text: 'Vui lòng điền đầy đủ các trường mật khẩu.' });
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+      const msg = 'Vui lòng điền đầy đủ mật khẩu hiện tại, mật khẩu mới và xác nhận mật khẩu.';
+      setPassMsg({ type: 'error', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Thiếu thông tin', msg);
       return;
     }
     if (newPassword.length < 6) {
-      setPassMsg({ type: 'error', text: 'Mật khẩu mới phải có ít nhất 6 ký tự.' });
+      const msg = 'Mật khẩu mới phải có ít nhất 6 ký tự.';
+      setPassMsg({ type: 'error', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Mật khẩu chưa hợp lệ', msg);
+      return;
+    }
+    if (newPassword === currentPassword) {
+      const msg = 'Mật khẩu mới không được trùng với mật khẩu hiện tại.';
+      setPassMsg({ type: 'error', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Trùng mật khẩu cũ', msg);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPassMsg({ type: 'error', text: 'Mật khẩu xác nhận không khớp với mật khẩu mới.' });
+      const msg = 'Mật khẩu xác nhận không khớp với mật khẩu mới.';
+      setPassMsg({ type: 'error', text: msg });
+      if (Platform.OS !== 'web') Alert.alert('Chưa khớp mật khẩu', msg);
       return;
     }
 
@@ -194,16 +208,28 @@ export default function CustomerAccountScreen({
         }),
       });
 
-      setPassMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
+      setPassMsg({ type: 'success', text: 'Đổi mật khẩu tài khoản thành công!' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Thành công', 'Mật khẩu của bạn đã được cập nhật thành công.');
+      setShowCurrentPass(false);
+      setShowNewPass(false);
+      setShowConfirmPass(false);
+      if (Platform.OS === 'web') {
+        window.alert('Mật khẩu của bạn đã được cập nhật thành công.');
+      } else {
+        Alert.alert('Đổi mật khẩu thành công', 'Mật khẩu đăng nhập của bạn đã được cập nhật.');
+      }
     } catch (err: any) {
+      const errMsg =
+        err?.message || 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu hiện tại.';
       setPassMsg({
         type: 'error',
-        text: err?.message || 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu hiện tại.',
+        text: errMsg,
       });
+      if (Platform.OS !== 'web') {
+        Alert.alert('Không thể đổi mật khẩu', errMsg);
+      }
     } finally {
       setIsChangingPass(false);
     }
@@ -471,6 +497,7 @@ export default function CustomerAccountScreen({
             style={s.settingsItem}
             activeOpacity={0.7}
             onPress={() => {
+              setProfileMsg(null);
               setProfileModalTab('info');
               setShowProfileModal(true);
             }}
@@ -478,7 +505,25 @@ export default function CustomerAccountScreen({
             <View style={s.settingsIconWrap}>
               <MaterialIcons name="person-outline" size={20} color="#334155" />
             </View>
-            <Text style={s.settingsLabel}>Hồ sơ cá nhân & Đổi mật khẩu</Text>
+            <Text style={s.settingsLabel}>Hồ sơ cá nhân</Text>
+            <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
+          </TouchableOpacity>
+
+          <View style={s.settingsDivider} />
+
+          <TouchableOpacity
+            style={s.settingsItem}
+            activeOpacity={0.7}
+            onPress={() => {
+              setPassMsg(null);
+              setProfileModalTab('password');
+              setShowProfileModal(true);
+            }}
+          >
+            <View style={[s.settingsIconWrap, { backgroundColor: '#eff6ff' }]}>
+              <MaterialIcons name="lock-outline" size={20} color="#2563eb" />
+            </View>
+            <Text style={s.settingsLabel}>Đổi mật khẩu tài khoản</Text>
             <MaterialIcons name="chevron-right" size={20} color="#94a3b8" />
           </TouchableOpacity>
 
@@ -565,12 +610,17 @@ export default function CustomerAccountScreen({
         transparent={false}
         onRequestClose={() => setShowProfileModal(false)}
       >
-        <View style={[s.modalSafeArea, { paddingTop: topInset }]}>
+        <KeyboardAvoidingView
+          style={[s.modalSafeArea, { paddingTop: topInset }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={s.modalHeader}>
             <TouchableOpacity onPress={() => setShowProfileModal(false)} style={s.modalBackBtn}>
               <MaterialIcons name="arrow-back-ios" size={18} color="#1e293b" />
             </TouchableOpacity>
-            <Text style={s.modalTitle}>Hồ Sơ & Bảo Mật</Text>
+            <Text style={s.modalTitle}>
+              {profileModalTab === 'password' ? 'Đổi Mật Khẩu Tài Khoản' : 'Hồ Sơ & Bảo Mật'}
+            </Text>
             <View style={{ width: 36 }} />
           </View>
 
@@ -578,8 +628,16 @@ export default function CustomerAccountScreen({
           <View style={s.modalTabsRow}>
             <TouchableOpacity
               style={[s.modalTabBtn, profileModalTab === 'info' && s.modalTabBtnActive]}
-              onPress={() => setProfileModalTab('info')}
+              onPress={() => {
+                setProfileMsg(null);
+                setProfileModalTab('info');
+              }}
             >
+              <MaterialIcons
+                name="person-outline"
+                size={16}
+                color={profileModalTab === 'info' ? '#1d4ed8' : '#64748b'}
+              />
               <Text style={[s.modalTabText, profileModalTab === 'info' && s.modalTabTextActive]}>
                 Thông tin cá nhân
               </Text>
@@ -587,19 +645,36 @@ export default function CustomerAccountScreen({
 
             <TouchableOpacity
               style={[s.modalTabBtn, profileModalTab === 'password' && s.modalTabBtnActive]}
-              onPress={() => setProfileModalTab('password')}
+              onPress={() => {
+                setPassMsg(null);
+                setProfileModalTab('password');
+              }}
             >
+              <MaterialIcons
+                name="lock-outline"
+                size={16}
+                color={profileModalTab === 'password' ? '#1d4ed8' : '#64748b'}
+              />
               <Text style={[s.modalTabText, profileModalTab === 'password' && s.modalTabTextActive]}>
                 Đổi mật khẩu
               </Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={s.modalBody}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {profileModalTab === 'info' ? (
               <View style={s.formCard}>
                 {profileMsg && (
                   <View style={[s.msgBanner, profileMsg.type === 'success' ? s.msgSuccess : s.msgError]}>
+                    <MaterialIcons
+                      name={profileMsg.type === 'success' ? 'check-circle' : 'error-outline'}
+                      size={18}
+                      color={profileMsg.type === 'success' ? '#15803d' : '#b91c1c'}
+                    />
                     <Text style={profileMsg.type === 'success' ? s.msgSuccessText : s.msgErrorText}>
                       {profileMsg.text}
                     </Text>
@@ -608,54 +683,90 @@ export default function CustomerAccountScreen({
 
                 <View style={s.fieldGroup}>
                   <Text style={s.fieldLabel}>Họ và tên</Text>
-                  <TextInput
-                    style={s.input}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    placeholder="Nhập họ và tên"
-                    placeholderTextColor="#94a3b8"
-                  />
+                  <View style={s.inputRow}>
+                    <MaterialIcons name="badge" size={18} color="#64748b" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={s.inputRowText}
+                      value={fullName}
+                      onChangeText={(txt) => {
+                        setFullName(txt);
+                        if (profileMsg) setProfileMsg(null);
+                      }}
+                      placeholder="Nhập họ và tên"
+                      placeholderTextColor="#94a3b8"
+                    />
+                  </View>
                 </View>
 
                 <View style={s.fieldGroup}>
                   <Text style={s.fieldLabel}>Số điện thoại</Text>
-                  <TextInput
-                    style={s.input}
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="Nhập số điện thoại"
-                    placeholderTextColor="#94a3b8"
-                    keyboardType="phone-pad"
-                  />
+                  <View style={s.inputRow}>
+                    <MaterialIcons name="phone" size={18} color="#64748b" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={s.inputRowText}
+                      value={phone}
+                      onChangeText={(txt) => {
+                        setPhone(txt);
+                        if (profileMsg) setProfileMsg(null);
+                      }}
+                      placeholder="Nhập số điện thoại"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="phone-pad"
+                    />
+                  </View>
                 </View>
 
                 <View style={s.fieldGroup}>
-                  <Text style={s.fieldLabel}>Địa chỉ Email</Text>
-                  <TextInput
-                    style={[s.input, s.inputDisabled]}
-                    value={email}
-                    editable={false}
-                  />
-                  <Text style={s.hintText}>Email đăng ký không thể thay đổi</Text>
+                  <Text style={s.fieldLabel}>Địa chỉ Email đăng nhập</Text>
+                  <View style={[s.inputRow, s.inputDisabled]}>
+                    <MaterialIcons name="alternate-email" size={18} color="#94a3b8" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={[s.inputRowText, { color: '#64748b' }]}
+                      value={email}
+                      editable={false}
+                    />
+                  </View>
+                  <Text style={s.hintText}>Email định danh tài khoản không thể thay đổi</Text>
                 </View>
 
                 <TouchableOpacity
                   style={s.submitBtn}
                   onPress={handleUpdateProfile}
                   disabled={isUpdatingProfile}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
                   {isUpdatingProfile ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={s.submitBtnText}>Lưu Thay Đổi</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <MaterialIcons name="save" size={18} color="#ffffff" />
+                      <Text style={s.submitBtnText}>Lưu Thông Tin Hồ Sơ</Text>
+                    </View>
                   )}
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={s.formCard}>
+                {/* Security Info Header Card */}
+                <View style={s.securityNoticeCard}>
+                  <View style={s.securityNoticeIconBox}>
+                    <MaterialIcons name="security" size={22} color="#2563eb" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.securityNoticeTitle}>Bảo mật tài khoản đăng nhập</Text>
+                    <Text style={s.securityNoticeSub}>
+                      Tài khoản: {currentUser?.email || email || 'Khách hàng'}
+                    </Text>
+                  </View>
+                </View>
+
                 {passMsg && (
                   <View style={[s.msgBanner, passMsg.type === 'success' ? s.msgSuccess : s.msgError]}>
+                    <MaterialIcons
+                      name={passMsg.type === 'success' ? 'check-circle' : 'error-outline'}
+                      size={18}
+                      color={passMsg.type === 'success' ? '#15803d' : '#b91c1c'}
+                    />
                     <Text style={passMsg.type === 'success' ? s.msgSuccessText : s.msgErrorText}>
                       {passMsg.text}
                     </Text>
@@ -665,16 +776,28 @@ export default function CustomerAccountScreen({
                 <View style={s.fieldGroup}>
                   <Text style={s.fieldLabel}>Mật khẩu hiện tại</Text>
                   <View style={s.inputRow}>
+                    <MaterialIcons name="lock-outline" size={18} color="#64748b" style={{ marginRight: 8 }} />
                     <TextInput
                       style={s.inputRowText}
                       value={currentPassword}
-                      onChangeText={setCurrentPassword}
-                      placeholder="Nhập mật khẩu hiện tại"
+                      onChangeText={(txt) => {
+                        setCurrentPassword(txt);
+                        if (passMsg) setPassMsg(null);
+                      }}
+                      placeholder="Nhập mật khẩu đang sử dụng"
                       placeholderTextColor="#94a3b8"
                       secureTextEntry={!showCurrentPass}
+                      autoCapitalize="none"
                     />
-                    <TouchableOpacity onPress={() => setShowCurrentPass(!showCurrentPass)}>
-                      <MaterialIcons name={showCurrentPass ? 'visibility-off' : 'visibility'} size={20} color="#94a3b8" />
+                    <TouchableOpacity
+                      onPress={() => setShowCurrentPass(!showCurrentPass)}
+                      style={{ padding: 4 }}
+                    >
+                      <MaterialIcons
+                        name={showCurrentPass ? 'visibility-off' : 'visibility'}
+                        size={20}
+                        color="#64748b"
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -682,49 +805,161 @@ export default function CustomerAccountScreen({
                 <View style={s.fieldGroup}>
                   <Text style={s.fieldLabel}>Mật khẩu mới</Text>
                   <View style={s.inputRow}>
+                    <MaterialIcons name="vpn-key" size={18} color="#64748b" style={{ marginRight: 8 }} />
                     <TextInput
                       style={s.inputRowText}
                       value={newPassword}
-                      onChangeText={setNewPassword}
+                      onChangeText={(txt) => {
+                        setNewPassword(txt);
+                        if (passMsg) setPassMsg(null);
+                      }}
                       placeholder="Tối thiểu 6 ký tự"
                       placeholderTextColor="#94a3b8"
                       secureTextEntry={!showNewPass}
+                      autoCapitalize="none"
                     />
-                    <TouchableOpacity onPress={() => setShowNewPass(!showNewPass)}>
-                      <MaterialIcons name={showNewPass ? 'visibility-off' : 'visibility'} size={20} color="#94a3b8" />
+                    <TouchableOpacity
+                      onPress={() => setShowNewPass(!showNewPass)}
+                      style={{ padding: 4 }}
+                    >
+                      <MaterialIcons
+                        name={showNewPass ? 'visibility-off' : 'visibility'}
+                        size={20}
+                        color="#64748b"
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
 
                 <View style={s.fieldGroup}>
                   <Text style={s.fieldLabel}>Xác nhận mật khẩu mới</Text>
-                  <TextInput
-                    style={s.input}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    placeholder="Nhập lại mật khẩu mới"
-                    placeholderTextColor="#94a3b8"
-                    secureTextEntry
-                  />
+                  <View style={s.inputRow}>
+                    <MaterialIcons name="verified-user" size={18} color="#64748b" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={s.inputRowText}
+                      value={confirmPassword}
+                      onChangeText={(txt) => {
+                        setConfirmPassword(txt);
+                        if (passMsg) setPassMsg(null);
+                      }}
+                      placeholder="Nhập lại mật khẩu mới"
+                      placeholderTextColor="#94a3b8"
+                      secureTextEntry={!showConfirmPass}
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowConfirmPass(!showConfirmPass)}
+                      style={{ padding: 4 }}
+                    >
+                      <MaterialIcons
+                        name={showConfirmPass ? 'visibility-off' : 'visibility'}
+                        size={20}
+                        color="#64748b"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Live Password Validation Checklist */}
+                <View style={s.passChecklistCard}>
+                  <Text style={s.passChecklistHeader}>Tiêu chuẩn mật khẩu mới:</Text>
+                  <View style={s.passCheckItem}>
+                    <MaterialIcons
+                      name={currentPassword.trim().length > 0 ? 'check-circle' : 'radio-button-unchecked'}
+                      size={15}
+                      color={currentPassword.trim().length > 0 ? '#059669' : '#94a3b8'}
+                    />
+                    <Text
+                      style={[
+                        s.passCheckText,
+                        currentPassword.trim().length > 0 && s.passCheckTextDone,
+                      ]}
+                    >
+                      Đã nhập mật khẩu hiện tại
+                    </Text>
+                  </View>
+                  <View style={s.passCheckItem}>
+                    <MaterialIcons
+                      name={newPassword.length >= 6 ? 'check-circle' : 'radio-button-unchecked'}
+                      size={15}
+                      color={newPassword.length >= 6 ? '#059669' : '#94a3b8'}
+                    />
+                    <Text style={[s.passCheckText, newPassword.length >= 6 && s.passCheckTextDone]}>
+                      Độ dài tối thiểu từ 6 ký tự trở lên
+                    </Text>
+                  </View>
+                  <View style={s.passCheckItem}>
+                    <MaterialIcons
+                      name={
+                        newPassword.length > 0 && newPassword !== currentPassword
+                          ? 'check-circle'
+                          : 'radio-button-unchecked'
+                      }
+                      size={15}
+                      color={
+                        newPassword.length > 0 && newPassword !== currentPassword
+                          ? '#059669'
+                          : '#94a3b8'
+                      }
+                    />
+                    <Text
+                      style={[
+                        s.passCheckText,
+                        newPassword.length > 0 &&
+                          newPassword !== currentPassword &&
+                          s.passCheckTextDone,
+                      ]}
+                    >
+                      Mật khẩu mới khác với mật khẩu hiện tại
+                    </Text>
+                  </View>
+                  <View style={s.passCheckItem}>
+                    <MaterialIcons
+                      name={
+                        confirmPassword.length > 0 && newPassword === confirmPassword
+                          ? 'check-circle'
+                          : 'radio-button-unchecked'
+                      }
+                      size={15}
+                      color={
+                        confirmPassword.length > 0 && newPassword === confirmPassword
+                          ? '#059669'
+                          : '#94a3b8'
+                      }
+                    />
+                    <Text
+                      style={[
+                        s.passCheckText,
+                        confirmPassword.length > 0 &&
+                          newPassword === confirmPassword &&
+                          s.passCheckTextDone,
+                      ]}
+                    >
+                      Mật khẩu xác nhận trùng khớp
+                    </Text>
+                  </View>
                 </View>
 
                 <TouchableOpacity
                   style={s.submitBtn}
                   onPress={handleChangePassword}
                   disabled={isChangingPass}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
                   {isChangingPass ? (
                     <ActivityIndicator size="small" color="#ffffff" />
                   ) : (
-                    <Text style={s.submitBtnText}>Đổi Mật Khẩu</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <MaterialIcons name="lock-reset" size={19} color="#ffffff" />
+                      <Text style={s.submitBtnText}>Cập Nhật Mật Khẩu Mới</Text>
+                    </View>
                   )}
                 </TouchableOpacity>
               </View>
             )}
             <View style={{ height: 60 }} />
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL XÁC NHẬN ĐĂNG XUẤT */}
@@ -1208,13 +1443,19 @@ const s = StyleSheet.create({
   },
   modalTabBtn: {
     flex: 1,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
     borderRadius: 12,
     alignItems: 'center',
     backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   modalTabBtnActive: {
     backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
   },
   modalTabText: {
     fontSize: 13,
@@ -1232,23 +1473,84 @@ const s = StyleSheet.create({
   formCard: {
     backgroundColor: '#ffffff',
   },
+  securityNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 18,
+  },
+  securityNoticeIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  securityNoticeTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#1e3a8a',
+  },
+  securityNoticeSub: {
+    fontSize: 11.5,
+    color: '#3b82f6',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  passChecklistCard: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    gap: 8,
+  },
+  passChecklistHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 2,
+  },
+  passCheckItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  passCheckText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  passCheckTextDone: {
+    color: '#047857',
+    fontWeight: '700',
+  },
   fieldGroup: {
     marginBottom: 16,
   },
   fieldLabel: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#475569',
+    color: '#334155',
     marginBottom: 6,
   },
   input: {
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 13,
+    fontSize: 14,
     color: '#1e293b',
   },
   inputDisabled: {
@@ -1259,16 +1561,18 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
     borderRadius: 12,
     paddingHorizontal: 14,
+    minHeight: 48,
   },
   inputRowText: {
     flex: 1,
     paddingVertical: 12,
-    fontSize: 13,
-    color: '#1e293b',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
   },
   hintText: {
     fontSize: 11,
@@ -1280,6 +1584,7 @@ const s = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 12,
   },
   submitBtnText: {
@@ -1288,25 +1593,33 @@ const s = StyleSheet.create({
     fontWeight: '800',
   },
   msgBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     padding: 12,
     borderRadius: 12,
     marginBottom: 16,
+    borderWidth: 1,
   },
   msgSuccess: {
-    backgroundColor: '#dcfce7',
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
   },
   msgSuccessText: {
-    color: '#15803d',
-    fontSize: 12,
-    fontWeight: '600',
+    flex: 1,
+    color: '#047857',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
   msgError: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
   },
   msgErrorText: {
+    flex: 1,
     color: '#b91c1c',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 
   // INVOICE LOOKUP MODAL

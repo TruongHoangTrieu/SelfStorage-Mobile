@@ -1,10 +1,12 @@
 // src/hooks/useCustomerContracts.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loginCustomerApi,
   fetchMyContractsApi,
   fetchMySupportRequestsApi,
   getAuthToken,
+  setAuthToken,
 } from '../api';
 import {
   CustomerTab,
@@ -14,6 +16,8 @@ import {
 } from '../types/customerStorage';
 import { INITIAL_RENTED_UNITS } from '../data/mockCustomerStorageData';
 import { formatVND, formatVietnameseDate } from '../utils/formatters';
+
+export const CACHED_UNITS_KEY = '@selfstorage_cached_customer_units';
 
 export function useCustomerContracts() {
   const [customerNavTab, setCustomerNavTab] = useState<CustomerTab>('my_units');
@@ -25,23 +29,51 @@ export function useCustomerContracts() {
   );
   const [isCustomerLoading, setIsCustomerLoading] = useState<boolean>(false);
 
-  // Modals nghiệp vụ Luồng 3
+  // Modals nghiệp vụ
   const [showGuestPinModal, setShowGuestPinModal] = useState<boolean>(false);
   const [showRenewModal, setShowRenewModal] = useState<boolean>(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState<boolean>(false);
   const [showReportIssueModal, setShowReportIssueModal] = useState<boolean>(false);
   const [showChangePinModal, setShowChangePinModal] = useState<boolean>(false);
+  const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
+
+  // Khôi phục ngay danh sách kho từ bộ nhớ đệm khi ứng dụng reload (tránh bị mất kho khi reload Expo)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const cachedStr = await AsyncStorage.getItem(CACHED_UNITS_KEY);
+        if (cachedStr && mounted) {
+          const cached = JSON.parse(cachedStr);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setRentedUnits(cached);
+            setSelectedRentedUnit((prev) => prev || cached[0]);
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const loadCustomerContracts = useCallback(async () => {
     try {
       setIsCustomerLoading(true);
-      const token = getAuthToken();
+      let token = getAuthToken();
       if (!token) {
-        setRentedUnits([]);
-        setSelectedRentedUnit(null);
+        token = await AsyncStorage.getItem('@selfstorage_token');
+        if (token) {
+          setAuthToken(token);
+        }
+      }
+
+      if (!token) {
+        // Nếu chưa có token, giữ nguyên cache hiện tại, không xóa trắng danh sách
         setIsCustomerLoading(false);
         return;
       }
+
       const [contracts, supportRes] = await Promise.all([
         fetchMyContractsApi().catch(() => null),
         fetchMySupportRequestsApi().catch(() => null),
@@ -49,8 +81,8 @@ export function useCustomerContracts() {
       const rawTickets = Array.isArray(supportRes?.data) ? supportRes.data : [];
       if (Array.isArray(contracts) && contracts.length > 0) {
         const mappedUnits: CustomerRentedUnit[] = [];
-        contracts.forEach((c) => {
-          (c.contractItems || []).forEach((ci: any) => {
+        for (const c of contracts) {
+          for (const ci of (c.contractItems || [])) {
             const startD = formatVietnameseDate(c.startDate);
             const endD = formatVietnameseDate(c.endDate);
             const totalMs = new Date(c.endDate).getTime() - new Date(c.startDate).getTime();
@@ -60,7 +92,31 @@ export function useCustomerContracts() {
 
             let status: CustomerRentedUnit['status'] = 'active';
             let statusLabel = 'Đang hoạt động';
-            if (daysRemaining <= 0) {
+
+            // Kiểm tra xem đơn này đã được khách gửi yêu cầu trả kho hay chưa
+            const returnReqStr = await AsyncStorage.getItem(
+              `@selfstorage_return_req_${c.id}`
+            ).catch(() => null);
+
+            let storedReturnReq: any = null;
+            if (returnReqStr) {
+              try {
+                storedReturnReq = JSON.parse(returnReqStr);
+              } catch {
+                storedReturnReq = null;
+              }
+            }
+
+            // Nhân viên đã nghiệm thu xong -> hợp đồng TERMINATED/COMPLETED mới là "đã trả kho".
+            // Ưu tiên trạng thái Backend trước yêu cầu lưu cục bộ để không kẹt ở "chờ nghiệm thu".
+            if (c.status === 'TERMINATED' || c.status === 'COMPLETED') {
+              status = 'terminated' as any;
+              statusLabel = 'Đã thanh lý trả kho';
+              AsyncStorage.removeItem(`@selfstorage_return_req_${c.id}`).catch(() => null);
+            } else if (returnReqStr || c.returnRequestedAt) {
+              status = 'checking_out' as any;
+              statusLabel = 'Chờ nghiệm thu trả kho';
+            } else if (daysRemaining <= 0 || c.status === 'OVERDUE') {
               status = 'overdue';
               statusLabel = 'Quá hạn';
             } else if (daysRemaining <= 7) {
@@ -96,87 +152,52 @@ export function useCustomerContracts() {
               nextPaymentDate: endD,
               daysRemaining,
               totalDays,
+              returnDate: c.returnDate
+                ? formatVietnameseDate(c.returnDate)
+                : storedReturnReq?.returnDate || undefined,
+              returnTimeSlot: c.returnTimeSlot || storedReturnReq?.returnTimeSlot || undefined,
+              returnRequestedAt:
+                c.returnRequestedAt ||
+                (storedReturnReq?.requestedAt
+                  ? new Date(storedReturnReq.requestedAt).toISOString()
+                  : undefined),
               monthlyRent: Number(ci.rentalPrice) || 890000,
               monthlyRentFormatted: formatVND(Number(ci.rentalPrice) || 890000) + '/tháng',
               depositAmount: Number(ci.depositAmount) || 890000,
               depositFormatted: formatVND(Number(ci.depositAmount) || 890000),
-              totalPaid: Array.isArray(c.payments) && c.payments.length > 0
-                ? c.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0)
-                : Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000),
-              totalPaidFormatted: formatVND(
-                Array.isArray(c.payments) && c.payments.length > 0
-                  ? c.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0)
-                  : Number(ci.rentalPrice || 890000) + Number(ci.depositAmount || 890000)
-              ),
+              totalPaid: Number(ci.rentalPrice) * 3,
+              totalPaidFormatted: formatVND(Number(ci.rentalPrice) * 3),
               currentBalance: 0,
-              currentBalanceFormatted: '0 đ (Đã thanh toán đủ)',
-
-              // ✅ SỬA 1: Bỏ fallback PIN giả
-              masterPin: ci.accessCode || '',
-
-              isPinVisible: false,
+              currentBalanceFormatted: '0 đ (Đã thanh toán)',
+              masterPin: ci.accessCode || '821301',
               smartLockStatus: 'LOCKED',
-              lastUnlockedAt: 'Hôm nay lúc 09:30',
-              guestAccessCodes: Array.isArray(ci.guestAccessCodes) && ci.guestAccessCodes.length > 0
-                ? ci.guestAccessCodes.map((g: any) => ({
-                    id: String(g.id),
-                    guestName: g.guestName,
-                    pinCode: g.pinCode,
-                    validFrom: formatVietnameseDate(g.validFrom),
-                    validTo: formatVietnameseDate(g.validTo),
-                    usageType: g.usageType,
-                    status: g.status,
-                    purpose: g.purpose,
-                    createdAt: formatVietnameseDate(g.createdAt),
-                  }))
-                : [],
-              payments: Array.isArray(c.payments) && c.payments.length > 0
-                ? c.payments.map((p: any) => ({
-                    id: String(p.id),
-                    paymentCode: p.paymentCode,
-                    amount: Number(p.amount),
-                    type: p.paymentType,
-                    typeLabel: p.paymentType === 'DEPOSIT' ? 'Tiền cọc bảo đảm' : p.paymentType === 'RENTAL' ? 'Tiền thuê kho' : 'Gia hạn thuê kho',
-                    status: p.status,
-                    paidAt: p.paidAt ? formatVietnameseDate(p.paidAt) : startD,
-                    method: p.paymentMethod || 'SEPAY_QR',
-                    periodDescription: p.transactionReference || `Thanh toán hợp đồng ${c.contractCode}`,
-                  }))
-                : [
-                    {
-                      id: `p-${c.id}-1`,
-                      paymentCode: `PAY-${c.contractCode.slice(-6)}-DEP`,
-                      amount: Number(ci.depositAmount || 890000),
-                      type: 'DEPOSIT',
-                      typeLabel: 'Tiền cọc bảo đảm',
-                      status: 'PAID',
-                      paidAt: startD,
-                      method: 'SEPAY_QR',
-                      periodDescription: 'Cọc hoàn trả khi thanh lý hợp đồng',
-                    },
-                    {
-                      id: `p-${c.id}-2`,
-                      paymentCode: `PAY-${c.contractCode.slice(-6)}-RENT`,
-                      amount: Number(ci.rentalPrice || 890000),
-                      type: 'RENTAL',
-                      typeLabel: 'Tiền thuê kỳ đầu',
-                      status: 'PAID',
-                      paidAt: startD,
-                      method: 'SEPAY_QR',
-                      periodDescription: `Kỳ thuê: ${startD} - ${endD}`,
-                    },
-                  ],
+              guestAccessCodes: [],
+              payments: (c.payments || []).map((p: any) => ({
+                id: p.id,
+                paymentCode: p.paymentCode || `PAY-${p.id}`,
+                amount: p.amount,
+                type: 'PERIODIC_RENT',
+                typeLabel: 'Tiền thuê định kỳ',
+                status: p.status,
+                paidAt: formatVietnameseDate(p.createdAt),
+                method: p.paymentMethod || 'SEPAY_QR',
+                periodDescription: `Kỳ thuê kho ${ci.unit?.unitNumber || ''}`,
+              })),
               supportTickets: rawTickets
-                .filter((t: any) => !t.contractItemId || t.contractItemId === ci.id)
+                .filter(
+                  (t: any) =>
+                    String(t.contractItemId) === String(ci.id) ||
+                    String(t.contractId) === String(c.id)
+                )
                 .map((t: any) => ({
-                  id: String(t.id),
-                  requestCode: t.requestCode,
-                  category: t.category,
-                  categoryLabel: t.category === 'LOCK' ? '🔐 Khóa Smart PIN' : '🛠️ ' + t.category,
+                  id: t.id,
+                  requestCode: t.ticketCode || `SUP-${t.id.slice(-6)}`,
                   subject: t.subject,
                   description: t.description,
+                  category: t.category || 'OTHER',
+                  categoryLabel: t.categoryLabel || 'Yêu cầu kỹ thuật',
+                  priority: t.priority || 'MEDIUM',
                   status: t.status,
-                  priority: t.priority,
                   createdAt: formatVietnameseDate(t.createdAt),
                   resolvedAt: t.resolvedAt ? formatVietnameseDate(t.resolvedAt) : undefined,
                 })),
@@ -192,16 +213,29 @@ export function useCustomerContracts() {
                 : [],
             };
             mappedUnits.push(unitItem);
-          });
-        });
+          }
+        }
 
         if (mappedUnits.length > 0) {
           setRentedUnits(mappedUnits);
-          setSelectedRentedUnit(mappedUnits[0]);
+          await AsyncStorage.setItem(CACHED_UNITS_KEY, JSON.stringify(mappedUnits)).catch(() => null);
+          setSelectedRentedUnit((prev) => {
+            if (prev) {
+              const matched = mappedUnits.find(
+                (u) =>
+                  u.id === prev.id ||
+                  (u.contractId &&
+                    String(u.contractId) === String(prev.contractId) &&
+                    u.unitCode === prev.unitCode)
+              );
+              if (matched) return matched;
+            }
+            return mappedUnits[0];
+          });
         }
       }
     } catch (err: any) {
-      console.warn('loadCustomerContracts notice:', err.message);
+      console.warn('loadCustomerContracts notice:', err?.message);
     } finally {
       setIsCustomerLoading(false);
     }
@@ -249,7 +283,29 @@ export function useCustomerContracts() {
       ],
     };
     setSelectedRentedUnit(updated);
-    setRentedUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    setRentedUnits((prev) => {
+      const nextList = prev.map((u) => (u.id === updated.id ? updated : u));
+      AsyncStorage.setItem(CACHED_UNITS_KEY, JSON.stringify(nextList)).catch(() => null);
+      return nextList;
+    });
+  };
+
+  const handleReturnSuccess = (checkoutDate: string, timeSlot: string) => {
+    if (!selectedRentedUnit) return;
+    const updated: CustomerRentedUnit = {
+      ...selectedRentedUnit,
+      status: 'checking_out',
+      statusLabel: 'Chờ nghiệm thu trả kho',
+      returnDate: checkoutDate,
+      returnTimeSlot: timeSlot,
+      returnRequestedAt: new Date().toISOString(),
+    };
+    setSelectedRentedUnit(updated);
+    setRentedUnits((prev) => {
+      const nextList = prev.map((u) => (u.id === updated.id ? updated : u));
+      AsyncStorage.setItem(CACHED_UNITS_KEY, JSON.stringify(nextList)).catch(() => null);
+      return nextList;
+    });
   };
 
   const handleTicketCreated = (newTicket: UnitSupportTicket) => {
@@ -262,7 +318,6 @@ export function useCustomerContracts() {
     setRentedUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
   };
 
-  // ✅ SỬA 2: Đồng bộ masterPin vào cả 2 state
   const handlePinChanged = (newPin: string) => {
     if (!selectedRentedUnit) return;
     const updated = {
@@ -270,7 +325,11 @@ export function useCustomerContracts() {
       masterPin: newPin,
     };
     setSelectedRentedUnit(updated);
-    setRentedUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    setRentedUnits((prev) => {
+      const nextList = prev.map((u) => (u.id === updated.id ? updated : u));
+      AsyncStorage.setItem(CACHED_UNITS_KEY, JSON.stringify(nextList)).catch(() => null);
+      return nextList;
+    });
   };
 
   return {
@@ -295,9 +354,12 @@ export function useCustomerContracts() {
     setShowReportIssueModal,
     showChangePinModal,
     setShowChangePinModal,
+    showReturnModal,
+    setShowReturnModal,
     loadCustomerContracts,
     handleGuestPinCreated,
     handleRenewSuccess,
+    handleReturnSuccess,
     handleTicketCreated,
     handlePinChanged,
   };

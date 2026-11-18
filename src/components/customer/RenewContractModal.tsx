@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,11 +10,37 @@ import {
   Platform,
   Image,
   Alert,
+  AppState,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
-import { renewContractApi, apiRequest, checkPaymentCodeStatusApi } from '../../api';
+import {
+  renewContractApi,
+  checkPaymentCodeStatusApi,
+  createRenewalPaymentSessionApi,
+} from '../../api';
+
+export const PENDING_RENEWAL_SESSION_KEY = '@selfstorage_pending_renewal';
+
+export interface PendingRenewalSession {
+  unitId: string;
+  contractId: string;
+  unitCode: string;
+  selectedMonths: number;
+  paymentMethod: 'sepay_qr' | 'bank_transfer';
+  paymentCode?: string;
+  qrCodeUrl?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  transferContent?: string;
+  amount?: number;
+  sessionNonce: string;
+  sessionStartTime: number;
+  savedAt: number;
+}
 
 interface RenewContractModalProps {
   visible: boolean;
@@ -62,73 +88,180 @@ export default function RenewContractModal({
   );
   const sessionStartTimeRef = useRef<number>(Date.now());
 
-  // Thông tin thanh toán SePay VietQR
-  const bankName = 'MBBank';
-  const accountNumber = '0838500046';
-  const accountName = 'TRUONG DINH LONG';
+  // Thông tin thanh toán SePay VietQR (Tạo phiên trực tiếp trên Backend API)
+  const [qrPaymentInfo, setQrPaymentInfo] = useState<{
+    paymentCode: string;
+    qrCodeUrl: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    transferContent: string;
+    amount: number;
+  } | null>(null);
 
-  // Mã nội dung chuyển khoản gia hạn kèm nonce phiên
+  const defaultBankName = 'MBBank';
+  const defaultAccountNumber = '0838500046';
+  const defaultAccountName = 'TRUONG DINH LONG';
+
+  // Mã nội dung chuyển khoản gia hạn mặc định nếu chưa lấy được phiên backend
   const cleanUnitCode = (unit.unitCode || 'UNIT').replace(/[^A-Za-z0-9]/g, '');
-  const transferContent = `SSREN${cleanUnitCode}${selectedMonths}T${sessionNonce}`;
+  const fallbackTransferContent = `SSREN${cleanUnitCode}${selectedMonths}T${sessionNonce}`;
 
-  // URL VietQR tạo mã QR chuẩn
-  const qrCodeUrl = `https://img.vietqr.io/image/MB-0838500046-compact2.png?amount=${netRent}&addInfo=${encodeURIComponent(
-    transferContent
-  )}&accountName=${encodeURIComponent(accountName)}`;
+  const transferContent = qrPaymentInfo?.transferContent || fallbackTransferContent;
+  const qrCodeUrl =
+    qrPaymentInfo?.qrCodeUrl ||
+    `https://img.vietqr.io/image/MB-0838500046-compact2.png?amount=${netRent}&addInfo=${encodeURIComponent(
+      transferContent
+    )}&accountName=${encodeURIComponent(defaultAccountName)}`;
+  const bankName = qrPaymentInfo?.bankName || defaultBankName;
+  const accountNumber = qrPaymentInfo?.accountNumber || defaultAccountNumber;
+  const accountName = qrPaymentInfo?.accountName || defaultAccountName;
 
   // Tự động lắng nghe định kỳ khi ở bước quét QR
   const pollTimerRef = useRef<any>(null);
   const isCheckingRef = useRef<boolean>(false);
+  const [lastCheckedText, setLastCheckedText] = useState<string>('Đang tự động kiểm tra giao dịch...');
+
+  const clearPendingRenewalSession = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(PENDING_RENEWAL_SESSION_KEY);
+    } catch {}
+  }, []);
+
+  // Khôi phục phiên thanh toán QR đang chờ nếu khách vừa thoát ra app ngân hàng rồi quay lại
+  useEffect(() => {
+    if (!visible || !unit) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PENDING_RENEWAL_SESSION_KEY);
+        if (!raw || !mounted) return;
+        const parsed: PendingRenewalSession = JSON.parse(raw);
+        const isSameUnit =
+          (parsed.contractId && String(parsed.contractId) === String(unit.contractId)) ||
+          (parsed.unitCode && parsed.unitCode === unit.unitCode);
+        const isRecent = Date.now() - (parsed.savedAt || 0) < 30 * 60 * 1000;
+        if (isSameUnit && isRecent && (parsed.paymentCode || parsed.sessionNonce)) {
+          setSelectedMonths(parsed.selectedMonths || 3);
+          setPaymentMethod(parsed.paymentMethod || 'sepay_qr');
+          setSessionNonce(parsed.sessionNonce || '');
+          sessionStartTimeRef.current = parsed.sessionStartTime || parsed.savedAt || Date.now();
+          if (parsed.paymentCode && parsed.transferContent) {
+            setQrPaymentInfo({
+              paymentCode: parsed.paymentCode,
+              qrCodeUrl: parsed.qrCodeUrl || '',
+              bankName: parsed.bankName || defaultBankName,
+              accountNumber: parsed.accountNumber || defaultAccountNumber,
+              accountName: parsed.accountName || defaultAccountName,
+              transferContent: parsed.transferContent,
+              amount: parsed.amount || netRent,
+            });
+          }
+          setPaymentSuccess(false);
+          setStep('payment');
+        }
+      } catch {}
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [visible, unit?.contractId, unit?.unitCode]);
+
+  const checkPaymentNow = useCallback(async () => {
+    if (!visible || step !== 'payment' || paymentSuccess || isCheckingRef.current) return;
+    isCheckingRef.current = true;
+    try {
+      const res = await checkPaymentCodeStatusApi(
+        transferContent,
+        netRent,
+        sessionStartTimeRef.current
+      );
+      const nowTimeStr = new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setLastCheckedText(`Đã kiểm tra lúc ${nowTimeStr} • Đang chờ ngân hàng xác nhận`);
+
+      if (res && res.isPaid) {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        setPaymentSuccess(true);
+        await clearPendingRenewalSession();
+
+        // Đảm bảo contract được cập nhật trên backend
+        if (unit.contractId) {
+          await renewContractApi(
+            unit.contractId,
+            selectedMonths,
+            paymentMethod,
+            transferContent
+          ).catch(() => null);
+        }
+
+        if (Platform.OS === 'web') {
+          window.alert('Thanh toán gia hạn thành công!');
+        } else {
+          Alert.alert(
+            'Gia hạn thành công',
+            `Hệ thống đã nhận thanh toán cho mã ${transferContent}. Hợp đồng kho ${unit.unitCode} đã được gia hạn đến ngày ${newEndDate}.`
+          );
+        }
+        onRenewSuccess(selectedMonths, newEndDate);
+        setStep('select');
+        setIsSubmitting(false);
+        setPaymentSuccess(false);
+        onClose();
+      }
+    } catch {
+      // Lỗi mạng tạm thời khi chuyển đổi app, tiếp tục chờ lần kiểm tra kế tiếp
+    } finally {
+      isCheckingRef.current = false;
+    }
+  }, [
+    visible,
+    step,
+    paymentSuccess,
+    transferContent,
+    netRent,
+    unit.contractId,
+    unit.unitCode,
+    selectedMonths,
+    paymentMethod,
+    newEndDate,
+    clearPendingRenewalSession,
+    onRenewSuccess,
+    onClose,
+  ]);
 
   useEffect(() => {
     if (visible && step === 'payment' && !paymentSuccess) {
-      const checkPayment = async () => {
-        if (isCheckingRef.current) return;
-        isCheckingRef.current = true;
-        try {
-          const res = await checkPaymentCodeStatusApi(
-            transferContent,
-            netRent,
-            sessionStartTimeRef.current
-          );
-          if (res && res.isPaid) {
-            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            setPaymentSuccess(true);
+      // Kiểm tra ngay lập tức khi mở lại màn hình QR
+      const initialTimer = setTimeout(() => {
+        checkPaymentNow();
+      }, 600);
 
-            // Đảm bảo contract được cập nhật trên backend
-            if (unit.contractId) {
-              await renewContractApi(
-                unit.contractId,
-                selectedMonths,
-                paymentMethod,
-                transferContent
-              ).catch(() => null);
-            }
+      pollTimerRef.current = setInterval(checkPaymentNow, 2500);
 
-            if (Platform.OS === 'web') {
-              window.alert('Thanh toán gia hạn thành công!');
-            } else {
-              Alert.alert('Thành công', 'Thanh toán gia hạn thành công!');
-            }
-            onRenewSuccess(selectedMonths, newEndDate);
-            handleSafeClose();
-          }
-        } catch {
-          // Lỗi mạng trong quá trình polling, không ngắt luồng
-        } finally {
-          isCheckingRef.current = false;
+      // Lắng nghe sự kiện khách hàng chuyển từ app ngân hàng quay lại ứng dụng
+      const appStateSub = AppState.addEventListener('change', (nextState) => {
+        if (nextState === 'active') {
+          setLastCheckedText('Đang đồng bộ giao dịch từ ngân hàng...');
+          checkPaymentNow();
         }
-      };
+      });
 
-      // Đợi 2.5s sau khi mở QR mới bắt đầu polling để khách kịp quét mã
-      pollTimerRef.current = setInterval(checkPayment, 2500);
+      return () => {
+        clearTimeout(initialTimer);
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        appStateSub.remove();
+      };
     } else {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     }
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [visible, step, paymentSuccess, transferContent, netRent, selectedMonths, newEndDate, unit.contractId, paymentMethod]);
+  }, [visible, step, paymentSuccess, checkPaymentNow]);
 
   // Sao chép clipboard
   const handleCopy = (text: string, label: string) => {
@@ -144,8 +277,9 @@ export default function RenewContractModal({
     }
   };
 
-  // Đóng modal và reset trạng thái
-  const handleSafeClose = () => {
+  // Đóng modal và xóa phiên chờ thanh toán khi người dùng chủ động đóng
+  const handleSafeClose = async () => {
+    await clearPendingRenewalSession();
     setStep('select');
     setIsSubmitting(false);
     setPaymentSuccess(false);
@@ -153,13 +287,85 @@ export default function RenewContractModal({
     onClose();
   };
 
-  // Chuyển sang bước quét QR (sinh nonce mới và ghi nhận thời gian bắt đầu phiên)
-  const handleProceedToPayment = () => {
+  // Chặn thao tác vuốt cạnh màn hình Android vô tình làm mất màn hình QR khi chuyển sang app ngân hàng
+  const handleRequestClose = () => {
+    if (step === 'payment' && !paymentSuccess) {
+      if (Platform.OS === 'web') {
+        if (window.confirm('Bạn đang ở màn hình chờ thanh toán QR. Bạn có chắc muốn hủy phiên thanh toán này không?')) {
+          handleSafeClose();
+        }
+      } else {
+        Alert.alert(
+          'Đang chờ thanh toán QR',
+          'Bạn đang trong phiên quét mã QR gia hạn. Nếu bạn vừa chuyển sang ứng dụng ngân hàng, hãy chọn "Tiếp tục chờ QR" để hệ thống tự động xác nhận.',
+          [
+            { text: 'Tiếp tục chờ QR', style: 'cancel', onPress: () => checkPaymentNow() },
+            { text: 'Hủy phiên QR', style: 'destructive', onPress: () => handleSafeClose() },
+          ]
+        );
+      }
+      return;
+    }
+    handleSafeClose();
+  };
+
+  // Chuyển sang bước quét QR (gọi API Backend để đăng ký phiên Payment PENDING, lưu vào AsyncStorage)
+  const handleProceedToPayment = async () => {
+    setIsSubmitting(true);
     const newNonce = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const startTime = Date.now();
     setSessionNonce(newNonce);
-    sessionStartTimeRef.current = Date.now();
-    setStep('payment');
+    sessionStartTimeRef.current = startTime;
     setPaymentSuccess(false);
+
+    try {
+      const session = await createRenewalPaymentSessionApi({
+        contractId: unit.contractId,
+        unitCode: unit.unitCode,
+        amount: netRent,
+        months: selectedMonths,
+      });
+
+      setQrPaymentInfo(session);
+
+      const sessionData: PendingRenewalSession = {
+        unitId: String(unit.unitId || unit.id || ''),
+        contractId: String(unit.contractId || ''),
+        unitCode: unit.unitCode || '',
+        selectedMonths,
+        paymentMethod,
+        paymentCode: session.paymentCode,
+        qrCodeUrl: session.qrCodeUrl,
+        bankName: session.bankName,
+        accountNumber: session.accountNumber,
+        accountName: session.accountName,
+        transferContent: session.transferContent,
+        amount: session.amount,
+        sessionNonce: newNonce,
+        sessionStartTime: startTime,
+        savedAt: startTime,
+      };
+
+      await AsyncStorage.setItem(PENDING_RENEWAL_SESSION_KEY, JSON.stringify(sessionData));
+      setStep('payment');
+    } catch (err: any) {
+      console.warn('Lỗi tạo phiên thanh toán gia hạn:', err?.message);
+      // Fallback cục bộ nếu lỗi mạng
+      const sessionData: PendingRenewalSession = {
+        unitId: String(unit.unitId || unit.id || ''),
+        contractId: String(unit.contractId || ''),
+        unitCode: unit.unitCode || '',
+        selectedMonths,
+        paymentMethod,
+        sessionNonce: newNonce,
+        sessionStartTime: startTime,
+        savedAt: startTime,
+      };
+      await AsyncStorage.setItem(PENDING_RENEWAL_SESSION_KEY, JSON.stringify(sessionData)).catch(() => null);
+      setStep('payment');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Xác nhận gia hạn thành công khi người dùng bấm nút thủ công
@@ -216,7 +422,7 @@ export default function RenewContractModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleSafeClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleRequestClose}>
       <View style={styles.backdrop}>
         <View style={styles.modalCard}>
           {/* Header */}
@@ -232,7 +438,7 @@ export default function RenewContractModal({
                 Ô kho {unit.unitCode} • {unit.unitName}
               </Text>
             </View>
-            <TouchableOpacity onPress={handleSafeClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleRequestClose} style={styles.closeBtn} activeOpacity={0.7}>
               <MaterialIcons name="close" size={18} color="#64748B" />
             </TouchableOpacity>
           </View>
@@ -370,9 +576,9 @@ export default function RenewContractModal({
               <View style={styles.listeningBanner}>
                 <ActivityIndicator size="small" color="#2563EB" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.listeningTitle}>Chờ nhận chuyển khoản</Text>
+                  <Text style={styles.listeningTitle}>Đang giữ phiên chờ thanh toán tự động</Text>
                   <Text style={styles.listeningSub}>
-                    Hệ thống tự động cập nhật hợp đồng sau khi nhận thanh toán.
+                    {lastCheckedText}. Bạn có thể chuyển sang ứng dụng ngân hàng để quét mã và quay lại đây.
                   </Text>
                 </View>
               </View>
@@ -514,11 +720,14 @@ export default function RenewContractModal({
 
                 <TouchableOpacity
                   style={styles.backBtn}
-                  onPress={() => setStep('select')}
+                  onPress={async () => {
+                    await clearPendingRenewalSession();
+                    setStep('select');
+                  }}
                   disabled={isSubmitting}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.backBtnText}>Quay lại</Text>
+                  <Text style={styles.backBtnText}>Quay lại chọn thời hạn</Text>
                 </TouchableOpacity>
               </View>
             )}

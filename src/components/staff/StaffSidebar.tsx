@@ -221,26 +221,8 @@ export default function StaffSidebar({
             )}
           </ScrollView>
 
-          {/* Footer: Chuyển vai trò & Version */}
+          {/* Footer: Đăng xuất & Version */}
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.switchModeBtn}
-              onPress={() => {
-                onClose();
-                onSwitchToCustomer();
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.switchIconCircle}>
-                <MaterialIcons name="swap-horiz" size={18} color="#38BDF8" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchModeTitle}>Chuyển sang Khách hàng</Text>
-                <Text style={styles.switchModeSubtitle}>Đăng xuất & Về trang chủ</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={18} color="#64748B" />
-            </TouchableOpacity>
-
             {onLogout && (
               <TouchableOpacity
                 style={styles.logoutBtn}

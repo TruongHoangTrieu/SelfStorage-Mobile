@@ -10,7 +10,12 @@ export type CustomerTab =
   | 'support'      // 🎧 Hỗ trợ & Trợ giúp (Luồng 7)
   | 'profile';     // 👤 Hồ sơ & Cài đặt
 
-export type UnitRentalStatus = 'active' | 'expiring_soon' | 'overdue' | 'terminated';
+export type UnitRentalStatus =
+  | 'active'
+  | 'expiring_soon'
+  | 'overdue'
+  | 'checking_out'
+  | 'terminated';
 
 export interface GuestAccessCode {
   id: string;
@@ -103,6 +108,11 @@ export interface CustomerRentedUnit {
   nextPaymentDate: string;     // Ngày thanh toán tiếp theo
   daysRemaining: number;       // Số ngày còn lại
   totalDays: number;           // Tổng số ngày trong kỳ hạn
+
+  // Lịch hẹn trả kho khách đã đăng ký
+  returnDate?: string;         // 06/11/2026
+  returnTimeSlot?: string;     // 10:00 - 11:00
+  returnRequestedAt?: string;
   
   // Tài chính
   monthlyRent: number;         // 890000

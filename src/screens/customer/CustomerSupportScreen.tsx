@@ -22,6 +22,7 @@ import { CustomerRentedUnit } from '../../types/customerStorage';
 import CustomerBottomNavBar, { CustomerTabType } from '../../components/customer/CustomerBottomNavBar';
 import {
   fetchMySupportRequestsApi,
+  getSupportRequestDetailApi,
   createSupportRequestApi,
   addTicketNoteApi,
 } from '../../api';
@@ -138,9 +139,9 @@ export default function CustomerSupportScreen({
 
 
   const [category, setCategory] = useState<string>('LOCK');
-  const [subject, setSubject] = useState<string>('');
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState<boolean>(false);
   const [description, setDescription] = useState<string>('');
-  const [formErrors, setFormErrors] = useState<{ subject?: string; description?: string }>({});
+  const [formErrors, setFormErrors] = useState<{ description?: string }>({});
   const [priority, setPriority] = useState<string>('HIGH');
   const [supportPhotos, setSupportPhotos] = useState<CapturedPhoto[]>([]);
   const [isCapturingPhoto, setIsCapturingPhoto] = useState<boolean>(false);
@@ -197,44 +198,76 @@ export default function CustomerSupportScreen({
     let isMounted = true;
     let activeSocket: any = null;
 
+    const handleConnect = () => {
+      if (isMounted) loadTickets(true);
+    };
+
+    const handleCreated = (newTicket: any) => {
+      if (!newTicket) return;
+      if (
+        currentUser?.id &&
+        newTicket.customerId &&
+        String(newTicket.customerId) !== String(currentUser.id)
+      ) {
+        return;
+      }
+      setTickets((prev) => {
+        if (prev.some((t) => String(t.id) === String(newTicket.id))) return prev;
+        return [newTicket, ...prev];
+      });
+      loadTickets(true);
+    };
+
+    const handleUpdated = (updatedTicket: any) => {
+      if (!updatedTicket) return;
+      setTickets((prev) =>
+        prev.map((t) =>
+          String(t.id) === String(updatedTicket.id) ? { ...t, ...updatedTicket } : t
+        )
+      );
+      setSelectedTicket((prev: any) =>
+        prev && String(prev.id) === String(updatedTicket.id)
+          ? { ...prev, ...updatedTicket }
+          : prev
+      );
+      loadTickets(true);
+    };
+
+    const handleNoteAdded = (payload: { ticketId: string; log: any }) => {
+      if (!payload?.ticketId) return;
+      const targetId = String(payload.ticketId);
+      setTickets((prev) =>
+        prev.map((t) => {
+          if (String(t.id) !== targetId) return t;
+          const currentLogs = t.logs || [];
+          if (payload.log?.id && currentLogs.some((l: any) => String(l.id) === String(payload.log.id))) {
+            return t;
+          }
+          return payload.log ? { ...t, logs: [...currentLogs, payload.log] } : t;
+        })
+      );
+      setSelectedTicket((prev: any) => {
+        if (prev && String(prev.id) === targetId) {
+          const currentLogs = prev.logs || [];
+          if (!currentLogs.some((l: any) => payload.log?.id && String(l.id) === String(payload.log.id))) {
+            return {
+              ...prev,
+              logs: payload.log ? [...currentLogs, payload.log] : currentLogs,
+            };
+          }
+        }
+        return prev;
+      });
+      loadTickets(true);
+    };
+
     const initSocket = async () => {
       try {
         const socket = await getSocket();
         if (!isMounted || !socket) return;
         activeSocket = socket;
 
-        const handleCreated = (newTicket: any) => {
-          setTickets((prev) => {
-            if (prev.some((t) => t.id === newTicket.id)) return prev;
-            return [newTicket, ...prev];
-          });
-        };
-
-        const handleUpdated = (updatedTicket: any) => {
-          setTickets((prev) =>
-            prev.map((t) => (t.id === updatedTicket.id ? { ...t, ...updatedTicket } : t))
-          );
-          setSelectedTicket((prev: any) =>
-            prev && prev.id === updatedTicket.id ? { ...prev, ...updatedTicket } : prev
-          );
-        };
-
-        const handleNoteAdded = (payload: { ticketId: string; log: any }) => {
-          setSelectedTicket((prev: any) => {
-            if (prev && prev.id === payload.ticketId) {
-              const currentLogs = prev.logs || [];
-              if (!currentLogs.some((l: any) => l.id === payload.log?.id)) {
-                return {
-                  ...prev,
-                  logs: [...currentLogs, payload.log],
-                };
-              }
-            }
-            return prev;
-          });
-          loadTickets();
-        };
-
+        socket.on('connect', handleConnect);
         socket.on('support_ticket_created', handleCreated);
         socket.on('support_ticket_updated', handleUpdated);
         socket.on('support_ticket_note_added', handleNoteAdded);
@@ -246,22 +279,23 @@ export default function CustomerSupportScreen({
     initSocket();
     const syncInterval = setInterval(() => {
       loadTickets(true);
-    }, 3000);
+    }, 5000);
 
     return () => {
       clearInterval(syncInterval);
       isMounted = false;
       if (activeSocket) {
-        activeSocket.off('support_ticket_created');
-        activeSocket.off('support_ticket_updated');
-        activeSocket.off('support_ticket_note_added');
+        activeSocket.off('connect', handleConnect);
+        activeSocket.off('support_ticket_created', handleCreated);
+        activeSocket.off('support_ticket_updated', handleUpdated);
+        activeSocket.off('support_ticket_note_added', handleNoteAdded);
       }
     };
-  }, [loadTickets]);
+  }, [loadTickets, currentUser?.id]);
 
   // Tạo phiếu mới
   const handleCreateTicket = async () => {
-    const errs: { subject?: string; description?: string } = {};
+    const errs: { description?: string } = {};
     if (!description.trim()) {
       errs.description = 'Vui lòng nhập mô tả chi tiết sự cố';
     }
@@ -274,6 +308,11 @@ export default function CustomerSupportScreen({
     setIsSubmitting(true);
     try {
       const matchedUnit = units.find((u) => u.unitCode === selectedUnitCode) || units[0];
+      const selectedCatLabel =
+        categories.find((c) => c.id === category)?.label || 'Yêu cầu hỗ trợ kỹ thuật';
+      const autoSubject = selectedUnitCode
+        ? `${selectedCatLabel} (Ô #${selectedUnitCode})`
+        : selectedCatLabel;
 
       // Upload ảnh lên Cloudinary nếu có cấu hình (hoặc fallback Base64 / URI)
       let uploadedPhotoUrls: string[] = [];
@@ -288,14 +327,14 @@ export default function CustomerSupportScreen({
         facilityId: matchedUnit?.facilityId || '6ac4ea732f3017f8106ae7a6',
         contractItemId: matchedUnit?.contractItemId,
         category,
-        subject: subject.trim() || `Sự cố ô kho #${selectedUnitCode || 'Chung'}`,
+        subject: autoSubject,
         description: description.trim(),
         priority,
         photos: uploadedPhotoUrls,
       });
 
       setShowCreateModal(false);
-      setSubject('');
+      setIsCategoryDropdownOpen(false);
       setDescription('');
       setSupportPhotos([]);
       setFormErrors({});
@@ -307,26 +346,60 @@ export default function CustomerSupportScreen({
     }
   };
 
+  // Mở chi tiết phiếu & tải đầy đủ nhật ký phản hồi (GET /support/requests/:id)
+  const handleSelectTicket = async (ticket: any) => {
+    setSelectedTicket(ticket);
+    try {
+      const detail = await getSupportRequestDetailApi(String(ticket.id)).catch(() => null);
+      if (detail && detail.id) {
+        setSelectedTicket((prev: any) =>
+          prev && String(prev.id) === String(detail.id) ? { ...prev, ...detail } : detail
+        );
+      }
+    } catch {
+      // Giữ dữ liệu hiện có nếu không tải được chi tiết
+    }
+  };
+
   // Gửi phản hồi vào phiếu
   const handleSendReply = async () => {
-    if (!replyText.trim() || !selectedTicket) return;
+    const trimmed = replyText.trim();
+    if (!trimmed || !selectedTicket) return;
     setIsSendingReply(true);
     try {
-      await addTicketNoteApi(selectedTicket.id, replyText.trim());
+      const res: any = await addTicketNoteApi(selectedTicket.id, trimmed);
+      const newLog = res?.log || {
+        id: `temp-${Date.now()}`,
+        userId: currentUser?.id,
+        note: trimmed,
+        createdAt: new Date().toISOString(),
+        user: {
+          id: currentUser?.id,
+          fullName: currentUser?.fullName || 'Bạn',
+        },
+      };
       setReplyText('');
-      // Cập nhật log cục bộ
-      setSelectedTicket((prev: any) => ({
-        ...prev,
-        notes: [
-          ...(prev?.notes || []),
-          {
-            content: replyText.trim(),
-            author: 'Khách hàng',
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }));
-      loadTickets();
+      // Cập nhật logs cục bộ ngay lập tức (tránh bị notes cũ che khuất)
+      setSelectedTicket((prev: any) => {
+        if (!prev) return prev;
+        const currentLogs = prev.logs || [];
+        if (newLog?.id && currentLogs.some((l: any) => String(l.id) === String(newLog.id))) {
+          return prev;
+        }
+        return {
+          ...prev,
+          logs: [...currentLogs, newLog],
+          notes: [
+            ...(prev?.notes || []),
+            {
+              content: trimmed,
+              author: currentUser?.fullName || 'Bạn',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        };
+      });
+      loadTickets(true);
     } catch (err: any) {
       console.warn('Không thể gửi phản hồi:', err?.message || err);
     } finally {
@@ -346,11 +419,15 @@ export default function CustomerSupportScreen({
   };
 
   const categories = [
-    { id: 'LOCK', label: 'Khóa PIN' },
-    { id: 'UNIT', label: 'Thiết bị kho' },
-    { id: 'DAMAGE', label: 'Thấm dột' },
-    { id: 'OTHER', label: 'Khác' },
+    { id: 'LOCK', label: 'Sự cố khóa thông minh Smart Lock / Kẹt chốt hoặc không mở được cửa kho' },
+    { id: 'ACCESS_CODE', label: 'Quên mã PIN mở cửa' },
+    { id: 'UNIT', label: 'Hư hỏng thiết bị buồng kho (đèn chiếu sáng, điều hòa, nhiệt độ, độ ẩm)' },
+    { id: 'DAMAGE', label: 'Thấm dột nước, rò rỉ, ẩm mốc hoặc hư hại kết cấu vách / sàn kho' },
+    { id: 'PAYMENT', label: 'Thắc mắc thanh toán, hóa đơn, gia hạn hợp đồng hoặc hoàn tiền cọc' },
+    { id: 'OTHER', label: 'Yêu cầu hỗ trợ khác ' },
   ];
+  const selectedCategoryLabel =
+    categories.find((c) => c.id === category)?.label || categories[0].label;
 
   const faqs = [
     {
@@ -528,7 +605,7 @@ export default function CustomerSupportScreen({
               <TouchableOpacity
                 key={t.id}
                 style={s.ticketCard}
-                onPress={() => setSelectedTicket(t)}
+                onPress={() => handleSelectTicket(t)}
                 activeOpacity={0.8}
               >
                 <View style={s.ticketCardTop}>
@@ -690,38 +767,64 @@ export default function CustomerSupportScreen({
               </View>
             )}
 
-            {/* Chọn loại sự cố */}
+            {/* Chọn loại sự cố (Dropdown chi tiết) */}
             <Text style={s.modalLabel}>Loại sự cố:</Text>
-            <View style={s.categoryRow}>
-              {categories.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[s.categoryChip, category === c.id && s.categoryChipActive]}
-                  onPress={() => setCategory(c.id)}
-                >
-                  <Text
-                    style={[s.categoryChipText, category === c.id && s.categoryChipTextActive]}
-                  >
-                    {c.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Tiêu đề */}
-            <Text style={s.modalLabel}>Tiêu đề:</Text>
-            <TextInput
-              style={[s.modalInput, formErrors.subject && s.inputErrorBorder]}
-              value={subject}
-              onFocus={() => setIsUnitDropdownOpen(false)}
-              onChangeText={(text) => {
-                setSubject(text);
-                if (formErrors.subject) setFormErrors((prev) => ({ ...prev, subject: undefined }));
+            <TouchableOpacity
+              style={s.dropdownBox}
+              onPress={() => {
+                setIsUnitDropdownOpen(false);
+                setIsCategoryDropdownOpen(!isCategoryDropdownOpen);
               }}
-              placeholder="VD: Không mở được khóa, kẹt chốt..."
-            />
-            {formErrors.subject && (
-              <Text style={s.inputErrorText}>{formErrors.subject}</Text>
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <MaterialIcons name="report-problem" size={18} color={T.primary} />
+                <Text style={s.dropdownSelectedText} numberOfLines={2}>
+                  {selectedCategoryLabel}
+                </Text>
+              </View>
+              <MaterialIcons
+                name={isCategoryDropdownOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+                size={22}
+                color={T.textMuted}
+              />
+            </TouchableOpacity>
+
+            {isCategoryDropdownOpen && (
+              <View style={s.dropdownMenu}>
+                <ScrollView
+                  style={{ maxHeight: 190 }}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={false}
+                >
+                  {categories.map((c) => {
+                    const isSelected = category === c.id;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[s.dropdownItem, isSelected && s.dropdownItemActive]}
+                        onPress={() => {
+                          setCategory(c.id);
+                          setIsCategoryDropdownOpen(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            s.dropdownItemText,
+                            { flex: 1, paddingRight: 8 },
+                            isSelected && s.dropdownItemTextActive,
+                          ]}
+                        >
+                          {c.label}
+                        </Text>
+                        {isSelected && (
+                          <MaterialIcons name="check" size={16} color={T.primary} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
             )}
 
             {/* Mô tả chi tiết */}
@@ -729,11 +832,14 @@ export default function CustomerSupportScreen({
             <TextInput
               style={[
                 s.modalInput,
-                { height: 75, textAlignVertical: 'top' },
+                { height: 95, textAlignVertical: 'top' },
                 formErrors.description && s.inputErrorBorder,
               ]}
               value={description}
-              onFocus={() => setIsUnitDropdownOpen(false)}
+              onFocus={() => {
+                setIsUnitDropdownOpen(false);
+                setIsCategoryDropdownOpen(false);
+              }}
               onChangeText={(text) => {
                 setDescription(text);
                 if (formErrors.description) setFormErrors((prev) => ({ ...prev, description: undefined }));

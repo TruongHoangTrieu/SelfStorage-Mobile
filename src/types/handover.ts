@@ -95,9 +95,14 @@ export interface StaffReturnOrder {
   appointmentDate?: string;
   appointmentDateRaw?: string;
   endDate: string;
-  status: 'ACTIVE' | 'OVERDUE' | 'TERMINATED' | 'EXPIRED';
+  // Khách đăng ký trả kho: ngày & khung giờ nhân viên cần có mặt để nghiệm thu
+  returnDate?: string;
+  returnTimeSlot?: string;
+  returnRequestedAt?: string;
+  status: 'ACTIVE' | 'OVERDUE' | 'TERMINATED' | 'COMPLETED' | 'EXPIRED';
   returnType: 'today' | 'early' | 'overdue' | 'completed';
-  depositAmount: number; // Tiền cọc ban đầu (đã cấn trừ trực tiếp vào tiền thuê phòng khi nhận kho)
+  monthlyRent?: number;
+  depositAmount: number; // Tiền cọc bảo đảm hợp đồng (hoàn lại chủ yếu bằng tiền mặt khi trả kho)
   unpaidFees: number;
   overdueDays: number;
   overdueFine: number;

@@ -4,6 +4,7 @@ export interface CheckInEligibilityResult {
   allowed: boolean;
   reason?: string;
   isTooEarly?: boolean;
+  isLateWarning?: boolean;
   isTooLate?: boolean;
   diffMinutes?: number;
 }
@@ -81,10 +82,10 @@ export function parseAppointmentDateTime(app: CheckInAppointment | any): Date | 
 }
 
 /**
- * Kiểm tra quy định nhận kho trên Mobile:
+ * Kiểm tra quy định nhận kho (đồng bộ Web FE):
  * - Cho nhận kho trước giờ hẹn tối đa 1 tiếng (60 phút).
- * - Cho nhận kho trễ nhất 3 tiếng (180 phút).
- * - Trước hoặc sau khung giờ đó: Nút nhận kho bị xám và không nhận được.
+ * - Trễ từ > 15 phút đến <= 24 giờ: Vẫn cho nhận kho (cảnh báo trễ hẹn, hỗ trợ dời lịch).
+ * - Trễ quá 24 giờ (> 1440 phút): Khóa nhận kho, yêu cầu liên hệ khách dời lịch hoặc báo vắng giải phóng kho.
  */
 export function checkCheckInEligibility(app?: CheckInAppointment | any): CheckInEligibilityResult {
   if (!app) return { allowed: false, reason: 'Không có dữ liệu cuộc hẹn' };
@@ -99,7 +100,7 @@ export function checkCheckInEligibility(app?: CheckInAppointment | any): CheckIn
     return {
       allowed: false,
       isTooLate: true,
-      reason: 'Đơn đặt chỗ đã quá hạn nhận kho (> 3 tiếng)',
+      reason: 'Đơn đặt chỗ đã quá hạn nhận kho (> 24 giờ)',
     };
   }
 
@@ -133,17 +134,26 @@ export function checkCheckInEligibility(app?: CheckInAppointment | any): CheckIn
     };
   }
 
-  // 2. Trễ quá 3 tiếng (180 phút) -> Nút xám, không được nhận
-  if (diffMinutes > 180) {
+  // 2. Trễ quá 24 giờ (1440 phút) -> Khóa nhận kho, đồng bộ Web FE
+  if (diffMinutes > 1440) {
     return {
       allowed: false,
       isTooLate: true,
       diffMinutes,
-      reason: 'Đã quá hạn nhận kho (quá 3 tiếng so với lịch hẹn). Vui lòng liên hệ Quản lý để phê duyệt mở lại.',
+      reason: 'Đơn trễ quá 24 giờ (Quá hạn). Nút nhận kho đã bị khóa. Vui lòng liên hệ khách để dời lịch hẹn hoặc báo vắng giải phóng kho.',
     };
   }
 
-  // 3. Trong khung giờ hợp lệ: Từ trước 1 tiếng đến trễ tối đa 3 tiếng
+  // 3. Trễ nhẹ (> 15 phút đến <= 24 giờ) -> Vẫn cho phép nhận kho nhưng đánh dấu trễ hẹn
+  if (diffMinutes > 15) {
+    return {
+      allowed: true,
+      isLateWarning: true,
+      diffMinutes,
+    };
+  }
+
+  // 4. Trong khung giờ hợp lệ
   return { allowed: true, diffMinutes };
 }
 

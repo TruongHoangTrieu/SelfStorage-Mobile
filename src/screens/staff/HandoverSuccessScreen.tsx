@@ -87,7 +87,7 @@ export default function HandoverSuccessScreen({
         {/* Tiêu đề */}
         <Text style={styles.headline}>
           {isEditing || appointment.status === 'completed'
-            ? 'Hoàn Tất Chỉnh Sửa'
+            ? 'Hoàn Tất'
             : 'Bàn Giao Kho Thành Công'}
         </Text>
         <Text style={styles.subheadline}>
@@ -180,32 +180,12 @@ export default function HandoverSuccessScreen({
             <Text style={styles.infoValue}>{appointment.phone}</Text>
           </View>
 
-          <View style={styles.infoRow}>
-            <View style={styles.infoLabelGroup}>
-              <MaterialIcons name="meeting-room" size={16} color={T.textMuted} />
-              <Text style={styles.infoLabel}>Loại diện tích:</Text>
-            </View>
-            <Text style={styles.infoValue}>
-              {appointment.unitType || 'Kho mini'} ({appointment.unitSize || '5m²'})
-            </Text>
-          </View>
-
-          <View style={styles.infoRow}>
+          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
             <View style={styles.infoLabelGroup}>
               <MaterialIcons name="date-range" size={16} color={T.textMuted} />
               <Text style={styles.infoLabel}>Thời hạn thuê:</Text>
             </View>
             <Text style={styles.infoValue}>{appointment.durationMonths || 1} tháng</Text>
-          </View>
-
-          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-            <View style={styles.infoLabelGroup}>
-              <MaterialIcons name="circle" size={8} color={T.emerald} />
-              <Text style={styles.infoLabel}>Trạng thái kho:</Text>
-            </View>
-            <View style={styles.activeTag}>
-              <Text style={styles.activeTagText}>ĐANG LƯU KHO</Text>
-            </View>
           </View>
         </View>
 
@@ -430,7 +410,8 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 10,
     paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -439,6 +420,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   infoLabel: {
     fontSize: 12,
@@ -446,6 +428,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   infoValue: {
+    flex: 1,
+    flexShrink: 1,
+    textAlign: 'right',
     fontSize: 12,
     color: '#0F172A',
     fontWeight: '600',

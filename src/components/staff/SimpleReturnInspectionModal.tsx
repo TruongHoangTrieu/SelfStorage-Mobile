@@ -28,6 +28,7 @@ import {
   createSurchargePaymentApi,
   checkPaymentCodeStatusApi,
   fetchFeeTypesApi,
+  fetchOverduePolicyApi,
   checkContractSurchargeStatusApi,
 } from '../../api';
 import { formatVND } from '../../utils/formatters';
@@ -62,6 +63,31 @@ const BE_UNIT_PIN_MAP: Record<string, string> = {
   'VNG-MINI-03': '673418',
 };
 
+// Chuẩn hóa giờ về dạng 24h
+function to24hFormat(timeStr?: string): string {
+  if (!timeStr) return '';
+  const clean = timeStr.trim();
+  if (clean.includes('-')) {
+    return clean
+      .split('-')
+      .map((p) => to24hFormat(p.trim()))
+      .join(' - ');
+  }
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(SA|CH|AM|PM)?$/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = match[2];
+    const period = (match[3] || '').toUpperCase();
+    if (period === 'CH' || period === 'PM') {
+      if (h < 12) h += 12;
+    } else if (period === 'SA' || period === 'AM') {
+      if (h === 12) h = 0;
+    }
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+  return clean;
+}
+
 export default function SimpleReturnInspectionModal({
   visible,
   onClose,
@@ -73,14 +99,17 @@ export default function SimpleReturnInspectionModal({
   const [conditionText, setConditionText] = useState<string>(
     'Kho sạch sẽ, nguyên vẹn không trầy xước'
   );
+  const [oldSmartPin, setOldSmartPin] = useState<string>('');
   const [newSmartPin, setNewSmartPin] = useState<string>('');
   const [returnPhotos, setReturnPhotos] = useState<CapturedPhoto[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Danh mục phụ thu lấy từ Backend (do Facility Manager cấu hình)
   const [surchargeList, setSurchargeList] = useState<SurchargeItem[]>(DEFAULT_SURCHARGE_ITEMS);
-  // Đơn giá phạt trễ hẹn mỗi ngày do Manager quy định (mặc định 50k/ngày, tối đa 30 ngày)
+  // Đơn giá phạt & chính sách ân hạn từ Operations Manager
   const [lateFeePerDay, setLateFeePerDay] = useState<number>(50000);
+  const [gracePeriodDays, setGracePeriodDays] = useState<number>(7);
+  const [dailyFinePercent, setDailyFinePercent] = useState<number>(1.5);
 
   // Thông tin thanh toán SePay VietQR động
   const [sepayPayment, setSepayPayment] = useState<{
@@ -104,6 +133,10 @@ export default function SimpleReturnInspectionModal({
   // Thanh toán phụ thu
   const [paymentMethod, setPaymentMethod] = useState<'qr' | 'cash'>('qr');
   const [isSurchargePaid, setIsSurchargePaid] = useState<boolean>(false);
+
+  // Hoàn trả tiền cọc lúc trả kho (chủ yếu bằng tiền mặt tại quầy)
+  const [refundMethod, setRefundMethod] = useState<'cash' | 'transfer'>('cash');
+  const [isRefundConfirmed, setIsRefundConfirmed] = useState<boolean>(false);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
@@ -147,6 +180,14 @@ export default function SimpleReturnInspectionModal({
 
     if (visible) {
       loadFeeTypes();
+      fetchOverduePolicyApi()
+        .then((pol) => {
+          if (isMounted && pol) {
+            setGracePeriodDays(pol.gracePeriodDays);
+            setDailyFinePercent(pol.dailyFinePercent);
+          }
+        })
+        .catch(() => null);
     }
     return () => {
       isMounted = false;
@@ -170,15 +211,20 @@ export default function SimpleReturnInspectionModal({
         }
       })
       .catch(() => null);
-    const isAlreadyDone = order.status === 'TERMINATED' || order.returnType === 'completed';
+    const isAlreadyDone = order.status === 'TERMINATED' || order.status === 'COMPLETED' || order.returnType === 'completed';
 
     setItemsCleared(true);
     setSmartLockChecked(true);
     setConditionText(order.returnCondition || 'Kho sạch sẽ, nguyên vẹn không trầy xước');
 
-    // 1. Lấy đúng mã PIN hiện tại của ô kho từ DB (tuyệt đối KHÔNG sinh ngẫu nhiên khi mở modal)
+    // 1. Lấy đúng mã PIN hiện tại (mã cũ) của ô kho từ DB
     const defaultDbPin = order.smartLockPin || BE_UNIT_PIN_MAP[order.unitCode] || '821301';
-    setNewSmartPin(defaultDbPin);
+    setOldSmartPin(defaultDbPin);
+    if (isAlreadyDone) {
+      setNewSmartPin(order.smartLockPin || defaultDbPin);
+    } else {
+      setNewSmartPin('');
+    }
 
     // 1.1. Cấu hình biểu phí phạt theo từng loại kho (Unit Type):
     // Kho Mini (<6m²): 50.000 đ/ngày trễ, 50k vệ sinh, 100k hư hại
@@ -246,7 +292,7 @@ export default function SimpleReturnInspectionModal({
       .then((savedPin) => {
         if (!isMounted) return;
         if (savedPin && savedPin.trim().length >= 4) {
-          setNewSmartPin(savedPin.trim());
+          setOldSmartPin(savedPin.trim());
         } else {
           // Đồng bộ mã PIN và ảnh lúc nhận kho từ API Backend
           getContractForCheckOutApi(order.id)
@@ -254,7 +300,7 @@ export default function SimpleReturnInspectionModal({
               if (!isMounted) return;
               const bePin = beData?.units?.[0]?.accessCode;
               if (bePin && String(bePin).trim().length >= 4) {
-                setNewSmartPin(String(bePin).trim());
+                setOldSmartPin(String(bePin).trim());
               }
               const beCheckInPhotos = beData?.units?.[0]?.checkInInspection?.photos;
               if (Array.isArray(beCheckInPhotos) && beCheckInPhotos.length > 0) {
@@ -282,6 +328,8 @@ export default function SimpleReturnInspectionModal({
     setPreviewImage(null);
     setPaymentMethod('qr');
     setIsSurchargePaid(isAlreadyDone);
+    setRefundMethod('cash');
+    setIsRefundConfirmed(isAlreadyDone);
     setSepayPayment(null);
     sessionStartRef.current = Date.now();
 
@@ -330,7 +378,7 @@ export default function SimpleReturnInspectionModal({
     };
   }, [order?.id, order?.unitCode]);
 
-  const isCompleted = order ? (order.status === 'TERMINATED' || order.returnType === 'completed') : false;
+  const isCompleted = order ? (order.status === 'TERMINATED' || order.status === 'COMPLETED' || order.returnType === 'completed') : false;
 
   // Danh sách ảnh lúc nhận kho (trước khi thuê) từ hệ thống bàn giao
   const [beforePhotos, setBeforePhotos] = useState<string[]>(order?.handoverPhotos || []);
@@ -345,10 +393,23 @@ export default function SimpleReturnInspectionModal({
     ? parseInt(customSurchargeAmount.replace(/\D/g, '') || '0', 10)
     : 0;
 
-  // Tính số ngày trễ hẹn (tối đa 30 ngày trước khi thanh lý kho) & tiền phạt trễ hẹn theo đơn giá Manager quy định
-  const effectiveOverdueDays = Math.min(order?.overdueDays || 0, 30);
-  const calculatedOverdueFine = effectiveOverdueDays * lateFeePerDay;
+  // Tính số ngày trễ hẹn thực tế: MỖI ngày trễ đều bị phạt theo % Ops Manager đặt;
+  // gracePeriodDays là số ngày tối đa trước khi hợp đồng chuyển sang Thanh lý kho
+  const rawOverdueDays = Math.min(order?.overdueDays || 0, 30);
+  const effectiveOverdueDays = rawOverdueDays;
+  const isWithinPreLiquidation = rawOverdueDays > 0 && rawOverdueDays <= gracePeriodDays;
+  const isOverLiquidationLimit = rawOverdueDays > gracePeriodDays;
+  const effectiveDailyFine =
+    order?.monthlyRent && order.monthlyRent > 0
+      ? Math.round(order.monthlyRent * (dailyFinePercent / 100))
+      : lateFeePerDay;
+  const calculatedOverdueFine = effectiveOverdueDays * effectiveDailyFine;
   const totalSurcharge = checkedBaseAmount + customAmountNum + calculatedOverdueFine;
+
+  // Tiền cọc bảo đảm hợp đồng (hoàn trả khi thanh lý trả kho, cấn trừ phụ phí nếu có)
+  const depositAmount = order?.depositAmount || 1000000;
+  const netRefundAmount = Math.max(0, depositAmount - totalSurcharge);
+  const remainingSurchargeToCollect = Math.max(0, totalSurcharge - depositAmount);
 
   // Cấu hình tài khoản ngân hàng thụ hưởng VietQR
   const bankCode = process.env.EXPO_PUBLIC_SEPAY_BANK_CODE || 'MBBank';
@@ -584,21 +645,53 @@ export default function SimpleReturnInspectionModal({
     setReturnPhotos((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // Kiểm tra tính hợp lệ của mã PIN mới (phải đúng 6 chữ số và khác mã cũ)
+  const isPinValid =
+    isCompleted ||
+    (newSmartPin.trim().length === 6 &&
+      /^\d{6}$/.test(newSmartPin.trim()) &&
+      newSmartPin.trim() !== oldSmartPin.trim());
+
   // Xác nhận trả kho & đổi mật khẩu khóa
   const handleConfirmCheckout = async () => {
     if (!order) return;
     try {
-      if (newSmartPin.trim().length < 4) {
-        Alert.alert('Mã PIN chưa hợp lệ', 'Vui lòng nhập mã PIN khóa kho ít nhất 4 - 6 số.');
+      if (!isPinValid) {
+        if (!newSmartPin.trim()) {
+          Alert.alert(
+            'Chưa đổi mã PIN mới',
+            'Vui lòng nhập hoặc bấm "Tạo mã ngẫu nhiên" để đổi mã PIN mới (6 chữ số) cho ô kho trước khi hoàn tất nghiệm thu.'
+          );
+        } else if (newSmartPin.trim().length !== 6) {
+          Alert.alert(
+            'Mã PIN chưa đủ 6 số',
+            `Mã PIN khóa kho quy định phải gồm đúng 6 chữ số (hiện có ${newSmartPin.trim().length}/6 số).`
+          );
+        } else if (newSmartPin.trim() === oldSmartPin.trim()) {
+          Alert.alert(
+            'Mã PIN chưa thay đổi',
+            `Mã PIN mới không được trùng với mã PIN hiện tại của khách (${oldSmartPin}). Vui lòng tạo hoặc nhập mã khác để thu hồi quyền truy cập.`
+          );
+        }
         return;
       }
 
-      if (totalSurcharge > 0 && !isSurchargePaid) {
+      if (remainingSurchargeToCollect > 0 && !isSurchargePaid && !isCompleted) {
         Alert.alert(
           'Chưa xác nhận thanh toán phụ thu',
-          `Vui lòng xác nhận khách đã thanh toán phụ thu ${formatVND(
-            totalSurcharge
-          )} (qua QR hoặc tiền mặt) trước khi hoàn tất nghiệm thu.`
+          `Khoản phụ thu vượt quá tiền cọc ${formatVND(
+            remainingSurchargeToCollect
+          )}. Vui lòng xác nhận khách đã nộp phần chênh lệch này (qua QR hoặc tiền mặt) trước khi hoàn tất nghiệm thu.`
+        );
+        return;
+      }
+
+      if (netRefundAmount > 0 && !isRefundConfirmed && !isCompleted) {
+        Alert.alert(
+          'Chưa xác nhận hoàn trả tiền cọc',
+          `Vui lòng kiểm đếm và hoàn trả ${formatVND(
+            netRefundAmount
+          )} tiền cọc (${refundMethod === 'cash' ? 'tiền mặt tại quầy' : 'chuyển khoản'}) cho khách trước khi hoàn tất nghiệm thu.`
         );
         return;
       }
@@ -630,41 +723,54 @@ export default function SimpleReturnInspectionModal({
         : '';
       const combinedSurcharges = [overdueDetail, surchargeDetails].filter(Boolean).join(', ');
 
-      const checkoutNote = `Nghiệm thu trả kho hoàn tất. Mã PIN mới: ${newSmartPin}.${
+      const refundNoteText = netRefundAmount > 0
+        ? ` Hoàn cọc: ${formatVND(netRefundAmount)} (${refundMethod === 'cash' ? 'Tiền mặt tại quầy' : 'Chuyển khoản'}).`
+        : ' Tiền cọc đã cấn trừ hết vào phụ phí.';
+
+      const checkoutNote = `Nghiệm thu trả kho hoàn tất. Mã PIN cũ: ${oldSmartPin} -> Mã PIN mới: ${newSmartPin}.${
         totalSurcharge > 0
-          ? ` Phụ phí: ${formatVND(totalSurcharge)} [${combinedSurcharges}] - HT: ${
-              paymentMethod === 'qr' ? 'VietQR' : 'Tiền mặt'
-            } (Đã thu).`
+          ? ` Phụ phí: ${formatVND(totalSurcharge)} [${combinedSurcharges}].`
           : ' Không phát sinh phụ phí.'
-      }`;
+      }${refundNoteText}`;
 
       // Gửi yêu cầu check-out lên Backend
-      await performCheckOutApi({
-        contractId: order.id,
-        condition: conditionText,
-        notes: checkoutNote,
-        photos: uploadedPhotoUrls,
-        actualOverdueDays: effectiveOverdueDays,
-        actualOverdueFine: calculatedOverdueFine,
-        damageFineAmount: totalSurcharge,
-        actualRefundAmount: 0,
-        targetUnitStatus: 'AVAILABLE',
-      }).catch((err) => {
-        console.warn('API performCheckOut fallback:', err.message);
-      });
-
       const cleanPin = newSmartPin.trim();
+      const isMongoContract = /^[a-f\d]{24}$/i.test(String(order.id || ''));
+      try {
+        await performCheckOutApi({
+          contractId: order.id,
+          condition: conditionText,
+          notes: checkoutNote,
+          photos: uploadedPhotoUrls,
+          actualOverdueDays: effectiveOverdueDays,
+          actualOverdueFine: calculatedOverdueFine,
+          damageFineAmount: totalSurcharge,
+          damageFee: totalSurcharge,
+          refundDeposit: true,
+          refundAmount: netRefundAmount,
+          actualRefundAmount: netRefundAmount,
+          paymentMethod: refundMethod === 'cash' ? 'CASH' : 'BANK_TRANSFER',
+          newAccessCode: cleanPin,
+          targetUnitStatus: 'AVAILABLE',
+        });
+      } catch (err: any) {
+        if (isMongoContract) {
+          throw err;
+        }
+        console.warn('API performCheckOut fallback (mock contract):', err?.message);
+      }
       // Chỉ lưu mã PIN mới khi nhân viên bấm Xác nhận hoàn tất nghiệm thu
       await AsyncStorage.setItem(`unit_smart_pin_${order.unitCode}`, cleanPin).catch(() => null);
       await AsyncStorage.removeItem(`active_surcharge_session_${order.id}`).catch(() => null);
 
       const updatedOrder: StaffReturnOrder = {
         ...order,
-        status: 'TERMINATED',
+        status: 'COMPLETED',
         returnType: 'completed',
         smartLockPin: cleanPin,
         overdueFine: calculatedOverdueFine,
         extraChargesTotal: totalSurcharge,
+        estimatedRefund: netRefundAmount,
         returnPhotos:
           uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : returnPhotos.map((p) => p.uri),
         returnCondition: conditionText,
@@ -673,7 +779,10 @@ export default function SimpleReturnInspectionModal({
       onSuccess(updatedOrder);
       onClose();
 
-      const successMsg = `Đã nghiệm thu trả kho #${order.unitCode} và đổi mã PIN mới [${newSmartPin}] thành công!`;
+      const refundMsgPart = netRefundAmount > 0
+        ? ` Đã hoàn ${formatVND(netRefundAmount)} tiền cọc (${refundMethod === 'cash' ? 'tiền mặt' : 'chuyển khoản'}).`
+        : '';
+      const successMsg = `Đã nghiệm thu trả kho #${order.unitCode} và đổi mã PIN mới [${newSmartPin}] thành công!${refundMsgPart}`;
       if (Platform.OS === 'web') {
         window.alert(successMsg);
       } else {
@@ -735,6 +844,17 @@ export default function SimpleReturnInspectionModal({
                 {order.customerName} • {order.phone}
               </Text>
             </View>
+
+            {/* Lịch hẹn trả kho khách đã đăng ký */}
+            {order.returnDate ? (
+              <View style={styles.appointmentRow}>
+                <MaterialIcons name="event-available" size={16} color="#1D4ED8" />
+                <Text style={styles.appointmentText}>
+                  Lịch hẹn trả kho: {order.returnTimeSlot ? `${to24hFormat(order.returnTimeSlot)} · ` : ''}
+                  {order.returnDate}
+                </Text>
+              </View>
+            ) : null}
 
             {/* ─── 1. ẢNH LÚC NHẬN KHO BAN ĐẦU (LỚN LÊN, NẾU KHÔNG CÓ THÌ BÁO CHƯA CHỤP) ─── */}
             <View style={styles.sectionHeaderRow}>
@@ -839,28 +959,113 @@ export default function SimpleReturnInspectionModal({
               </View>
             ) : null}
 
-            {/* ─── 3. MÃ PIN KHÓA KHO CỦA KHÁCH HÀNG (TỪ BACKEND) - ĐỒNG BỘ MÀU, BỎ NÚT SINH MÃ ─── */}
+            {/* ─── 3. ĐỔI MÃ KHÓA KHO (SMART PIN): HIỆN CẢ MÃ CŨ VÀ MÃ MỚI ─── */}
             <View style={styles.pinSectionCard}>
               <View style={styles.pinHeaderRow}>
                 <MaterialIcons name="lock-reset" size={18} color="#2563EB" />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.pinSectionTitle}>ĐỔI MẬT KHẨU KHÓA KHO (SMART PIN)</Text>
                   <Text style={styles.pinSectionSub}>
-                    Mã PIN khách hàng đang sử dụng. Hệ thống sẽ tự động thu hồi khi trả kho.
+                    Bắt buộc đổi mã PIN mới (chuẩn 6 chữ số) để thu hồi quyền mở kho của khách cũ.
                   </Text>
                 </View>
               </View>
 
-              <TextInput
-                style={styles.pinInput}
-                value={newSmartPin}
-                onChangeText={setNewSmartPin}
-                keyboardType="numeric"
-                maxLength={8}
-                editable={true}
-                placeholder="Mã PIN của khách hàng"
-                placeholderTextColor="#94A3B8"
-              />
+              {/* Hàng so sánh: Mã cũ vs Mã mới */}
+              <View style={styles.pinCompareRow}>
+                {/* Cột 1: Mã cũ */}
+                <View style={styles.pinCompareCol}>
+                  <Text style={styles.pinColLabel}>MÃ PIN HIỆN TẠI (CŨ)</Text>
+                  <View style={styles.oldPinBadge}>
+                    <MaterialIcons name="lock" size={14} color="#64748B" />
+                    <Text style={styles.oldPinText}>{oldSmartPin || '821301'}</Text>
+                  </View>
+                </View>
+
+                {/* Mũi tên chuyển đổi */}
+                <View style={styles.pinArrowWrap}>
+                  <MaterialIcons name="arrow-forward" size={18} color="#94A3B8" />
+                </View>
+
+                {/* Cột 2: Mã mới */}
+                <View style={styles.pinCompareCol}>
+                  <View style={styles.pinLabelWithCount}>
+                    <Text style={styles.pinColLabel}>MÃ PIN MỚI</Text>
+                    <Text
+                      style={[
+                        styles.pinCharCount,
+                        newSmartPin.length === 6 ? styles.pinCharCountOk : null,
+                      ]}
+                    >
+                      {newSmartPin.length}/6
+                    </Text>
+                  </View>
+                  <TextInput
+                    style={[
+                      styles.newPinInput,
+                      isPinValid
+                        ? styles.newPinInputOk
+                        : newSmartPin.length > 0
+                        ? styles.newPinInputWarn
+                        : null,
+                    ]}
+                    value={newSmartPin}
+                    onChangeText={(val) => {
+                      const clean = val.replace(/[^0-9]/g, '').slice(0, 6);
+                      setNewSmartPin(clean);
+                    }}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    editable={!isCompleted}
+                    placeholder="Nhập 6 số mới"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              {/* Hàng hành động: Nút tạo ngẫu nhiên & Trạng thái */}
+              {!isCompleted && (
+                <View style={styles.pinActionsRow}>
+                  <TouchableOpacity
+                    style={styles.randomPinBtn}
+                    onPress={() => {
+                      let rand = '';
+                      do {
+                        rand = Math.floor(100000 + Math.random() * 900000).toString();
+                      } while (rand === oldSmartPin);
+                      setNewSmartPin(rand);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <MaterialIcons name="autorenew" size={14} color="#2563EB" />
+                    <Text style={styles.randomPinBtnText}>Tạo mã ngẫu nhiên</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.pinStatusTagWrap}>
+                    {isPinValid ? (
+                      <View style={styles.pinStatusTagOk}>
+                        <MaterialIcons name="check-circle" size={13} color="#16A34A" />
+                        <Text style={styles.pinStatusTagTextOk}>Đã đổi hợp lệ</Text>
+                      </View>
+                    ) : newSmartPin.length === 0 ? (
+                      <View style={styles.pinStatusTagWarn}>
+                        <MaterialIcons name="error-outline" size={13} color="#DC2626" />
+                        <Text style={styles.pinStatusTagTextWarn}>Chưa đổi mã</Text>
+                      </View>
+                    ) : newSmartPin === oldSmartPin ? (
+                      <View style={styles.pinStatusTagWarn}>
+                        <MaterialIcons name="error-outline" size={13} color="#DC2626" />
+                        <Text style={styles.pinStatusTagTextWarn}>Trùng mã cũ</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.pinStatusTagWarn}>
+                        <MaterialIcons name="info-outline" size={13} color="#EA580C" />
+                        <Text style={styles.pinStatusTagTextWarn}>Cần đủ 6 số</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* ─── 4. KIỂM TRA HIỆN TRƯỜNG & TÌNH TRẠNG Ô KHO ─── */}
@@ -913,30 +1118,44 @@ export default function SimpleReturnInspectionModal({
               <View style={styles.overdueTopRow}>
                 <View style={styles.overdueTitleGroup}>
                   <MaterialIcons
-                    name={effectiveOverdueDays > 0 ? 'warning-amber' : 'verified'}
+                    name={rawOverdueDays > 0 ? 'warning-amber' : 'verified'}
                     size={18}
-                    color={effectiveOverdueDays > 0 ? '#D97706' : '#059669'}
+                    color={isOverLiquidationLimit ? '#DC2626' : rawOverdueDays > 0 ? '#D97706' : '#059669'}
                   />
-                  <Text style={[styles.overdueMainTitle, effectiveOverdueDays > 0 ? styles.overdueMainTitleWarning : styles.overdueMainTitleOnTime]}>
-                    {effectiveOverdueDays > 0 ? `TRỄ HẸN: ${effectiveOverdueDays} NGÀY` : 'BÀN GIAO ĐÚNG HẠN'}
+                  <Text
+                    style={[
+                      styles.overdueMainTitle,
+                      rawOverdueDays > 0
+                        ? isOverLiquidationLimit
+                          ? { color: '#DC2626' }
+                          : styles.overdueMainTitleWarning
+                        : styles.overdueMainTitleOnTime,
+                    ]}
+                  >
+                    {rawOverdueDays > 0
+                      ? `TRỄ HẸN: ${rawOverdueDays} NGÀY (${dailyFinePercent}%/ngày)`
+                      : 'BÀN GIAO ĐÚNG HẠN'}
                   </Text>
                 </View>
-                <View style={[styles.overdueDaysBadge, effectiveOverdueDays > 0 ? styles.overdueDaysBadgeWarning : styles.overdueDaysBadgeOnTime]}>
-                  <Text style={[styles.overdueDaysBadgeText, effectiveOverdueDays > 0 ? styles.overdueDaysBadgeTextWarning : styles.overdueDaysBadgeTextOnTime]}>
-                    {effectiveOverdueDays > 0 ? 'Quá hạn (Tối đa 30 ngày)' : 'Đúng hạn'}
+                <View style={[styles.overdueDaysBadge, rawOverdueDays > 0 ? styles.overdueDaysBadgeWarning : styles.overdueDaysBadgeOnTime]}>
+                  <Text style={[styles.overdueDaysBadgeText, rawOverdueDays > 0 ? styles.overdueDaysBadgeTextWarning : styles.overdueDaysBadgeTextOnTime]}>
+                    {isOverLiquidationLimit
+                      ? `Quá hạn thanh lý (${gracePeriodDays}d)`
+                      : isWithinPreLiquidation
+                      ? `Trước thanh lý ${rawOverdueDays}/${gracePeriodDays}d`
+                      : 'Đúng hạn'}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.overdueBodyRow}>
-                
                 {effectiveOverdueDays > 0 ? (
                   <View style={styles.overdueTotalWrap}>
                     <Text style={styles.overdueMathLabel}>
-                      ${effectiveOverdueDays} ngày × ${formatVND(lateFeePerDay)} =
+                      {effectiveOverdueDays} ngày × {formatVND(effectiveDailyFine)} =
                     </Text>
                     <Text style={styles.overdueFineTotalText}>
-                      +${formatVND(calculatedOverdueFine)}
+                      +{formatVND(calculatedOverdueFine)}
                     </Text>
                   </View>
                 ) : (
@@ -994,14 +1213,146 @@ export default function SimpleReturnInspectionModal({
               })}
             </View>
 
-            {/* ─── 6. KHỐI THANH TOÁN PHỤ THU & QUÉT MÃ QR ─── */}
-            {totalSurcharge > 0 ? (
+            {/* ─── 6. KHỐI HOÀN TRẢ TIỀN CỌC CHO KHÁCH (CHỦ YẾU TIỀN MẶT) ─── */}
+            <View style={styles.refundBox}>
+              <View style={styles.refundHeader}>
+                <MaterialIcons name="account-balance-wallet" size={18} color="#059669" />
+                <Text style={styles.refundTitle}>QUYẾT TOÁN HOÀN TRẢ TIỀN CỌC</Text>
+                <View style={styles.refundAmountBadge}>
+                  <Text style={styles.refundAmountBadgeText}>{formatVND(netRefundAmount)}</Text>
+                </View>
+              </View>
+
+              {/* Bảng chi tiết khấu trừ và thực hoàn */}
+              <View style={styles.refundSummaryCard}>
+                <View style={styles.refundSummaryRow}>
+                  <Text style={styles.refundSummaryLabel}>Tiền cọc bảo đảm hợp đồng:</Text>
+                  <Text style={styles.refundSummaryValBold}>{formatVND(depositAmount)}</Text>
+                </View>
+                {totalSurcharge > 0 && (
+                  <View style={styles.refundSummaryRow}>
+                    <Text style={[styles.refundSummaryLabel, { color: '#DC2626' }]}>
+                      Khấu trừ phụ phí & trễ hạn:
+                    </Text>
+                    <Text style={[styles.refundSummaryValBold, { color: '#DC2626' }]}>
+                      - {formatVND(totalSurcharge)}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.refundDivider} />
+                <View style={styles.refundSummaryRow}>
+                  <Text style={styles.refundNetTotalLabel}>Số tiền thực hoàn cho khách:</Text>
+                  <Text style={styles.refundNetTotalAmount}>{formatVND(netRefundAmount)}</Text>
+                </View>
+              </View>
+
+              {netRefundAmount > 0 ? (
+                <>
+                  {/* Chọn phương thức hoàn tiền */}
+                  <Text style={styles.refundMethodLabel}>Hình thức hoàn trả cho khách:</Text>
+                  <View style={styles.refundMethodTabs}>
+                    <TouchableOpacity
+                      style={[
+                        styles.refundMethodTab,
+                        refundMethod === 'cash' && styles.refundMethodTabActive,
+                      ]}
+                      onPress={() => setRefundMethod('cash')}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name="payments"
+                        size={16}
+                        color={refundMethod === 'cash' ? '#FFFFFF' : '#059669'}
+                      />
+                      <Text
+                        style={[
+                          styles.refundMethodTabText,
+                          refundMethod === 'cash' && styles.refundMethodTabTextActive,
+                        ]}
+                      >
+                        Tiền mặt tại quầy
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.refundMethodTab,
+                        refundMethod === 'transfer' && styles.refundMethodTabActive,
+                      ]}
+                      onPress={() => setRefundMethod('transfer')}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name="account-balance"
+                        size={16}
+                        color={refundMethod === 'transfer' ? '#FFFFFF' : '#059669'}
+                      />
+                      <Text
+                        style={[
+                          styles.refundMethodTabText,
+                          refundMethod === 'transfer' && styles.refundMethodTabTextActive,
+                        ]}
+                      >
+                        Chuyển khoản
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.refundCashNotice}>
+                    <MaterialIcons name="info-outline" size={16} color="#059669" />
+                    <Text style={styles.refundCashNoticeText}>
+                      {refundMethod === 'cash'
+                        ? `Nhân viên kiểm đếm và hoàn trả trực tiếp ${formatVND(netRefundAmount)} tiền mặt cho khách tại quầy.`
+                        : `Nhân viên chuyển khoản ${formatVND(netRefundAmount)} vào số tài khoản do khách hàng cung cấp.`}
+                    </Text>
+                  </View>
+
+                  {/* Checkbox xác nhận đã hoàn cọc */}
+                  {!isCompleted && (
+                    <TouchableOpacity
+                      style={[
+                        styles.refundConfirmRow,
+                        isRefundConfirmed && styles.refundConfirmRowChecked,
+                      ]}
+                      onPress={() => setIsRefundConfirmed(!isRefundConfirmed)}
+                      activeOpacity={0.8}
+                    >
+                      <MaterialIcons
+                        name={isRefundConfirmed ? 'check-circle' : 'radio-button-unchecked'}
+                        size={20}
+                        color={isRefundConfirmed ? '#059669' : '#94A3B8'}
+                      />
+                      <Text
+                        style={[
+                          styles.refundConfirmText,
+                          isRefundConfirmed && styles.refundConfirmTextChecked,
+                        ]}
+                      >
+                        {refundMethod === 'cash'
+                          ? `Đã hoàn trả đủ ${formatVND(netRefundAmount)} tiền mặt cho khách`
+                          : `Đã chuyển khoản ${formatVND(netRefundAmount)} cho khách`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <View style={styles.refundZeroNotice}>
+                  <MaterialIcons name="info" size={16} color="#D97706" />
+                  <Text style={styles.refundZeroNoticeText}>
+                    Toàn bộ tiền cọc ({formatVND(depositAmount)}) đã được khấu trừ vào phụ phí phát sinh.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* ─── 7. NẾU PHỤ THU VƯỢT QUÁ TIỀN CỌC: THU THÊM PHẦN CHÊNH LỆCH ─── */}
+            {remainingSurchargeToCollect > 0 ? (
               <View style={styles.paymentBox}>
                 <View style={styles.paymentHeader}>
-                  <MaterialIcons name="payments" size={18} color="#2563EB" />
-                  <Text style={styles.paymentTitle}>THANH TOÁN PHỤ THU</Text>
-                  <View style={styles.paymentAmountBadge}>
-                    <Text style={styles.paymentAmountBadgeText}>{formatVND(totalSurcharge)}</Text>
+                  <MaterialIcons name="payments" size={18} color="#DC2626" />
+                  <Text style={[styles.paymentTitle, { color: '#DC2626' }]}>THU PHỤ THU VƯỢT TIỀN CỌC</Text>
+                  <View style={[styles.paymentAmountBadge, { backgroundColor: '#DC2626' }]}>
+                    <Text style={styles.paymentAmountBadgeText}>{formatVND(remainingSurchargeToCollect)}</Text>
                   </View>
                 </View>
 
@@ -1084,7 +1435,7 @@ export default function SimpleReturnInspectionModal({
                         <View style={{ flex: 1 }}>
                           <Text style={styles.paidSuccessTitle}>ĐÃ NHẬN THANH TOÁN THÀNH CÔNG</Text>
                           <Text style={styles.paidSuccessSub}>
-                            Hệ thống SePay đã tự động ghi nhận chuyển khoản {formatVND(totalSurcharge)}.
+                            Hệ thống SePay đã tự động ghi nhận chuyển khoản {formatVND(remainingSurchargeToCollect)}.
                           </Text>
                         </View>
                       </View>
@@ -1134,7 +1485,7 @@ export default function SimpleReturnInspectionModal({
                   <View style={styles.cashNoticeBox}>
                     <MaterialIcons name="info-outline" size={18} color="#2563EB" />
                     <Text style={styles.cashNoticeText}>
-                      Nhân viên thu trực tiếp {formatVND(totalSurcharge)} tiền mặt từ khách tại quầy.
+                      Nhân viên thu trực tiếp {formatVND(remainingSurchargeToCollect)} tiền mặt từ khách tại quầy.
                     </Text>
                   </View>
                 )}
@@ -1177,7 +1528,7 @@ export default function SimpleReturnInspectionModal({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.confirmBtn, isSubmitting && { opacity: 0.6 }]}
+              style={[styles.confirmBtn, (!isPinValid || isSubmitting) && styles.confirmBtnDisabled]}
               onPress={handleConfirmCheckout}
               disabled={isSubmitting}
               activeOpacity={0.85}
@@ -1281,6 +1632,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  appointmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginBottom: 10,
+  },
+  appointmentText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
 
   sectionHeaderRow: {
@@ -1448,7 +1817,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  // Đồng bộ màu cho Khối đổi mã PIN
+  // Khối đổi mã PIN: So sánh mã cũ vs mã mới
   pinSectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
@@ -1462,7 +1831,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   pinSectionTitle: {
     fontSize: 10.5,
@@ -1474,18 +1843,149 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: '#64748B',
   },
-  pinInput: {
+  pinCompareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
     backgroundColor: '#F8FAFC',
     borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  pinCompareCol: {
+    flex: 1,
+  },
+  pinArrowWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 14,
+  },
+  pinColLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  pinLabelWithCount: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  pinCharCount: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#EA580C',
+  },
+  pinCharCountOk: {
+    color: '#16A34A',
+  },
+  oldPinBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 15,
+  },
+  oldPinText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 2,
+    fontFamily: 'monospace',
+  },
+  newPinInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 14,
     fontWeight: '800',
     color: '#2563EB',
-    letterSpacing: 3,
+    letterSpacing: 2,
     textAlign: 'center',
+    fontFamily: 'monospace',
+  },
+  newPinInputOk: {
+    borderColor: '#16A34A',
+    backgroundColor: '#F0FDF4',
+    color: '#16A34A',
+  },
+  newPinInputWarn: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+    color: '#DC2626',
+  },
+  pinActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  randomPinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  randomPinBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  pinStatusTagWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pinStatusTagOk: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  pinStatusTagTextOk: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  pinStatusTagWarn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  pinStatusTagTextWarn: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  confirmBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.7,
   },
 
   fieldLabel: {
@@ -1924,6 +2424,170 @@ const styles = StyleSheet.create({
   },
   paidConfirmTextChecked: {
     color: '#2563EB',
+  },
+
+  // Khối hoàn trả tiền cọc
+  refundBox: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  refundHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  refundTitle: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+    letterSpacing: 0.3,
+  },
+  refundAmountBadge: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  refundAmountBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  refundSummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 10,
+    marginBottom: 8,
+  },
+  refundSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 2,
+  },
+  refundSummaryLabel: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  refundSummaryValBold: {
+    fontSize: 11.5,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  refundDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 6,
+  },
+  refundNetTotalLabel: {
+    fontSize: 12,
+    color: '#166534',
+    fontWeight: '800',
+  },
+  refundNetTotalAmount: {
+    fontSize: 14,
+    color: '#15803D',
+    fontWeight: '900',
+  },
+  refundMethodLabel: {
+    fontSize: 11,
+    color: '#1E293B',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  refundMethodTabs: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  refundMethodTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  refundMethodTabActive: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
+  },
+  refundMethodTabText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  refundMethodTabTextActive: {
+    color: '#FFFFFF',
+  },
+  refundCashNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
+  },
+  refundCashNoticeText: {
+    fontSize: 11,
+    color: '#166534',
+    flex: 1,
+    lineHeight: 16,
+  },
+  refundZeroNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    padding: 8,
+    marginVertical: 6,
+  },
+  refundZeroNoticeText: {
+    fontSize: 11,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
+  },
+  refundConfirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+  refundConfirmRowChecked: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  refundConfirmText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    flex: 1,
+  },
+  refundConfirmTextChecked: {
+    color: '#15803D',
+    fontWeight: '700',
   },
 
   modalFooter: {

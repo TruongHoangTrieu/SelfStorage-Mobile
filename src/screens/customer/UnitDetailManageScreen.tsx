@@ -5,8 +5,8 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  Platform,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { CustomerRentedUnit } from '../../types/customerStorage';
 import { formatVND } from '../../utils/formatters';
 
@@ -18,6 +18,7 @@ interface UnitDetailManageScreenProps {
   onOpenUpgradeModal: () => void;
   onOpenReportIssueModal: () => void;
   onOpenChangePinModal: () => void;
+  onOpenReturnModal: () => void;
 }
 
 export default function UnitDetailManageScreen({
@@ -28,387 +29,289 @@ export default function UnitDetailManageScreen({
   onOpenUpgradeModal,
   onOpenReportIssueModal,
   onOpenChangePinModal,
+  onOpenReturnModal,
 }: UnitDetailManageScreenProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'access' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'access' | 'history'>('access');
   const [isPinVisible, setIsPinVisible] = useState<boolean>(false);
 
   // Tính phần trăm tiến độ hợp đồng đã trôi qua
   const elapsedDays = Math.max(0, unit.totalDays - unit.daysRemaining);
   const progressPercent = Math.min(100, Math.round((elapsedDays / unit.totalDays) * 100));
 
+  const isCheckingOut = unit.status === ('checking_out' as any);
+  const isExpiring = unit.status === 'expiring_soon';
+  const isOverdue = unit.status === 'overdue';
+
   return (
     <View style={styles.container}>
-      {/* Top Header */}
+      {/* ─── 1. Header Tinh Gọn ─── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBackToDashboard}>
-          <Text style={styles.backBtnIcon}>←</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={onBackToDashboard} activeOpacity={0.7}>
+          <MaterialIcons name="arrow-back" size={20} color="#0F172A" />
         </TouchableOpacity>
 
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerSubtitle}>QUẢN LÝ Ô KHO CHI TIẾT</Text>
-          <Text style={styles.headerTitle}>
-            Ô {unit.unitCode} • {unit.unitName}
+          <View style={styles.titleRow}>
+            <Text style={styles.headerTitle}>Kho {unit.unitCode}</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                isCheckingOut && styles.badgeCheckingOut,
+                isOverdue && styles.badgeOverdue,
+                isExpiring && styles.badgeExpiring,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  isCheckingOut && styles.badgeTextCheckingOut,
+                  isOverdue && styles.badgeTextOverdue,
+                  isExpiring && styles.badgeTextExpiring,
+                ]}
+              >
+                {isCheckingOut ? 'Chờ trả kho' : unit.statusLabel}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {unit.facilityName} • {unit.zone} ({unit.floor})
           </Text>
         </View>
 
-        <View style={styles.contractCodeBadge}>
-          <Text style={styles.contractCodeText}>{unit.contractCode.slice(-8)}</Text>
+        <View style={styles.codeBadge}>
+          <Text style={styles.codeBadgeText}>#{unit.contractCode.slice(-6)}</Text>
         </View>
       </View>
 
-      {/* Tabs Bar */}
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'overview' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('overview')}
-        >
-          <Text style={[styles.tabBtnText, activeTab === 'overview' && styles.tabBtnTextActive]}>
-            📊 1. Tổng quan
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'access' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('access')}
-        >
-          <Text style={[styles.tabBtnText, activeTab === 'access' && styles.tabBtnTextActive]}>
-            🔑 2. Mã khách ({unit.guestAccessCodes.length})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'history' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('history')}
-        >
-          <Text style={[styles.tabBtnText, activeTab === 'history' && styles.tabBtnTextActive]}>
-            📜 3. Lịch sử ({unit.payments.length + unit.supportTickets.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Scrollable Content Body */}
-      <ScrollView style={styles.contentScroll} contentContainerStyle={styles.scrollPadding}>
-        {/* ================= TAB 1: TỔNG QUAN & SỐ DƯ ================= */}
-        {activeTab === 'overview' && (
-          <View style={styles.tabSection}>
-            {/* Thẻ Vị Trí & Cơ Sở */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>🏢</Text>
-                <Text style={styles.cardTitle}>Vị Trí & Không Gian Kho</Text>
-              </View>
-
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Cơ sở kho:</Text>
-                <Text style={styles.infoValBold}>{unit.facilityName}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Địa chỉ:</Text>
-                <Text style={styles.infoVal}>{unit.facilityAddress}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Tầng & Phân khu:</Text>
-                <Text style={styles.infoValBold}>
-                  {unit.floor} • {unit.zone}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Lối tiếp cận:</Text>
-                <Text style={styles.infoVal}>{unit.mapPositionSnippet.corridor}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Kích thước:</Text>
-                <Text style={styles.infoVal}>{unit.dimensions || unit.size}</Text>
-              </View>
-            </View>
-
-            {/* Thẻ Thời Hạn Hợp Đồng & Tiến Độ */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>📅</Text>
-                <Text style={styles.cardTitle}>Thời Hạn Hợp Đồng Thuê</Text>
-              </View>
-
-              <View style={styles.progressHeaderRow}>
-                <Text style={styles.progressLabel}>
-                  Đã sử dụng: <Text style={{ fontWeight: '800' }}>{elapsedDays} ngày</Text>
-                </Text>
-                <Text style={styles.progressLabel}>
-                  Còn lại:{' '}
-                  <Text style={{ fontWeight: '900', color: unit.daysRemaining < 7 ? '#DC2626' : '#2563EB' }}>
-                    {unit.daysRemaining} ngày
-                  </Text>
-                </Text>
-              </View>
-
-              {/* Progress Bar */}
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    { width: `${progressPercent}%` },
-                    unit.daysRemaining < 7 && { backgroundColor: '#EAB308' },
-                  ]}
-                />
-              </View>
-
-              <View style={styles.datesRow}>
-                <View>
-                  <Text style={styles.dateLabel}>Ngày bắt đầu</Text>
-                  <Text style={styles.dateVal}>{unit.startDate}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.dateLabel}>Ngày kết thúc hợp đồng</Text>
-                  <Text style={[styles.dateVal, { color: '#059669', fontWeight: '900' }]}>
-                    {unit.endDate}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Thẻ Tài Chính & Số Dư */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>💳</Text>
-                <Text style={styles.cardTitle}>Tài Chính & Số Dư Hiện Tại</Text>
-              </View>
-
-              <View style={styles.financeGrid}>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Giá thuê hàng tháng</Text>
-                  <Text style={styles.financeValRent}>{unit.monthlyRentFormatted}</Text>
-                </View>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Tiền cọc đang giữ</Text>
-                  <Text style={styles.financeVal}>{unit.depositFormatted}</Text>
-                </View>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Tổng lũy kế đã trả</Text>
-                  <Text style={styles.financeVal}>{unit.totalPaidFormatted}</Text>
-                </View>
-                <View style={styles.financeBox}>
-                  <Text style={styles.financeLabel}>Số dư công nợ</Text>
-                  <Text style={[styles.financeVal, { color: unit.currentBalance > 0 ? '#DC2626' : '#16A34A' }]}>
-                    {unit.currentBalanceFormatted}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Thẻ Khóa Thông Minh Master */}
-            <View style={styles.pinCard}>
-              <View style={styles.pinCardHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.pinCardTitle}>MÃ SMART PIN CHÍNH (MASTER KEY)</Text>
-                  <Text style={styles.pinCardSubtitle}>Dùng mở khóa 24/7 tại cửa kho {unit.unitCode}</Text>
-                </View>
-
-                <TouchableOpacity style={styles.pinEyeBtn} onPress={() => setIsPinVisible(!isPinVisible)}>
-                  <Text style={styles.pinEyeText}>{isPinVisible ? 'Ẩn 🙈' : 'Xem 👁️'}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.pinDisplayBox}>
-                <Text style={styles.pinBigDigits}>
-                  {isPinVisible ? unit.masterPin : '••••••'}
-                </Text>
-                <TouchableOpacity style={styles.changePinBtn} onPress={onOpenChangePinModal}>
-                  <Text style={styles.changePinBtnText}>🔑 Đổi Mã PIN</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Thẻ Danh Mục Đồ Đạc Lưu Kho (Stored Items) */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>📦</Text>
-                <Text style={styles.cardTitle}>Danh Mục Đồ Lưu Kho ({unit.storedItems.length})</Text>
-              </View>
-
-              {unit.storedItems.map((item) => (
-                <View key={item.id} style={styles.itemRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    <Text style={styles.itemCategory}>
-                      {item.category} • Số lượng: {item.quantity} {item.unit}
-                    </Text>
-                    {item.notes ? <Text style={styles.itemNotes}>Ghi chú: {item.notes}</Text> : null}
-                  </View>
-                  {item.estimatedValue && (
-                    <Text style={styles.itemVal}>{item.estimatedValue}</Text>
-                  )}
-                </View>
-              ))}
-            </View>
+      <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
+        {/* Banner thông báo nếu đang chờ nghiệm thu trả kho */}
+        {isCheckingOut && (
+          <View style={styles.checkoutBanner}>
+            <MaterialIcons name="hourglass-top" size={18} color="#EA580C" />
+            <Text style={styles.checkoutBannerText}>
+              Đã gửi yêu cầu trả kho. Vui lòng gặp nhân viên tại quầy cơ sở để kiểm tra hiện trạng và hoàn tất thủ tục trả kho.
+            </Text>
           </View>
         )}
 
-        {/* ================= TAB 2: TRUY CẬP & MÃ KHÁCH TẠM THỜI ================= */}
-        {activeTab === 'access' && (
-          <View style={styles.tabSection}>
-            <View style={styles.actionHeaderBox}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionHeaderTitle}>MÃ TRUY CẬP CHO KHÁCH TẠM THỜI</Text>
-                <Text style={styles.actionHeaderDesc}>
-                  Cấp mã PIN có giới hạn giờ cho bạn bè, thợ chuyển nhà mà không để lộ mã PIN chính
-                </Text>
-              </View>
+        {/* ─── 2. Thẻ Khóa Thông Minh (Smart Lock PIN) ─── */}
+        <View style={styles.smartPinCard}>
+          <View style={styles.pinHeader}>
+            <View style={styles.pinHeaderLeft}>
+              <MaterialIcons name="lock" size={18} color="#2563EB" />
+              <Text style={styles.pinHeaderTitle}>Mã khóa Smart PIN</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setIsPinVisible(!isPinVisible)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons
+                name={isPinVisible ? 'visibility-off' : 'visibility'}
+                size={18}
+                color="#64748B"
+              />
+              <Text style={styles.eyeBtnText}>{isPinVisible ? 'Ẩn' : 'Hiện'}</Text>
+            </TouchableOpacity>
+          </View>
 
-              <TouchableOpacity style={styles.createPinActionBtn} onPress={onOpenGuestPinModal}>
-                <Text style={styles.createPinActionText}>+ Tạo Mã Khách</Text>
+          <View style={styles.pinBody}>
+            <Text style={styles.pinDigits}>
+              {isPinVisible ? unit.masterPin : '••••••'}
+            </Text>
+            <TouchableOpacity
+              style={styles.changePinBtn}
+              onPress={onOpenChangePinModal}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="vpn-key" size={15} color="#2563EB" />
+              <Text style={styles.changePinBtnText}>Đổi PIN</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.pinCaption}>Nhập mã này tại cửa kho để mở khóa 24/7</Text>
+        </View>
+
+        {/* ─── 3. Thẻ Thời Hạn & Chi Phí ─── */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Thời hạn thuê:</Text>
+            <Text style={styles.infoValBold}>
+              {unit.startDate} → {unit.endDate}
+            </Text>
+          </View>
+
+          {/* Thanh tiến độ ngày thuê */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${progressPercent}%` },
+                  isExpiring && { backgroundColor: '#F59E0B' },
+                  isOverdue && { backgroundColor: '#EF4444' },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressNote}>
+              {unit.daysRemaining > 0
+                ? `Còn ${unit.daysRemaining} ngày thuê`
+                : 'Đã đến ngày thanh lý / trả kho'}
+            </Text>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.gridTwoCols}>
+            <View>
+              <Text style={styles.subLabel}>Giá thuê hàng tháng</Text>
+              <Text style={styles.subVal}>{unit.monthlyRentFormatted}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.subLabel}>Kỳ thanh toán</Text>
+              <Text style={styles.subVal}>Hàng tháng</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ─── 4. Thẻ Vị Trí & Không Gian Kho ─── */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Cơ sở kho:</Text>
+            <Text style={styles.infoValBold}>{unit.facilityName}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Địa chỉ:</Text>
+            <Text style={styles.infoVal}>{unit.facilityAddress}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Diện tích:</Text>
+            <Text style={styles.infoVal}>{unit.dimensions || unit.size}</Text>
+          </View>
+        </View>
+
+        {/* ─── 5. Tab Phụ: Mã Khách & Lịch Sử ─── */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'access' && styles.tabItemActive]}
+            onPress={() => setActiveTab('access')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabItemText, activeTab === 'access' && styles.tabItemTextActive]}>
+              Mã khách ({unit.guestAccessCodes.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'history' && styles.tabItemActive]}
+            onPress={() => setActiveTab('history')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabItemText, activeTab === 'history' && styles.tabItemTextActive]}>
+              Lịch sử giao dịch ({unit.payments.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'access' ? (
+          <View style={styles.tabContent}>
+            <View style={styles.guestActionRow}>
+              <Text style={styles.guestHeaderTitle}>Mã tạm thời chia sẻ cho người thân</Text>
+              <TouchableOpacity
+                style={styles.addGuestBtn}
+                onPress={onOpenGuestPinModal}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="add" size={16} color="#2563EB" />
+                <Text style={styles.addGuestBtnText}>Tạo mã</Text>
               </TouchableOpacity>
             </View>
 
             {unit.guestAccessCodes.length === 0 ? (
-              <View style={styles.emptyTabCard}>
-                <Text style={styles.emptyTabIcon}>⏱️</Text>
-                <Text style={styles.emptyTabTitle}>Chưa có mã khách nào được tạo</Text>
-                <Text style={styles.emptyTabDesc}>
-                  Bấm "+ Tạo Mã Khách" để tạo mã PIN có thời hạn 2h, 24h hoặc 3 ngày và chia sẻ qua Zalo/Email.
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>Chưa có mã khách nào được tạo</Text>
+                <Text style={styles.emptySubText}>
+                  Bạn có thể tạo mã PIN tạm thời có giới hạn giờ cho bạn bè hoặc người chuyển đồ.
                 </Text>
               </View>
             ) : (
-              <View style={{ gap: 10 }}>
-                {unit.guestAccessCodes.map((g) => (
-                  <View key={g.id} style={styles.guestCodeCard}>
-                    <View style={styles.guestCodeHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.guestName}>{g.guestName}</Text>
-                        <Text style={styles.guestPurpose}>{g.purpose || 'Mở cửa lấy đồ'}</Text>
-                      </View>
-                      <View style={styles.guestStatusBadge}>
-                        <Text style={styles.guestStatusText}>🟢 {g.validTo}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.guestPinRow}>
-                      <Text style={styles.guestPinLabel}>Mã PIN:</Text>
-                      <Text style={styles.guestPinVal}>{g.pinCode}</Text>
-                      <Text style={styles.guestUsageType}>
-                        ({g.usageType === 'one_time' ? '1 lần tự hủy' : 'Nhiều lần'})
-                      </Text>
-                    </View>
-
-                    <View style={styles.guestShareBtnRow}>
-                      <TouchableOpacity
-                        style={styles.guestShareZalo}
-                        onPress={() => {
-                          const msg = `Mã PIN mở ô kho ${unit.unitCode}: ${g.pinCode} (Hiệu lực: ${g.validTo})`;
-                          if (Platform.OS === 'web') window.prompt('Sao chép gửi Zalo:', msg);
-                        }}
-                      >
-                        <Text style={styles.guestShareZaloText}>💬 Chia sẻ Zalo</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.guestShareEmail}
-                        onPress={() => {
-                          if (Platform.OS === 'web') {
-                            window.open(
-                              `mailto:?subject=Ma PIN mo kho ${unit.unitCode}&body=Ma PIN: ${g.pinCode} (Hieu luc: ${g.validTo})`
-                            );
-                          }
-                        }}
-                      >
-                        <Text style={styles.guestShareEmailText}>✉️ Gửi Email</Text>
-                      </TouchableOpacity>
-                    </View>
+              unit.guestAccessCodes.map((g) => (
+                <View key={g.id} style={styles.guestItemCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.guestItemName}>{g.guestName}</Text>
+                    <Text style={styles.guestItemExpiry}>Hạn dùng: {g.validTo}</Text>
                   </View>
-                ))}
+                  <View style={styles.guestPinBox}>
+                    <Text style={styles.guestPinText}>{g.pinCode}</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        ) : (
+          <View style={styles.tabContent}>
+            {unit.payments.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>Chưa có giao dịch thanh toán nào</Text>
               </View>
+            ) : (
+              unit.payments.map((p) => (
+                <View key={p.id} style={styles.historyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyTitle}>{p.typeLabel}</Text>
+                    <Text style={styles.historyDate}>{p.paidAt} • {p.method}</Text>
+                  </View>
+                  <Text style={styles.historyAmount}>+{formatVND(p.amount)}</Text>
+                </View>
+              ))
             )}
           </View>
         )}
 
-        {/* ================= TAB 3: LỊCH SỬ THANH TOÁN & SỰ CỐ ================= */}
-        {activeTab === 'history' && (
-          <View style={styles.tabSection}>
-            {/* Lịch sử thanh toán */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>💰</Text>
-                <Text style={styles.cardTitle}>Lịch Sử Thanh Toán ({unit.payments.length})</Text>
-              </View>
-
-              {unit.payments.map((p) => (
-                <View key={p.id} style={styles.historyPayRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.historyPayTitle}>{p.typeLabel}</Text>
-                    <Text style={styles.historyPayDesc}>{p.periodDescription}</Text>
-                    <Text style={styles.historyPayDate}>{p.paidAt} • {p.method}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.historyPayAmount}>+{formatVND(p.amount)}</Text>
-                    <View style={styles.historyPaidBadge}>
-                      <Text style={styles.historyPaidText}>✓ Đã nộp</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            {/* Lịch sử yêu cầu hỗ trợ sự cố */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardIcon}>🎧</Text>
-                <Text style={styles.cardTitle}>Lịch Sử Phiếu Hỗ Trợ ({unit.supportTickets.length})</Text>
-              </View>
-
-              {unit.supportTickets.length === 0 ? (
-                <Text style={styles.emptyHistoryText}>Ô kho hoạt động tốt, không có sự cố nào được ghi nhận.</Text>
-              ) : (
-                unit.supportTickets.map((t) => (
-                  <View key={t.id} style={styles.ticketRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.ticketSubject}>{t.subject}</Text>
-                      <Text style={styles.ticketDesc}>{t.description}</Text>
-                      <Text style={styles.ticketMeta}>
-                        Mã #{t.requestCode} • {t.createdAt}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.ticketStatusBadge,
-                        t.status === 'RESOLVED' && { backgroundColor: '#DCFCE7' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.ticketStatusText,
-                          t.status === 'RESOLVED' && { color: '#15803D' },
-                        ]}
-                      >
-                        {t.status === 'RESOLVED' ? '✓ Đã xử lý' : 'Đang xử lý'}
-                      </Text>
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-          </View>
-        )}
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Sticky Bottom Action Bar (4 Tương Tác Nghiệp Vụ Chính) */}
+      {/* ─── 6. Thanh Thao Tác Cố Định Dưới Đáy (Bottom Action Bar) ─── */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.actionGuestBtn} onPress={onOpenGuestPinModal}>
-          <Text style={styles.actionIcon}>⏱️</Text>
-          <Text style={styles.actionText}>Mã Khách</Text>
+        {/* Nút 1: Gia hạn hợp đồng */}
+        <TouchableOpacity
+          style={styles.primaryRenewBtn}
+          onPress={onOpenRenewModal}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="autorenew" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryRenewText}>Gia Hạn</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionRenewBtn} onPress={onOpenRenewModal}>
-          <Text style={styles.actionIcon}>🔄</Text>
-          <Text style={styles.actionText}>Gia Hạn</Text>
+        {/* Nút 2: Trả kho */}
+        <TouchableOpacity
+          style={[styles.returnBtn, isCheckingOut && styles.returnBtnDisabled]}
+          onPress={onOpenReturnModal}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="exit-to-app" size={18} color="#FFFFFF" />
+          <Text style={styles.returnBtnText}>
+            {isCheckingOut ? 'Chi Tiết Trả Kho' : 'Trả Kho'}
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionUpgradeBtn} onPress={onOpenUpgradeModal}>
-          <Text style={styles.actionIcon}>📦</Text>
-          <Text style={styles.actionText}>Đổi Kho</Text>
+        {/* Nút 3: Cấp mã khách */}
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={onOpenGuestPinModal}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="person-add" size={18} color="#334155" />
+          <Text style={styles.secondaryBtnText}>Mã Khách</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionReportBtn} onPress={onOpenReportIssueModal}>
-          <Text style={styles.actionIcon}>🛠️</Text>
-          <Text style={styles.actionText}>Báo Sự Cố</Text>
+        {/* Nút 4: Báo sự cố */}
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={onOpenReportIssueModal}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="build" size={18} color="#334155" />
+          <Text style={styles.secondaryBtnText}>Sự Cố</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -418,12 +321,15 @@ export default function UnitDetailManageScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -432,494 +338,365 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backBtnIcon: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    color: '#38BDF8',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 17,
     fontWeight: '900',
-    marginTop: 1,
+    color: '#0F172A',
   },
-  contractCodeBadge: {
-    backgroundColor: '#1E293B',
+  headerSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  codeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#334155',
+    backgroundColor: '#F1F5F9',
   },
-  contractCodeText: {
-    color: '#94A3B8',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  tabsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-  },
-  tabBtnActive: {
-    borderBottomColor: '#2563EB',
-  },
-  tabBtnText: {
-    fontSize: 12,
+  codeBadgeText: {
+    fontSize: 11,
     fontWeight: '700',
     color: '#64748B',
   },
-  tabBtnTextActive: {
-    color: '#2563EB',
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#DCFCE7',
+  },
+  statusBadgeText: {
+    fontSize: 10,
     fontWeight: '800',
+    color: '#15803D',
+  },
+  badgeCheckingOut: {
+    backgroundColor: '#FFEDD5',
+  },
+  badgeTextCheckingOut: {
+    color: '#C2410C',
+  },
+  badgeExpiring: {
+    backgroundColor: '#FEF3C7',
+  },
+  badgeTextExpiring: {
+    color: '#B45309',
+  },
+  badgeOverdue: {
+    backgroundColor: '#FEE2E2',
+  },
+  badgeTextOverdue: {
+    color: '#B91C1C',
   },
   contentScroll: {
     flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
-  scrollPadding: {
-    padding: 14,
-    paddingBottom: 90,
+  checkoutBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
   },
-  tabSection: {
-    gap: 14,
+  checkoutBannerText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#C2410C',
+    fontWeight: '600',
+    lineHeight: 16,
   },
-  card: {
+  smartPinCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 10,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  cardHeader: {
+  pinHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  pinHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 8,
+    gap: 6,
   },
-  cardIcon: {
-    fontSize: 18,
+  pinHeaderTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1E293B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  cardTitle: {
-    fontSize: 14,
+  eyeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
+  },
+  eyeBtnText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  pinBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  pinDigits: {
+    fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
+    letterSpacing: 4,
+  },
+  changePinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  changePinBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  pinCaption: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-    paddingVertical: 3,
+    marginBottom: 6,
   },
   infoLabel: {
     fontSize: 12,
     color: '#64748B',
-    fontWeight: '600',
-    flexShrink: 0,
-    maxWidth: '42%',
   },
   infoVal: {
     fontSize: 12,
-    color: '#1E293B',
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
-    flexWrap: 'wrap',
+    color: '#0F172A',
+    fontWeight: '500',
   },
   infoValBold: {
     fontSize: 12,
     color: '#0F172A',
-    fontWeight: '800',
-    flex: 1,
-    textAlign: 'right',
-    flexWrap: 'wrap',
+    fontWeight: '700',
   },
-  progressHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  progressContainer: {
+    marginTop: 4,
+    marginBottom: 8,
   },
-  progressLabel: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  progressBarTrack: {
-    height: 10,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 5,
+  progressBar: {
+    height: 5,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 3,
     overflow: 'hidden',
   },
-  progressBarFill: {
+  progressFill: {
     height: '100%',
     backgroundColor: '#2563EB',
-    borderRadius: 5,
   },
-  datesRow: {
+  progressNote: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 4,
+    textAlign: 'right',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
+  },
+  gridTwoCols: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingTop: 4,
   },
-  dateLabel: {
-    fontSize: 10,
+  subLabel: {
+    fontSize: 11,
     color: '#64748B',
+    marginBottom: 2,
   },
-  dateVal: {
-    fontSize: 12,
+  subVal: {
+    fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
-    marginTop: 2,
   },
-  financeGrid: {
+  tabBar: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    marginBottom: 12,
   },
-  financeBox: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 2,
+  tabItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  financeLabel: {
-    fontSize: 10,
-    color: '#64748B',
+  tabItemActive: {
+    borderBottomColor: '#2563EB',
+  },
+  tabItemText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: '#64748B',
   },
-  financeVal: {
-    fontSize: 13,
+  tabItemTextActive: {
+    color: '#2563EB',
     fontWeight: '800',
-    color: '#0F172A',
   },
-  financeValRent: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#059669',
+  tabContent: {
+    marginBottom: 20,
   },
-  pinCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+  guestActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  pinCardHeader: {
+  guestHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  addGuestBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
   },
-  pinCardTitle: {
-    color: '#38BDF8',
+  addGuestBtnText: {
     fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    color: '#2563EB',
   },
-  pinCardSubtitle: {
-    color: '#94A3B8',
-    fontSize: 10,
-    marginTop: 1,
+  emptyCard: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
   },
-  pinEyeBtn: {
-    backgroundColor: '#1E293B',
+  emptyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  emptySubText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  guestItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+  guestItemName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  guestItemExpiry: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  guestPinBox: {
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
   },
-  pinEyeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
+  guestPinText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 1,
   },
-  pinDisplayBox: {
+  historyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
     padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
   },
-  pinBigDigits: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '900',
-    letterSpacing: 6,
-  },
-  changePinBtn: {
-    backgroundColor: '#0284C7',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  changePinBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  itemName: {
+  historyTitle: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  itemCategory: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  itemNotes: {
-    fontSize: 10,
-    color: '#059669',
-    marginTop: 2,
-  },
-  itemVal: {
-    fontSize: 11,
     fontWeight: '700',
-    color: '#334155',
-  },
-  actionHeaderBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 12,
-  },
-  actionHeaderTitle: {
-    fontSize: 12,
-    fontWeight: '900',
     color: '#0F172A',
   },
-  actionHeaderDesc: {
-    fontSize: 10,
+  historyDate: {
+    fontSize: 10.5,
     color: '#64748B',
     marginTop: 2,
   },
-  createPinActionBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  createPinActionText: {
-    color: '#FFFFFF',
-    fontSize: 11,
+  historyAmount: {
+    fontSize: 12.5,
     fontWeight: '800',
-  },
-  emptyTabCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 30,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyTabIcon: {
-    fontSize: 36,
-  },
-  emptyTabTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  emptyTabDesc: {
-    fontSize: 11,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  guestCodeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  guestCodeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  guestName: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  guestPurpose: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  guestStatusBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  guestStatusText: {
-    color: '#15803D',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  guestPinRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 8,
-    borderRadius: 8,
-    gap: 8,
-  },
-  guestPinLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  guestPinVal: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#0284C7',
-    letterSpacing: 2,
-  },
-  guestUsageType: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  guestShareBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 4,
-  },
-  guestShareZalo: {
-    flex: 1,
-    backgroundColor: '#0284C7',
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  guestShareZaloText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  guestShareEmail: {
-    flex: 1,
-    backgroundColor: '#334155',
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  guestShareEmailText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  historyPayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  historyPayTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  historyPayDesc: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  historyPayDate: {
-    fontSize: 9,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  historyPayAmount: {
-    fontSize: 13,
-    fontWeight: '900',
     color: '#059669',
-  },
-  historyPaidBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  historyPaidText: {
-    color: '#15803D',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  emptyHistoryText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontStyle: 'italic',
-    paddingVertical: 8,
-  },
-  ticketRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    gap: 8,
-  },
-  ticketSubject: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  ticketDesc: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  ticketMeta: {
-    fontSize: 9,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  ticketStatusBadge: {
-    backgroundColor: '#FEF08A',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  ticketStatusText: {
-    color: '#854D0E',
-    fontSize: 9,
-    fontWeight: '800',
   },
   bottomBar: {
     position: 'absolute',
@@ -927,55 +704,65 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    alignItems: 'center',
     gap: 8,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 8,
   },
-  actionGuestBtn: {
-    flex: 1,
-    backgroundColor: '#0284C7',
-    paddingVertical: 10,
-    borderRadius: 10,
+  primaryRenewBtn: {
+    flex: 1.1,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-  },
-  actionRenewBtn: {
-    flex: 1,
-    backgroundColor: '#059669',
-    paddingVertical: 10,
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#2563EB',
+    paddingVertical: 11,
     borderRadius: 10,
-    alignItems: 'center',
-    gap: 2,
   },
-  actionUpgradeBtn: {
-    flex: 1,
-    backgroundColor: '#D97706',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    gap: 2,
-  },
-  actionReportBtn: {
-    flex: 1,
-    backgroundColor: '#DC2626',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    gap: 2,
-  },
-  actionIcon: {
-    fontSize: 14,
-  },
-  actionText: {
-    color: '#FFFFFF',
-    fontSize: 11,
+  primaryRenewText: {
+    fontSize: 12.5,
     fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  returnBtn: {
+    flex: 1.1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#EA580C',
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  returnBtnDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  returnBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  secondaryBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 54,
+  },
+  secondaryBtnText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 2,
   },
 });

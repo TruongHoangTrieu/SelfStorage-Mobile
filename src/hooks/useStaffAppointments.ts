@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
+import { getSession } from '../utils/authStorage';
 import {
   getAuthToken,
   setAuthToken,
@@ -42,9 +43,19 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     try {
       setIsStaffLoading(true);
 
-      // 1. Chỉ xác thực tài khoản Staff demo nếu chưa có JWT token trong phiên
-      const existingToken = getAuthToken();
+      // 1. Ưu tiên khôi phục JWT token thật của nhân viên đã lưu (Web localStorage & Mobile AsyncStorage)
+      let existingToken: string | null = null;
+      try {
+        const session = await getSession();
+        existingToken = session.token;
+        if (existingToken) {
+          setAuthToken(existingToken);
+        }
+      } catch {}
       if (!existingToken) {
+        existingToken = getAuthToken();
+      }
+      if (!existingToken && (!staffFacilityId || String(staffFacilityId) === '6ac4ea732f3017f8106ae7a6')) {
         await loginStaffApi('staff@selfstorage.vn', '123456').catch(() => null);
       }
 
@@ -58,7 +69,11 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       const rawReservations = Array.isArray(resData?.data) ? resData.data : (Array.isArray(resData) ? resData : null);
       if (rawReservations && rawReservations.length > 0) {
         setBackendConnected(true);
-        const mappedAppointments: CheckInAppointment[] = rawReservations.map((item: any) => {
+        const activeReservations = rawReservations.filter((item: any) => {
+          const status = String(item.status || '').toUpperCase();
+          return status !== 'CANCELLED' && status !== 'EXPIRED';
+        });
+        const mappedAppointments: CheckInAppointment[] = activeReservations.map((item: any) => {
           const firstItem = item.items?.[0];
           const backendStatus = String(item.status || '').toUpperCase();
           let appStatus: CheckInAppointment['status'] = 'pending';
@@ -120,11 +135,13 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
             accessPin: item.rentalContract?.contractItems?.[0]?.accessCode || item.rentalContract?.accessCodes?.[0]?.code || undefined,
             contractCode: item.rentalContract?.contractCode || undefined,
             photos: (() => {
+              if (backendStatus !== 'COMPLETED') return [];
               const contractItem = item.rentalContract?.contractItems?.[0];
               const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
               return Array.isArray(record?.photos) ? record.photos : [];
             })(),
             handoverPhotos: (() => {
+              if (backendStatus !== 'COMPLETED') return [];
               const contractItem = item.rentalContract?.contractItems?.[0];
               const record = contractItem?.handoverRecords?.find((h: any) => h.type === 'CHECK_IN') || contractItem?.handoverRecords?.[0];
               return Array.isArray(record?.photos) ? record.photos : [];
@@ -234,7 +251,13 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
     }
     try {
       // 1. [ Bắt đầu nhận kho ]: Gọi API Backend lấy chi tiết đơn đặt chỗ nếu có ID số
-      let activeApp = { ...app, status: 'in_progress' as const };
+      let activeApp = {
+        ...app,
+        status: 'in_progress' as const,
+        photos: app.status === 'completed' ? (app.photos || []) : [],
+        handoverPhotos: app.status === 'completed' ? (app.handoverPhotos || []) : [],
+        contractCode: app.status === 'completed' ? app.contractCode : undefined,
+      };
       if (app.rawId) {
         const detail = await getReservationForCheckInApi(app.rawId).catch(() => null);
         if (detail) {
@@ -257,6 +280,14 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       );
       setSelectedAppointment(activeApp);
       setFlowStep('handover');
+      AsyncStorage.setItem(
+        '@selfstorage_active_handover',
+        JSON.stringify({
+          appointmentId: app.id,
+          appointment: activeApp,
+          step: 1,
+        })
+      ).catch(() => null);
     } catch (err: any) {
       Alert.alert('Thông báo', err.message || 'Chuyển sang màn hình bàn giao');
       setSelectedAppointment({ ...app, status: 'in_progress' });
@@ -292,14 +323,19 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
       let generatedContract = updatedData.contractCode || app.contractCode || '';
       let generatedPin = updatedData.accessPin || app.accessPin || '';
 
-      // Tự động đảm bảo JWT Token hợp lệ cho Staff khi thực hiện bàn giao
+      // Đảm bảo dùng đúng JWT Token của nhân viên đang đăng nhập (không ghi đè bằng tài khoản mẫu)
       try {
-        const staffRes = await loginStaffApi('staff@selfstorage.vn', '123456');
-        if (staffRes?.accessToken) {
-          setAuthToken(staffRes.accessToken);
+        const session = await getSession();
+        if (session.token) {
+          setAuthToken(session.token);
+        } else if (!getAuthToken() && (!staffFacilityId || String(staffFacilityId) === '6ac4ea732f3017f8106ae7a6')) {
+          const staffRes = await loginStaffApi('staff@selfstorage.vn', '123456');
+          if (staffRes?.accessToken) {
+            setAuthToken(staffRes.accessToken);
+          }
         }
       } catch (loginErr) {
-        console.warn('Auto staff login error:', loginErr);
+        console.warn('Auto staff token check warning:', loginErr);
       }
 
       // Gọi API atomic check-in chính thức của Backend (POST /handovers/check-in)
@@ -406,9 +442,15 @@ export function useStaffAppointments(staffFacilityId?: number | string) {
         prev.map((u) => (u.code === updatedData.unitCode ? { ...u, status: 'occupied' } : u))
       );
 
+      AsyncStorage.removeItem('@selfstorage_active_handover').catch(() => null);
+      AsyncStorage.removeItem(`@selfstorage_handover_step_${app.id}`).catch(() => null);
       setSelectedAppointment(completedRecord);
 
       // Chuyển sang Trang C: Hoàn tất bàn giao
+      AsyncStorage.removeItem('@selfstorage_active_handover').catch(() => null);
+      if (updatedData.appointmentId) {
+        AsyncStorage.removeItem(`@selfstorage_handover_step_${updatedData.appointmentId}`).catch(() => null);
+      }
       setFlowStep('success');
 
       // Tự động tải lại dữ liệu từ backend để đồng bộ
