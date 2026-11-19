@@ -70,12 +70,13 @@ export interface StaffUser {
 }
 
 export type StaffTab = 
-  | 'queue'      // Hàng đợi nhận kho (Luồng 2 đang hoạt động)
-  | 'dashboard'  // Bảng điều khiển (Tổng quan hôm nay)
-  | 'checkout'   // Trả kho / Thanh lý
-  | 'facility'   // Sơ đồ cơ sở / Trạng thái ô kho
-  | 'support'    // Hỗ trợ & Sự cố
-  | 'settings';  // Cài đặt
+  | 'queue'        // Hàng đợi nhận kho (Luồng 2 đang hoạt động)
+  | 'dashboard'    // Bảng điều khiển (Tổng quan hôm nay)
+  | 'checkout'     // Trả kho / Thanh lý
+  | 'liquidation'  // Mục riêng: Thanh lý kho quá hạn theo lệnh Manager
+  | 'facility'     // Sơ đồ cơ sở / Trạng thái ô kho
+  | 'support'      // Hỗ trợ & Sự cố
+  | 'settings';    // Cài đặt
 
 export type FlowStep = 'queue' | 'handover' | 'success';
 

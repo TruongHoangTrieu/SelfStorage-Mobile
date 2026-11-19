@@ -51,13 +51,13 @@ const toIsoDate = (value: string) => {
 };
 
 const RETURN_TIME_SLOTS = [
-  { value: '08:00 - 09:00', period: 'Sáng' },
-  { value: '09:00 - 10:00', period: 'Sáng' },
-  { value: '10:00 - 11:00', period: 'Sáng' },
-  { value: '11:00 - 12:00', period: 'Trưa' },
-  { value: '13:00 - 14:00', period: 'Chiều' },
-  { value: '14:00 - 15:00', period: 'Chiều' },
-  { value: '15:00 - 16:00', period: 'Chiều' },
+  { value: '08:00', period: 'Sáng' },
+  { value: '09:00', period: 'Sáng' },
+  { value: '10:00', period: 'Sáng' },
+  { value: '11:00', period: 'Trưa' },
+  { value: '13:00', period: 'Chiều' },
+  { value: '14:00', period: 'Chiều' },
+  { value: '15:00', period: 'Chiều' },
 ];
 
 export default function ReturnContractModal({
@@ -67,7 +67,7 @@ export default function ReturnContractModal({
   onReturnSuccess,
 }: ReturnContractModalProps) {
   const [returnDate, setReturnDate] = useState<string>(() => formatDateVN(new Date()));
-  const [returnTimeSlot, setReturnTimeSlot] = useState<string>('09:00 - 10:00');
+  const [returnTimeSlot, setReturnTimeSlot] = useState<string>('09:00');
   const [hasCleanedItems, setHasCleanedItems] = useState<boolean>(true);
   const [hasLockedDoor, setHasLockedDoor] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);

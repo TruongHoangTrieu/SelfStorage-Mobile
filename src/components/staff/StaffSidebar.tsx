@@ -59,8 +59,13 @@ export default function StaffSidebar({
     },
     {
       tab: 'checkout',
-      label: 'Trả kho & Thanh lý',
+      label: 'Trả kho',
       icon: 'exit-to-app',
+    },
+    {
+      tab: 'liquidation',
+      label: 'Thanh lý kho',
+      icon: 'gavel',
     },
     {
       tab: 'facility',

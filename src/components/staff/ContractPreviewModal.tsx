@@ -101,6 +101,7 @@ export default function ContractPreviewModal({
             style={styles.scrollBody}
             contentContainerStyle={styles.scrollPadding}
             showsVerticalScrollIndicator={true}
+            scrollEnabled={!showSignPad}
           >
             {/* Paper Document */}
             <View style={styles.paperSheet}>

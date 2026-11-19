@@ -8,6 +8,7 @@ import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
 import UnitMapScreen from '../screens/staff/UnitMapScreen';
 import StaffSettingsScreen from '../screens/staff/StaffSettingsScreen';
 import StaffReturnQueueScreen from '../screens/staff/StaffReturnQueueScreen';
+import StaffLiquidationScreen from '../screens/staff/StaffLiquidationScreen';
 import StaffSupportScreen from '../screens/staff/StaffSupportScreen';
 import PrintReceiptModal from '../components/staff/PrintReceiptModal';
 import NotificationsModal from '../components/common/NotificationsModal';
@@ -251,6 +252,15 @@ export default function StaffNavigator({ staffAppointmentsState }: StaffNavigato
       ) : staffTab === 'checkout' ? (
         /* MỤC 2: Trả kho & Thanh lý hợp đồng */
         <StaffReturnQueueScreen
+          facilityId={dynamicStaffUser.facilityId}
+          facilityName={dynamicStaffUser.facilityName}
+          onOpenSidebar={handleBackToHome}
+          onOpenNotifications={() => setShowStaffNotifModal(true)}
+          unreadNotifCount={staffNotifState.unreadCount}
+        />
+      ) : staffTab === 'liquidation' ? (
+        /* MỤC RIÊNG: Thanh lý kho quá hạn */
+        <StaffLiquidationScreen
           facilityId={dynamicStaffUser.facilityId}
           facilityName={dynamicStaffUser.facilityName}
           onOpenSidebar={handleBackToHome}

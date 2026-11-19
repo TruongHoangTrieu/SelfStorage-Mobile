@@ -94,39 +94,34 @@ export default function CustomerSupportScreen({
   );
 
   const dropdownOptions = useMemo(() => {
-    const list: { value: string; facilityId: string | number; label: string }[] = [];
-
-    // Danh sách các ô kho của khách hàng đang thuê
+    // Chỉ hiển thị danh sách các ô kho mà khách hàng đang thuê
     if (Array.isArray(units) && units.length > 0) {
-      units.forEach((u) => {
-        list.push({
-          value: u.unitCode,
-          facilityId: u.facilityId,
-          label: `Ô kho #${u.unitCode} - ${u.facilityName || 'Cơ sở kho'}`,
-        });
-      });
+      return units.map((u) => ({
+        value: u.unitCode,
+        facilityId: u.facilityId,
+        label: `Ô kho #${u.unitCode} - ${u.facilityName || 'Cơ sở kho'}`,
+      }));
     }
 
-    // Danh sách các cơ sở kho của hệ thống
-    if (Array.isArray(facilities) && facilities.length > 0) {
-      facilities.forEach((fac) => {
-        list.push({
-          value: '',
-          facilityId: fac.id,
-          label: `${fac.name || fac.title || 'Kho tự quản'} (Chung)`,
-        });
-      });
-    }
-
-    // Tùy chọn chung
-    list.push({
-      value: '',
-      facilityId: '6ac4ea732f3017f8106ae7a6',
-      label: 'Hỗ trợ chung (Thủ tục, tài khoản, thanh toán)',
-    });
-
-    return list;
+    // Chỉ fallback hỗ trợ chung khi khách chưa có ô kho nào
+    return [
+      {
+        value: '',
+        facilityId: facilities[0]?.id || '6ac4ea732f3017f8106ae7a6',
+        label: 'Hỗ trợ chung (Chưa có ô kho)',
+      },
+    ];
   }, [units, facilities]);
+
+  useEffect(() => {
+    if (Array.isArray(units) && units.length > 0) {
+      const stillExists = units.some((u) => u.unitCode === selectedUnitCode);
+      if (!selectedUnitCode || !stillExists) {
+        setSelectedUnitCode(units[0].unitCode);
+        setSelectedFacilityId(units[0].facilityId);
+      }
+    }
+  }, [units, selectedUnitCode]);
 
   const selectedUnitLabel = useMemo(() => {
     const found = dropdownOptions.find(
@@ -134,7 +129,7 @@ export default function CustomerSupportScreen({
         (selectedUnitCode && opt.value === selectedUnitCode) ||
         (!selectedUnitCode && String(opt.facilityId) === String(selectedFacilityId))
     );
-    return found ? found.label : (dropdownOptions[0]?.label || 'Chọn ô kho / cơ sở');
+    return found ? found.label : (dropdownOptions[0]?.label || 'Chọn ô kho');
   }, [dropdownOptions, selectedUnitCode, selectedFacilityId]);
 
 
@@ -295,6 +290,24 @@ export default function CustomerSupportScreen({
 
   // Tạo phiếu mới
   const handleCreateTicket = async () => {
+    if (!currentUser) {
+      Alert.alert(
+        'Yêu cầu đăng nhập',
+        'Vui lòng đăng nhập tài khoản khách hàng để gửi phiếu hỗ trợ.',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Đăng nhập',
+            onPress: () => {
+              setShowCreateModal(false);
+              onOpenLogin?.();
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     const errs: { description?: string } = {};
     if (!description.trim()) {
       errs.description = 'Vui lòng nhập mô tả chi tiết sự cố';
@@ -307,24 +320,36 @@ export default function CustomerSupportScreen({
 
     setIsSubmitting(true);
     try {
-      const matchedUnit = units.find((u) => u.unitCode === selectedUnitCode) || units[0];
+      const matchedUnit = selectedUnitCode
+        ? units.find((u) => u.unitCode === selectedUnitCode)
+        : undefined;
       const selectedCatLabel =
         categories.find((c) => c.id === category)?.label || 'Yêu cầu hỗ trợ kỹ thuật';
       const autoSubject = selectedUnitCode
         ? `${selectedCatLabel} (Ô #${selectedUnitCode})`
         : selectedCatLabel;
 
-      // Upload ảnh lên Cloudinary nếu có cấu hình (hoặc fallback Base64 / URI)
+      // Upload ảnh lên Cloudinary nếu có cấu hình (hoặc fallback URI hợp lệ)
       let uploadedPhotoUrls: string[] = [];
-      try {
-        uploadedPhotoUrls = await uploadMultipleImagesToStorage(supportPhotos);
-      } catch (uploadErr) {
-        console.warn('Lỗi tải ảnh hỗ trợ:', uploadErr);
-        uploadedPhotoUrls = supportPhotos.map((p) => p.base64 || p.uri);
+      if (supportPhotos.length > 0) {
+        try {
+          uploadedPhotoUrls = await uploadMultipleImagesToStorage(supportPhotos);
+        } catch (uploadErr) {
+          console.warn('Lỗi tải ảnh hỗ trợ:', uploadErr);
+          uploadedPhotoUrls = supportPhotos
+            .map((p) => p.uri)
+            .filter((u): u is string => Boolean(u));
+        }
       }
 
+      const targetFacilityId =
+        matchedUnit?.facilityId ||
+        selectedFacilityId ||
+        facilities[0]?.id ||
+        '6ac4ea732f3017f8106ae7a6';
+
       await createSupportRequestApi({
-        facilityId: matchedUnit?.facilityId || '6ac4ea732f3017f8106ae7a6',
+        facilityId: targetFacilityId,
         contractItemId: matchedUnit?.contractItemId,
         category,
         subject: autoSubject,
@@ -340,7 +365,13 @@ export default function CustomerSupportScreen({
       setFormErrors({});
       loadTickets();
     } catch (err: any) {
-      console.warn('Không thể tạo phiếu hỗ trợ:', err?.message || err);
+      const errMsg = err?.message || 'Không thể gửi phiếu hỗ trợ. Vui lòng thử lại.';
+      console.warn('Không thể tạo phiếu hỗ trợ:', errMsg);
+      if (Platform.OS === 'web') {
+        window.alert(errMsg);
+      } else {
+        Alert.alert('Không thể tạo phiếu hỗ trợ', errMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -710,8 +741,8 @@ export default function CustomerSupportScreen({
                   contentContainerStyle={{ paddingBottom: 10 }}
                 >
 
-            {/* Dropdown Chọn ô kho hoặc cơ sở kho */}
-            <Text style={s.modalLabel}>Chọn ô kho hoặc cơ sở cần hỗ trợ:</Text>
+            {/* Dropdown Chọn ô kho */}
+            <Text style={s.modalLabel}>Chọn ô kho cần hỗ trợ:</Text>
             <TouchableOpacity
               style={s.dropdownBox}
               onPress={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}

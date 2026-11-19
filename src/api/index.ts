@@ -1327,3 +1327,30 @@ export async function cancelReservationApi(
     }),
   });
 }
+
+/**
+ * Lấy danh sách đơn Thanh lý kho quá hạn theo lệnh Manager (GET /renewals/overdue/liquidations)
+ */
+export async function fetchStaffLiquidationsApi(facilityId?: string | number) {
+  const qs = facilityId ? `?facilityId=${encodeURIComponent(String(facilityId))}` : '';
+  return apiRequest<any[]>(`/renewals/overdue/liquidations${qs}`);
+}
+
+/**
+ * Nhân viên hoàn tất quy trình Thanh lý kho quá hạn (POST /renewals/overdue/records/:id/complete-liquidation)
+ */
+export async function completeLiquidationApi(
+  overdueRecordId: string,
+  payload: {
+    condition: string;
+    notes?: string;
+    photos?: string[];
+    newAccessCode: string;
+    unitCondition?: 'AVAILABLE' | 'UNDER_MAINTENANCE';
+  },
+) {
+  return apiRequest<any>(`/renewals/overdue/records/${encodeURIComponent(overdueRecordId)}/complete-liquidation`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

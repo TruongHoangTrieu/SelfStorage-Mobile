@@ -144,12 +144,13 @@ export function checkCheckInEligibility(app?: CheckInAppointment | any): CheckIn
     };
   }
 
-  // 3. Trễ nhẹ (> 15 phút đến <= 24 giờ) -> Vẫn cho phép nhận kho nhưng đánh dấu trễ hẹn
+  // 3. Quá giờ hẹn (> 15 phút) -> Khóa nhận kho, yêu cầu dời lịch hoặc báo vắng
   if (diffMinutes > 15) {
     return {
-      allowed: true,
+      allowed: false,
       isLateWarning: true,
       diffMinutes,
+      reason: 'Đơn đã quá giờ hẹn nhận kho. Vui lòng bấm "Dời lịch" sang khung giờ mới hoặc "Báo vắng" để giải phóng kho.',
     };
   }
 

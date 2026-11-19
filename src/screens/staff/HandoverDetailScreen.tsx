@@ -985,39 +985,40 @@ export default function HandoverDetailScreen({
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
-                      {!(frontCccdPhoto.uri || "").includes("l_text:") && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
                         <View
-                          pointerEvents="none"
                           style={{
-                            position: "absolute",
-                            inset: 0,
-                            alignItems: "center",
-                            justifyContent: "center",
+                            backgroundColor: "rgba(220, 38, 38, 0.72)",
+                            paddingHorizontal: 6,
+                            paddingVertical: 3,
+                            borderRadius: 3,
+                            transform: [{ rotate: "-22deg" }],
                           }}
                         >
-                          <View
+                          <Text
                             style={{
-                              backgroundColor: "rgba(220, 38, 38, 0.72)",
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                              borderRadius: 3,
-                              transform: [{ rotate: "-22deg" }],
+                              color: "#FFFFFF",
+                              fontSize: 7.5,
+                              fontWeight: "800",
+                              textAlign: "center",
                             }}
+                            numberOfLines={1}
                           >
-                            <Text
-                              style={{
-                                color: "#FFFFFF",
-                                fontSize: 7.5,
-                                fontWeight: "800",
-                                textAlign: "center",
-                              }}
-                              numberOfLines={1}
-                            >
-                              {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT TRUOC`}
-                            </Text>
-                          </View>
+                            {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT TRUOC`}
+                          </Text>
                         </View>
-                      )}
+                      </View>
                     </TouchableOpacity>
 
                     <View style={s.cccdWatermarkTag}>
@@ -1135,39 +1136,40 @@ export default function HandoverDetailScreen({
                         style={s.cccdPreviewImg}
                         resizeMode="cover"
                       />
-                      {!(backCccdPhoto.uri || "").includes("l_text:") && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
                         <View
-                          pointerEvents="none"
                           style={{
-                            position: "absolute",
-                            inset: 0,
-                            alignItems: "center",
-                            justifyContent: "center",
+                            backgroundColor: "rgba(220, 38, 38, 0.72)",
+                            paddingHorizontal: 6,
+                            paddingVertical: 3,
+                            borderRadius: 3,
+                            transform: [{ rotate: "-22deg" }],
                           }}
                         >
-                          <View
+                          <Text
                             style={{
-                              backgroundColor: "rgba(220, 38, 38, 0.72)",
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                              borderRadius: 3,
-                              transform: [{ rotate: "-22deg" }],
+                              color: "#FFFFFF",
+                              fontSize: 7.5,
+                              fontWeight: "800",
+                              textAlign: "center",
                             }}
+                            numberOfLines={1}
                           >
-                            <Text
-                              style={{
-                                color: "#FFFFFF",
-                                fontSize: 7.5,
-                                fontWeight: "800",
-                                textAlign: "center",
-                              }}
-                              numberOfLines={1}
-                            >
-                              {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT SAU`}
-                            </Text>
-                          </View>
+                            {`SELFSTORAGE - HO SO NHAN KHO ${appointment.id} - MAT SAU`}
+                          </Text>
                         </View>
-                      )}
+                      </View>
                     </TouchableOpacity>
 
                     <View style={s.cccdWatermarkTag}>
@@ -2170,8 +2172,7 @@ export default function HandoverDetailScreen({
           {(previewImage === frontCccdPhoto?.uri ||
             previewImage === frontCccdPhoto?.base64 ||
             previewImage === backCccdPhoto?.uri ||
-            previewImage === backCccdPhoto?.base64) &&
-            !previewImage.includes("l_text:") && (
+            previewImage === backCccdPhoto?.base64) && (
               <View
                 pointerEvents="none"
                 style={{

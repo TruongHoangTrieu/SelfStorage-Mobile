@@ -132,10 +132,7 @@ export function to24hFormat(timeStr?: string): string {
   if (!timeStr) return '--:--';
   const clean = timeStr.trim();
   if (clean.includes('-')) {
-    return clean
-      .split('-')
-      .map((p) => to24hFormat(p.trim()))
-      .join(' - ');
+    return to24hFormat(clean.split('-')[0].trim());
   }
   const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(SA|CH|AM|PM)?$/i);
   if (match) {
@@ -180,6 +177,10 @@ export default function CheckInQueueScreen({
   const [isInspectionModalVisible, setIsInspectionModalVisible] = useState<boolean>(false);
 
   // Modal Dời lịch hẹn nhận kho (đồng bộ quy trình trễ hẹn Web FE)
+  // Modal Liên hệ khách hàng trước khi Dời lịch hoặc Báo vắng (đồng bộ Web FE ContactModal)
+  const [contactTarget, setContactTarget] = useState<UnifiedScheduleItem | null>(null);
+  const [contactAttempted, setContactAttempted] = useState<boolean>(false);
+
   const [rescheduleTarget, setRescheduleTarget] = useState<UnifiedScheduleItem | null>(null);
   const [rescheduleDayOffset, setRescheduleDayOffset] = useState<0 | 1>(1);
   const [rescheduleSlot, setRescheduleSlot] = useState<string>('09:00');
@@ -187,6 +188,11 @@ export default function CheckInQueueScreen({
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false);
 
   const RESCHEDULE_SLOTS = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
+
+  const openContactModal = (item: UnifiedScheduleItem) => {
+    setContactTarget(item);
+    setContactAttempted(false);
+  };
 
   const openRescheduleModal = (item: UnifiedScheduleItem) => {
     setRescheduleTarget(item);
@@ -381,7 +387,7 @@ export default function CheckInQueueScreen({
       const scheduledDate = normalizeAppointmentDate(ord.returnDate);
       let returnDateStr =
         scheduledDate ||
-        (isReturnOrderCompleted(ord) || ord.returnType === 'today'
+        (ord.returnType === 'today'
           ? todayFormatted
           : normalizeAppointmentDate(ord.endDate));
       if (!returnDateStr) {
@@ -478,29 +484,16 @@ export default function CheckInQueueScreen({
           return;
         }
 
-        // Chặn nếu ngoài khung giờ nhận kho (trước > 1h hoặc trễ > 24h đồng bộ Web FE)
+        // Chặn nếu ngoài khung giờ nhận kho (trước > 1h hoặc đã trễ hẹn)
         if (!isCheckInAllowed) {
-          if (checkInEligibility.isTooLate) {
+          if (checkInEligibility.isTooLate || checkInEligibility.isLateWarning) {
             Alert.alert(
-              'Đơn quá hạn (> 24 giờ)',
-              checkInEligibility.reason || 'Đơn trễ quá 24 giờ. Vui lòng liên hệ khách để dời lịch hẹn hoặc báo vắng giải phóng kho.',
+              'Đơn quá hạn nhận kho',
+              checkInEligibility.reason || 'Đơn đã quá giờ hẹn. Vui lòng liên hệ khách hàng trước khi dời lịch hoặc báo vắng.',
               [
-                ...(item.phone
-                  ? [
-                      {
-                        text: 'Gọi khách',
-                        onPress: () => Linking.openURL(`tel:${item.phone.replace(/\s+/g, '')}`),
-                      },
-                    ]
-                  : []),
                 {
-                  text: 'Dời lịch hẹn',
-                  onPress: () => openRescheduleModal(item),
-                },
-                {
-                  text: 'Báo vắng & Giải phóng',
-                  style: 'destructive',
-                  onPress: () => handleMarkNoShow(item),
+                  text: 'Liên hệ khách',
+                  onPress: () => openContactModal(item),
                 },
                 { text: 'Đóng', style: 'cancel' },
               ],
@@ -694,21 +687,25 @@ export default function CheckInQueueScreen({
                     {(checkInEligibility.isLateWarning || checkInEligibility.isTooLate) && (
                       <TouchableOpacity
                         style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
                           paddingHorizontal: 10,
                           paddingVertical: 7,
                           borderRadius: 10,
-                          backgroundColor: '#FEF3C7',
+                          backgroundColor: '#EFF6FF',
                           borderWidth: 1,
-                          borderColor: '#FCD34D',
+                          borderColor: '#93C5FD',
                         }}
                         onPress={(e) => {
                           e.stopPropagation();
-                          openRescheduleModal(item);
+                          openContactModal(item);
                         }}
                         activeOpacity={0.8}
                       >
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E' }}>
-                          Dời lịch
+                        <MaterialIcons name="phone" size={12} color="#1D4ED8" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#1D4ED8' }}>
+                          Liên hệ khách
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -730,7 +727,7 @@ export default function CheckInQueueScreen({
                           ? 'Tiếp tục'
                           : isCheckInAllowed
                             ? 'Nhận kho'
-                            : checkInEligibility.isTooLate
+                            : checkInEligibility.isTooLate || checkInEligibility.isLateWarning
                               ? 'Quá hạn'
                               : 'Chưa tới giờ'}
                       </Text>
@@ -1002,6 +999,303 @@ export default function CheckInQueueScreen({
           onRefresh?.();
         }}
       />
+
+      {/* ─── MODAL LIÊN HỆ KHÁCH HÀNG TRƯỚC KHI DỜI LỊCH / BÁO VẮNG (ĐỒNG BỘ WEB FE) ─── */}
+      <Modal
+        visible={!!contactTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setContactTarget(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            justifyContent: 'center',
+            padding: 18,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              padding: 18,
+              maxHeight: '90%',
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                  Liên Hệ Khách Hàng
+                </Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                  Liên hệ nhắc hẹn trước khi dời lịch hoặc báo vắng hủy đơn
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setContactTarget(null)}>
+                <MaterialIcons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {contactTarget && (() => {
+              const code = contactTarget.rawCheckIn?.rawId || contactTarget.id;
+              const email = contactTarget.rawCheckIn?.email;
+              const phoneClean = (contactTarget.phone || '').replace(/\s+/g, '');
+              const reminderMessage = `Chào ${contactTarget.customerName}, hệ thống tự quản lý kho xin nhắc bạn có lịch hẹn nhận phòng/ô kho #${code} vào lúc ${contactTarget.slotTime} ngày ${contactTarget.startDate}. Vui lòng phản hồi để nhân viên hỗ trợ bạn nhé!`;
+
+              return (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                  {/* Thông tin khách hàng */}
+                  <View
+                    style={{
+                      backgroundColor: '#F8FAFC',
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      padding: 12,
+                      gap: 4,
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#0F172A' }}>
+                      {contactTarget.customerName}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#475569' }}>
+                      Mã đơn: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{code}</Text> • Ô {contactTarget.assignedUnit}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#475569' }}>
+                      Lịch hẹn: <Text style={{ fontWeight: '700', color: '#B45309' }}>{contactTarget.slotTime} • {contactTarget.startDate}</Text>
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#475569' }}>
+                      SĐT: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{contactTarget.phone || 'Chưa có SĐT'}</Text>
+                    </Text>
+                    {!!email && (
+                      <Text style={{ fontSize: 12, color: '#475569' }}>
+                        Email: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{email}</Text>
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Bước 1: Liên hệ khách */}
+                  <View style={{ gap: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1E293B', textTransform: 'uppercase' }}>
+                      Bước 1: Liên hệ nhắc hẹn khách hàng
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        disabled={!phoneClean}
+                        onPress={() => {
+                          if (phoneClean) {
+                            Linking.openURL(`tel:${phoneClean}`);
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          backgroundColor: phoneClean ? '#059669' : '#E2E8F0',
+                        }}
+                      >
+                        <MaterialIcons name="phone" size={16} color={phoneClean ? '#FFFFFF' : '#94A3B8'} />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: phoneClean ? '#FFFFFF' : '#94A3B8' }}>
+                          Gọi điện
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        disabled={!phoneClean}
+                        onPress={() => {
+                          if (phoneClean) {
+                            const sep = Platform.OS === 'ios' ? '&' : '?';
+                            Linking.openURL(`sms:${phoneClean}${sep}body=${encodeURIComponent(reminderMessage)}`);
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          backgroundColor: phoneClean ? '#0284C7' : '#E2E8F0',
+                        }}
+                      >
+                        <MaterialIcons name="sms" size={16} color={phoneClean ? '#FFFFFF' : '#94A3B8'} />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: phoneClean ? '#FFFFFF' : '#94A3B8' }}>
+                          Nhắn SMS
+                        </Text>
+                      </TouchableOpacity>
+
+                      {!!email && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            const subject = encodeURIComponent(`Nhắc lịch hẹn nhận kho #${code}`);
+                            const body = encodeURIComponent(reminderMessage);
+                            Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+                          }}
+                          style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            paddingVertical: 10,
+                            borderRadius: 12,
+                            backgroundColor: '#4F46E5',
+                          }}
+                        >
+                          <MaterialIcons name="email" size={16} color="#FFFFFF" />
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                            Email
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Mẫu tin nhắn nhắc hẹn */}
+                    <View
+                      style={{
+                        backgroundColor: '#F8FAFC',
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                        padding: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', marginBottom: 4 }}>
+                        Mẫu tin nhắn nhắc hẹn:
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#334155', lineHeight: 16 }} selectable>
+                        {reminderMessage}
+                      </Text>
+                    </View>
+
+                    {!contactAttempted && (
+                      <TouchableOpacity
+                        onPress={() => setContactAttempted(true)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                          backgroundColor: '#2563EB',
+                          marginTop: 2,
+                        }}
+                      >
+                        <MaterialIcons name="check-circle" size={16} color="#FFFFFF" />
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>
+                          Xác nhận đã liên hệ xong với khách hàng
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Bước 2: Chỉ mở sau khi đã xác nhận liên hệ */}
+                  {contactAttempted && (
+                    <View
+                      style={{
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderTopColor: '#E2E8F0',
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F172A', textTransform: 'uppercase' }}>
+                          Bước 2: Kết quả xử lý sau liên hệ
+                        </Text>
+                        <TouchableOpacity onPress={() => setContactAttempted(false)}>
+                          <Text style={{ fontSize: 11, color: '#2563EB', textDecorationLine: 'underline', fontWeight: '600' }}>
+                            Chọn lại Bước 1
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: 10,
+                          borderRadius: 12,
+                          backgroundColor: '#ECFDF5',
+                          borderWidth: 1,
+                          borderColor: '#A7F3D0',
+                        }}
+                      >
+                        <MaterialIcons name="check-circle" size={18} color="#059669" />
+                        <Text style={{ flex: 1, fontSize: 11, color: '#065F46', lineHeight: 16 }}>
+                          Đã hoàn tất liên hệ! Vui lòng chọn hướng xử lý theo thỏa thuận với khách hàng:
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const target = contactTarget;
+                            setContactTarget(null);
+                            if (target) openRescheduleModal(target);
+                          }}
+                          style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            paddingVertical: 12,
+                            borderRadius: 12,
+                            backgroundColor: '#FEF3C7',
+                            borderWidth: 1,
+                            borderColor: '#F59E0B',
+                          }}
+                        >
+                          <MaterialIcons name="schedule" size={16} color="#B45309" />
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#92400E' }}>
+                            Khách xin dời lịch
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            const target = contactTarget;
+                            setContactTarget(null);
+                            if (target) handleMarkNoShow(target);
+                          }}
+                          style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            paddingVertical: 12,
+                            borderRadius: 12,
+                            backgroundColor: '#FFE4E6',
+                            borderWidth: 1,
+                            borderColor: '#F43F5E',
+                          }}
+                        >
+                          <MaterialIcons name="person-off" size={16} color="#BE123C" />
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#9F1239' }}>
+                            Khách báo hủy
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
 
       {/* ─── MODAL DỜI LỊCH HẸN NHẬN KHO (ĐỒNG BỘ WEB FE) ─── */}
       <Modal

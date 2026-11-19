@@ -131,6 +131,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleLogout = async () => {
     disconnectSocket();
     await clearSession();
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.removeItem('@selfstorage_cached_customer_units');
+    } catch {}
     setCurrentUser(null);
     setIsLoggedIn(false);
     setAppMode('customer');

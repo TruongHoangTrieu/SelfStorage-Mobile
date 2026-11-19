@@ -68,10 +68,7 @@ function to24hFormat(timeStr?: string): string {
   if (!timeStr) return '';
   const clean = timeStr.trim();
   if (clean.includes('-')) {
-    return clean
-      .split('-')
-      .map((p) => to24hFormat(p.trim()))
-      .join(' - ');
+    return to24hFormat(clean.split('-')[0].trim());
   }
   const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(SA|CH|AM|PM)?$/i);
   if (match) {

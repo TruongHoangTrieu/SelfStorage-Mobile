@@ -44,7 +44,11 @@ export default function SignaturePadModal({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         const { locationX, locationY } = evt.nativeEvent;
         const x = Number(locationX.toFixed(1));
@@ -125,9 +129,8 @@ export default function SignaturePadModal({
   if (!visible) return null;
 
   return (
-    <View style={[StyleSheet.absoluteFill, styles.overlay, { zIndex: 9999 }]}>
-      <View style={styles.overlay}>
-        <View style={styles.modalCard}>
+    <View style={[StyleSheet.absoluteFill, styles.overlay, { zIndex: 9999 }]} pointerEvents="auto">
+      <View style={styles.modalCard}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconWrap}>
@@ -153,7 +156,10 @@ export default function SignaturePadModal({
           </View>
 
           {/* Vùng vẽ Canvas */}
-          <View style={styles.canvasContainer} {...panResponder.panHandlers}>
+          <View
+            style={[styles.canvasContainer, Platform.OS === 'web' ? ({ touchAction: 'none' } as any) : null]}
+            {...panResponder.panHandlers}
+          >
             <Svg width={CANVAS_WIDTH} height={CANVAS_HEIGHT} style={styles.svgCanvas}>
               {paths.map((p, index) => (
                 <Path
@@ -212,7 +218,6 @@ export default function SignaturePadModal({
           </View>
         </View>
       </View>
-    </View>
   );
 }
 

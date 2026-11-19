@@ -53,13 +53,9 @@ export function mapContractsToReturnOrders(
         }
       }
 
-      if (item.status === 'TERMINATED' || item.status === 'COMPLETED' || item.status === 'OVERDUE') return true;
-      // Khách đã đăng ký lịch trả kho -> luôn hiện cho nhân viên chuẩn bị
-      if (item.returnRequestedAt) return true;
-      const endDateObj = item.endDate ? new Date(item.endDate) : new Date();
-      const endDateTime = endDateObj.getTime();
-      // Chỉ lấy các đơn đã quá hạn hoặc đến hạn hôm nay
-      return endDateTime <= startOfToday + 86400000;
+      if (item.status === 'TERMINATED' || item.status === 'COMPLETED') return true;
+      // Chỉ hiển thị đơn trả kho khi khách hàng đã thực sự gửi yêu cầu / đặt lịch trả kho
+      return Boolean(item.returnRequestedAt || item.returnDate);
     })
     .map((item: any) => {
       const firstUnitItem = item.contractItems?.[0];

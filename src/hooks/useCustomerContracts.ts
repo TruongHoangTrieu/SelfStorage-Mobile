@@ -14,7 +14,6 @@ import {
   GuestAccessCode,
   UnitSupportTicket,
 } from '../types/customerStorage';
-import { INITIAL_RENTED_UNITS } from '../data/mockCustomerStorageData';
 import { formatVND, formatVietnameseDate } from '../utils/formatters';
 
 export const CACHED_UNITS_KEY = '@selfstorage_cached_customer_units';
@@ -23,10 +22,8 @@ export function useCustomerContracts() {
   const [customerNavTab, setCustomerNavTab] = useState<CustomerTab>('my_units');
   const [customerFlowStep, setCustomerFlowStep] = useState<'dashboard' | 'detail'>('dashboard');
   const [isCustomerSidebarVisible, setIsCustomerSidebarVisible] = useState<boolean>(false);
-  const [rentedUnits, setRentedUnits] = useState<CustomerRentedUnit[]>(INITIAL_RENTED_UNITS);
-  const [selectedRentedUnit, setSelectedRentedUnit] = useState<CustomerRentedUnit | null>(
-    INITIAL_RENTED_UNITS[0]
-  );
+  const [rentedUnits, setRentedUnits] = useState<CustomerRentedUnit[]>([]);
+  const [selectedRentedUnit, setSelectedRentedUnit] = useState<CustomerRentedUnit | null>(null);
   const [isCustomerLoading, setIsCustomerLoading] = useState<boolean>(false);
 
   // Modals nghiệp vụ
@@ -79,9 +76,14 @@ export function useCustomerContracts() {
         fetchMySupportRequestsApi().catch(() => null),
       ]);
       const rawTickets = Array.isArray(supportRes?.data) ? supportRes.data : [];
-      if (Array.isArray(contracts) && contracts.length > 0) {
+      if (Array.isArray(contracts)) {
         const mappedUnits: CustomerRentedUnit[] = [];
         for (const c of contracts) {
+          // Hợp đồng đã thanh lý / hoàn tất trả kho không còn nằm trong danh sách "Kho đang kích hoạt"
+          if (c.status === 'TERMINATED' || c.status === 'COMPLETED') {
+            AsyncStorage.removeItem(`@selfstorage_return_req_${c.id}`).catch(() => null);
+            continue;
+          }
           for (const ci of (c.contractItems || [])) {
             const startD = formatVietnameseDate(c.startDate);
             const endD = formatVietnameseDate(c.endDate);
@@ -113,6 +115,9 @@ export function useCustomerContracts() {
               status = 'terminated' as any;
               statusLabel = 'Đã thanh lý trả kho';
               AsyncStorage.removeItem(`@selfstorage_return_req_${c.id}`).catch(() => null);
+            } else if (c.overdueRecords?.[0]?.liquidationStatus === 'REQUESTED') {
+              status = 'checking_out' as any;
+              statusLabel = 'Đang xử lý thanh lý';
             } else if (returnReqStr || c.returnRequestedAt) {
               status = 'checking_out' as any;
               statusLabel = 'Chờ nghiệm thu trả kho';
@@ -232,6 +237,10 @@ export function useCustomerContracts() {
             }
             return mappedUnits[0];
           });
+        } else {
+          setRentedUnits([]);
+          setSelectedRentedUnit(null);
+          await AsyncStorage.removeItem(CACHED_UNITS_KEY).catch(() => null);
         }
       }
     } catch (err: any) {

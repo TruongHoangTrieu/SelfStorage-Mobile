@@ -462,13 +462,27 @@ export default function MyUnitsDashboardScreen({
                             s.gridStatusBadge,
                             unit.status === 'overdue' && { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
                             unit.status === 'expiring_soon' && { backgroundColor: '#fef3c7', borderColor: '#fde68a' },
+                            unit.status === 'checking_out' && { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
                           ]}>
-                            <Text style={[
-                              s.gridStatusText,
-                              unit.status === 'overdue' && { color: '#dc2626' },
-                              unit.status === 'expiring_soon' && { color: '#d97706' },
-                            ]}>
-                              {unit.statusLabel || (unit.status === 'expiring_soon' ? 'Sắp hết hạn' : 'Đang hoạt động')}
+                            <Text
+                              style={[
+                                s.gridStatusText,
+                                unit.status === 'overdue' && { color: '#dc2626' },
+                                unit.status === 'expiring_soon' && { color: '#d97706' },
+                                unit.status === 'checking_out' && { color: '#1d4ed8' },
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {unit.status === 'overdue'
+                                ? 'Quá hạn'
+                                : unit.status === 'expiring_soon'
+                                ? 'Sắp hết hạn'
+                                : unit.status === 'checking_out'
+                                ? (unit.statusLabel === 'Đang xử lý thanh lý' ? 'Thanh lý' : 'Chờ trả kho')
+                                : unit.status === 'terminated'
+                                ? 'Đã trả kho'
+                                : 'Đang thuê'}
                             </Text>
                           </View>
                         </View>
@@ -931,6 +945,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 6,
     marginBottom: 8,
   },
   gridCardIconWrap: {
@@ -940,6 +955,7 @@ const s = StyleSheet.create({
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   gridStatusBadge: {
     backgroundColor: '#ecfdf5',
@@ -948,6 +964,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+    flexShrink: 1,
+    maxWidth: '72%',
   },
   gridStatusText: {
     fontSize: 9.5,

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CheckInAppointment, StaffReturnOrder, StaffTab, StaffUser } from '../../types/handover';
-import { fetchStaffContractsApi, fetchStaffSupportRequestsApi } from '../../api';
+import { fetchStaffContractsApi, fetchStaffLiquidationsApi, fetchStaffSupportRequestsApi } from '../../api';
 import {
   isReturnOrderCompleted,
   mapContractsToReturnOrders,
@@ -86,6 +86,20 @@ export default function StaffDashboardScreen({
 
   // 3. Số sự cố cần trợ giúp (Lấy trực tiếp từ Database qua API)
   const [supportCount, setSupportCount] = useState<number>(0);
+  const [liquidationCount, setLiquidationCount] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchStaffLiquidationsApi(staffFacilityId)
+      .then((res) => {
+        if (!isMounted || !Array.isArray(res)) return;
+        setLiquidationCount(res.filter((l: any) => l.liquidationStatus === 'REQUESTED').length);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [staffFacilityId, isRefreshing]);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,6 +142,15 @@ export default function StaffDashboardScreen({
       bgColor: '#EFF6FF',
       badge: totalScheduleBadge,
       onPress: () => onNavigateTab('queue'),
+    },
+    {
+      id: 'liquidation',
+      title: 'Thanh lý kho',
+      icon: 'gavel' as const,
+      color: '#DC2626',
+      bgColor: '#FEF2F2',
+      badge: liquidationCount,
+      onPress: () => onNavigateTab('liquidation'),
     },
     {
       id: 'facility',
